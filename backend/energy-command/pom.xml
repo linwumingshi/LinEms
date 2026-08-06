@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-command：指令中心（Phase 6b）
+  - 消费 iot-command-ack（key=commandId）→ 状态机流转 CREATED→SENT→RECEIVED→EXECUTING→SUCCESS/FAILED/TIMEOUT
+  - 消费 iot-shadow-delta（key=deviceId）→ 物化为 setProperties 指令
+  - 消费 iot-device-lifecycle（ONLINE）→ 补发离线队列 iot:cmd:q:{deviceId}
+  - REST：指令创建（在线直发 / 离线入队）、指令查询
+  - @Scheduled 超时扫描：ACK 超时重试 / 重试耗尽置 TIMEOUT
+  - 下发投递 iot-command-down（key=deviceId），接入适配桥接 Broker 下发
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-command</artifactId>
+  <name>energy-command</name>
+  <description>指令中心：状态机/ACK/离线队列/超时重试/影子 delta 物化</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.command.CommandApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

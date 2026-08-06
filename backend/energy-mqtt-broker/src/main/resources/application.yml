@@ -1,0 +1,92 @@
+# ===================================================================
+# 深圳三多能源储能管理平台 · energy-mqtt-broker 配置
+# MQTT 端口 1883（设备接入）与 Spring 管理端口 8082（运维）分离
+# ===================================================================
+server:
+  port: 8082
+
+spring:
+  application:
+    name: energy-mqtt-broker
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_device?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    hikari:
+      # 凭据库仅作 cache:cred 未命中时的兜底；DB 不可用时 Broker 仍可启动（Redis 缓存命中即可接入）
+      initialization-fail-timeout: -1
+      maximum-pool-size: 10
+      minimum-idle: 2
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+          min-idle: 2
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        # Broker 以独立服务名注册，运维控制台可发现全部节点
+  main:
+    banner-mode: off
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+
+# ---------------- 自研 Broker 核心配置 ----------------
+sanduo:
+  broker:
+    node-id: ${BROKER_NODE_ID:broker-1}
+    port: ${BROKER_MQTT_PORT:1883}
+    max-connections: 500000
+    worker-threads: 0
+    enable-router: true
+    enable-lifecycle-event: true
+    max-inflight-per-session: 64
+    offline-queue-capacity: 500
+    offline-queue-ttl-seconds: 604800
+    session-ttl-seconds: 604800
+    credential-cache-ttl-seconds: 1800
+    auth-timestamp-window-minutes: 2
+    online-ttl-seconds: 30
+    kafka-bootstrap-servers: ${KAFKA_BOOTSTRAP:127.0.0.1:9092}
+    router-topic-partitions: 24
+    lifecycle-topic-partitions: 24
+    auth-failure-ban-threshold: 10
+    auth-failure-ban-seconds: 300
+    router-max-poll-records: 500
+    # MQTT TLS 8883（P0-3）：enabled=false 时无 TLS acceptor，行为与明文单端口一致
+    # 证书默认相对路径按进程 CWD 解析（start-stack.sh 从仓库根启动 jar），生产请传绝对路径
+    tls:
+      enabled: ${BROKER_TLS_ENABLED:false}
+      port: ${BROKER_TLS_PORT:8883}
+      cert-chain-file: ${BROKER_TLS_CERT:deploy/certs/server-cert.pem}
+      private-key-file: ${BROKER_TLS_KEY:deploy/certs/server-key.pem}
+
+logging:
+  level:
+    com.sanduo.energy.broker: info
+    org.apache.kafka: warn
+    io.netty: warn

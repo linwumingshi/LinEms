@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-alarm：告警中心（Phase 6c）
+  - 消费 iot-thing-property（key=deviceId）→ 属性规则（阈值比较 + 持续窗口 + 恢复条件）
+  - 消费 iot-thing-event（key=deviceId）→ 事件规则（事件标识匹配 + 静默防抖）
+  - 规则缓存 @Scheduled 刷新；product_key → product_id 跨 schema（es_product.iot_product）
+  - 命中：iot_alarm_record 落库 + 发布 iot-alarm + WebSocket /ws/alarm 广播 + ES es-alarm-log-{yyyyMM}
+  - REST：告警记录分页查询 / 人工确认（ACK）/ 规则列表
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-alarm</artifactId>
+  <name>energy-alarm</name>
+  <description>告警中心：规则引擎/持续窗口/静默防抖/恢复/记录查询/ACK</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <!-- WS 握手 JWT 验签（与网关/系统共享 secret/issuer，P0-2） -->
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-security-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <!-- /ws/alarm 实时告警推送（驾驶舱弹窗） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-websocket</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.alarm.AlarmApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

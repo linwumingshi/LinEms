@@ -1,0 +1,58 @@
+server:
+  port: 8113
+
+spring:
+  application:
+    name: energy-shadow
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_shadow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # MySQL 不可用时允许服务先启动（影子消费降级为仅 Redis 热路径，不阻塞摄取）
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+sanduo:
+  shadow:
+    node-id: shadow-1
+    kafka-bootstrap-servers: 127.0.0.1:9092
+    consumer-threads: 2
+    poll-ms: 200
+    reported-ttl-days: 7
+    history-throttle-seconds: 60
+    history-enabled: true
+    optimistic-max-retry: 3
+    dlq-topic: iot-dlq
+
+logging:
+  level:
+    com.sanduo.energy: info

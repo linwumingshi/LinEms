@@ -1,0 +1,64 @@
+server:
+  port: 8115
+
+spring:
+  application:
+    name: energy-alarm
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_alarm?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # MySQL 不可用时允许服务先启动（规则缓存加载失败等下次刷新，不阻塞消费）
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+sanduo:
+  # WS 握手鉴权（P0-2）：与网关/energy-system 共享的 JWT 配置，见 energy-security-core JwtProperties
+  jwt:
+    expire-seconds: 7200
+    issuer: sanduo-ems
+  alarm:
+    node-id: alarm-1
+    kafka-bootstrap-servers: 127.0.0.1:9092
+    consumer-threads: 4
+    poll-ms: 200
+    rule-cache-refresh-ms: 30000
+    rule-cache-initial-delay-ms: 10000
+    product-cache-ttl-ms: 60000
+    sustain-key-buffer-seconds: 10
+    es-enabled: true
+    es-url: http://127.0.0.1:9200
+    dlq-topic: iot-dlq
+
+logging:
+  level:
+    com.sanduo.energy: info

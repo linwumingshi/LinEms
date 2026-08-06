@@ -1,0 +1,174 @@
+/**
+ * 与后端统一响应体/各业务 DTO 对应的 TypeScript 类型。
+ * 字段命名与 Java（Jackson 默认驼峰）一一对应，见 Phase6 设计文档与对应 Controller 注释。
+ */
+
+/** 统一响应体 Result<T> */
+export interface ApiResult<T> {
+  code: number
+  message: string
+  data: T
+  traceId: string
+  timestamp: number
+}
+
+/** 分页结果 PageResult<T> */
+export interface PageResult<T> {
+  total: number
+  pages: number
+  current: number
+  size: number
+  records: T[]
+}
+
+// ---------------- 影子 Shadow ----------------
+
+export interface ShadowView {
+  deviceId: number
+  /** reported 属性快照（Map<属性标识, 值>） */
+  reported: Record<string, unknown>
+  /** desired 期望值快照 */
+  desired: Record<string, unknown>
+  /** 乐观锁版本；行不存在时为 null */
+  version: number | null
+}
+
+export interface DesiredResult {
+  deviceId: number
+  desired: Record<string, unknown>
+  /** desired - reported 差异（将驱动设备同步） */
+  delta: Record<string, unknown>
+  version: number
+}
+
+// ---------------- 指令 Command ----------------
+
+/** 创建指令请求体 */
+export interface CreateCommandPayload {
+  /** 幂等键（可选），服务端缺省生成 */
+  commandId?: string
+  productKey: string
+  deviceName: string
+  /** 物模型服务标识，如 setPower / startCharge */
+  command: string
+  params: Record<string, unknown>
+  /** 1 读取 2 控制，默认 2 */
+  commandType: number
+  /** 指令超时（毫秒），默认 15000 */
+  timeoutMs: number
+  /** 最大重试，默认 3 */
+  maxRetry: number
+  /** 发起人（人工），默认 0=系统 */
+  createBy: number
+}
+
+export interface CommandView {
+  commandId: string
+  tenantId: number
+  deviceId: number
+  productKey: string
+  command: string
+  commandType: number
+  params: Record<string, unknown>
+  /** 状态机数值：见 command 域 state 字典 */
+  state: number
+  /** CREATED/SENT/DEVICE_RECEIVED/EXECUTING/SUCCESS/FAILED/TIMEOUT */
+  stateName: string
+  retryCount: number
+  maxRetry: number
+  timeoutMs: number
+  sentTime: string | null
+  receivedTime: string | null
+  executingTime: string | null
+  finishTime: string | null
+  result: Record<string, unknown>
+  errorCode: string | null
+  errorMsg: string | null
+  createBy: number
+  createTime: string
+}
+
+// ---------------- 告警 Alarm ----------------
+
+export interface AlarmRecord {
+  alarmEventId: string
+  tenantId: number
+  deviceId: number
+  productKey: string
+  ruleId: number
+  ruleCode: string
+  /** 1 提示 2 一般 3 严重 4 危急 */
+  level: number
+  /** 1 属性 2 事件 3 策略 */
+  type: number
+  /** 0 触发中 1 已恢复 2 已确认 */
+  status: number
+  /** ACTIVE / RECOVERED / ACKED */
+  statusName: string
+  message: string
+  ext: Record<string, unknown>
+  triggeredTime: string
+  recoveredTime: string | null
+  ackedBy: string | null
+  ackTime: string | null
+}
+
+export interface AlarmRule {
+  ruleId: number
+  tenantId: number
+  ruleCode: string
+  ruleName: string
+  productId: number | null
+  deviceId: number | null
+  triggerType: number
+  condition: string
+  severity: number
+  silenceSeconds: number
+  recovery: string | null
+  status: number
+  description: string | null
+  createBy: number
+  createTime: string
+  updateTime: string
+}
+
+/** /ws/alarm 实时推送的告警事件（与 AlarmMessage 对应） */
+export interface AlarmPush {
+  alarmEventId: string
+  tenantId: number
+  deviceId: number
+  productKey: string
+  ruleId: number
+  ruleCode: string
+  level: number
+  type: number
+  /** ACTIVE（触发）/ RECOVERED（恢复） */
+  status: 'ACTIVE' | 'RECOVERED'
+  message: string
+  ext: Record<string, unknown>
+  /** 事件时间（毫秒） */
+  ts: number
+}
+
+// ---------------- 认证 Auth ----------------
+
+/** 登录请求体（与 LoginRequest 对齐；tenantId 缺省 1） */
+export interface LoginRequest {
+  username: string
+  password: string
+  tenantId?: number
+}
+
+/** 登录响应（与 LoginResponse 对齐）：JWT + 基本信息 + 权限/角色标识 */
+export interface LoginResult {
+  token: string
+  tokenType: string
+  expiresIn: number
+  userId: number
+  username: string
+  realName: string | null
+  tenantId: number
+  enterpriseId: number | null
+  permissions: string[]
+  roles: string[]
+}

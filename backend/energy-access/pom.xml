@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-access：MQTT 接入适配服务（Phase 5）
+  - 消费 mqtt.router：设备上行信封 → 物模型校验 + 类型强转 → 标准化
+    iot-thing-property / iot-thing-event / iot-command-ack / iot-raw（原始留痕）
+  - 消费 iot-command-down：平台下行指令桥接为 mqtt.router PUBLISH 信封下发设备
+  - 消费 iot-device-lifecycle：刷新 iot_device 在线态 + 上下线记录 + 离线指令补发
+  - 物模型/设备信息：cache:model/cache:device 缓存 + MySQL 兜底，按产品/设备键隔离
+  注：Kafka 走原生 kafka-clients（镜像缺失 spring-boot-starter-kafka，Phase 3 D9），
+      消费使用共享 KafkaConsumerEngine（common），生产使用 idempotent producer。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-access</artifactId>
+  <name>energy-access</name>
+  <description>MQTT 接入适配：上行解析/物模型校验/标准化、下行桥接、生命周期处理</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.access.AccessApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

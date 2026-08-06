@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-shadow：设备影子服务（Phase 6a）
+  - 消费 iot-thing-property → reported 双写（Redis Hash 热路径 + MySQL iot_shadow 乐观锁）
+  - REST：影子查询（合并视图）、desired 设置（乐观锁 + delta 检测）
+  - delta 差异发布 iot-shadow-delta；上游消费方（Phase 6b 指令中心）物化为 set 指令
+  - 变更历史 iot_shadow_history（节流写，按月分区）
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-shadow</artifactId>
+  <name>energy-shadow</name>
+  <description>设备影子：reported/desired/delta，MySQL 权威 + Redis 热缓存</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.shadow.ShadowApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

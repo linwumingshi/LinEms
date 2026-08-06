@@ -1,0 +1,84 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: energy-gateway
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  main:
+    web-application-type: reactive
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+      routes:
+        - id: energy-system
+          uri: lb://energy-system
+          predicates:
+            - Path=/api/system/**
+          filters:
+            - StripPrefix=1
+        - id: energy-product
+          uri: lb://energy-product
+          predicates:
+            - Path=/api/product/**
+          filters:
+            - StripPrefix=1
+        - id: energy-device
+          uri: lb://energy-device
+          predicates:
+            - Path=/api/device/**
+          filters:
+            - StripPrefix=1
+        - id: energy-station
+          uri: lb://energy-station
+          predicates:
+            - Path=/api/station/**
+          filters:
+            - StripPrefix=1
+        # ---- Phase 6 业务服务（controller 已映射 /api 前缀，故不 StripPrefix）----
+        - id: energy-shadow
+          uri: lb://energy-shadow
+          predicates:
+            - Path=/api/shadow/**
+        - id: energy-command
+          uri: lb://energy-command
+          predicates:
+            - Path=/api/command/**
+        - id: energy-alarm
+          uri: lb://energy-alarm
+          predicates:
+            - Path=/api/alarm/**
+        # ---- WebSocket 转发：/ws/alarm 实时告警推送到 energy-alarm ----
+        - id: energy-alarm-ws
+          uri: lb://energy-alarm
+          predicates:
+            - Path=/ws/**
+
+# ---- P0-1 网关鉴权：JWT 配置（与 energy-system 一致；生产经环境变量注入，见 P0-4） ----
+sanduo:
+  jwt:
+    expire-seconds: 7200
+    issuer: sanduo-ems
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+
+logging:
+  level:
+    org.springframework.cloud.gateway: info

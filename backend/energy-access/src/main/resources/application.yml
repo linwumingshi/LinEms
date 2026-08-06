@@ -1,0 +1,67 @@
+server:
+  port: 8111
+
+spring:
+  application:
+    name: energy-access
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_device?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # MySQL 不可用时允许服务先启动（物模型/设备查询降级为缓存，不阻塞 Kafka 摄取）
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+sanduo:
+  access:
+    node-id: access-1
+    kafka-bootstrap-servers: 127.0.0.1:9092
+    consumer-threads: 4
+    poll-ms: 200
+    model-cache-ttl-seconds: 600
+    device-cache-ttl-seconds: 1800
+    msg-dedup-ttl-seconds: 300
+    dlq-topic: iot-dlq
+    offline-max-redeliver: 200
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.sanduo.energy: info

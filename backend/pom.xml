@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  深圳三多能源储能管理平台 · 后端父工程
+  Phase 3 版本：v1.0  日期：2026-08-06
+  Java 17 / Spring Boot 3.2.x / Spring Cloud Alibaba 2023.0.1.0
+  模块说明：父 POM 仅列出已创建模块；shadow/command/alarm/ems 及接入类服务
+           （mqtt-broker/access/message/tsdb 等）按 Phase 4~6 增量加入。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.sanduo</groupId>
+  <artifactId>energy-ems-parent</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>energy-ems-parent</name>
+  <description>深圳三多能源储能管理平台 - 后端微服务父工程</description>
+
+  <modules>
+    <module>energy-common</module>
+    <module>energy-security-core</module>
+    <module>energy-gateway</module>
+    <module>energy-system</module>
+    <module>energy-product</module>
+    <module>energy-device</module>
+    <module>energy-station</module>
+    <module>energy-mqtt-broker</module>
+    <module>energy-access</module>
+    <module>energy-tsdb</module>
+    <module>energy-shadow</module>
+    <module>energy-command</module>
+    <module>energy-alarm</module>
+  </modules>
+
+  <properties>
+    <java.version>17</java.version>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <spring-cloud.version>2023.0.1</spring-cloud.version>
+    <spring-cloud-alibaba.version>2023.0.1.0</spring-cloud-alibaba.version>
+    <mybatis-plus.version>3.5.7</mybatis-plus.version>
+    <redisson.version>3.27.2</redisson.version>
+    <jjwt.version>0.12.6</jjwt.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+        <version>${spring-cloud-alibaba.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.redisson</groupId>
+        <artifactId>redisson-spring-boot-starter</artifactId>
+        <version>${redisson.version}</version>
+      </dependency>
+      <!-- 内部模块统一版本 -->
+      <dependency>
+        <groupId>com.sanduo</groupId>
+        <artifactId>energy-common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sanduo</groupId>
+        <artifactId>energy-security-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- JWT（jjwt 0.12，纯 Java，无 Spring 依赖，网关 WebFlux 可用） -->
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- P0-4 密钥外置：全部模块继承 Nacos 配置中心客户端（BOM 2023.0.1.0 管版本；纯库模块不触发自动配置） -->
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+            </exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

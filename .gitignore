@@ -1,0 +1,29 @@
+# 密钥/证书：私钥一律不入库（P0-4 密钥外置同轨）
+deploy/certs/
+*.pem
+*.key
+*.p12
+*.jks
+# P0-4：本地密钥 env（dev 值仅在本机，不入库；.example 为提交的模板）
+deploy/env/local.env
+deploy/env/*.tmp
+
+# 构建产物（Maven / 前端）
+**/target/
+frontend/node_modules/
+frontend/dist/
+
+# 运行日志与临时文件
+deploy/logs/
+test/drill/logs/
+test/stress/results/
+*.pid
+*.log
+
+# SDD 计划工作区（subagent-driven 临时产物：ledger/briefs/reports）
+.superpowers/
+
+# IDE / 编辑器本地设置
+.idea/
+.claude/settings.local.json
+*.iml

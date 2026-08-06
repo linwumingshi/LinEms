@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-mqtt-broker：自研 Netty MQTT Broker（Phase 4）
+  - Netty MQTT 3.1.1/5.0 codec（netty-codec-mqtt），NIO 事件循环
+  - 认证：HMAC-SHA256 + nonce 防重放，Redis cache:cred 缓存 + MySQL iot_device/iot_device_credential 兜底
+  - 会话：内存热 Session + Redis mqtt:session/mqtt:subs/mqtt:inflight/mqtt:offline 持久化
+  - 跨节点路由：raw kafka-clients 生产/消费 mqtt.router（每节点唯一消费组实现全量 fan-out）
+  - 生命周期：Redis iot:online + Kafka iot-device-lifecycle
+  注：因镜像缺失 spring-boot-starter-kafka（Phase 3 D9），改用原生 kafka-clients 3.6.2，
+      满足 Broker 对「低延迟、自定义分区策略、无额外依赖」的高性能诉求。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-mqtt-broker</artifactId>
+  <name>energy-mqtt-broker</name>
+  <description>自研 Netty MQTT Broker：连接接入/认证/会话/跨节点路由/生命周期</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <!-- 服务注册：Broker 节点以独立服务名注册 Nacos，供网关/运维/控制台发现 -->
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <!-- Netty MQTT codec + handler/transport（镜像可用版本 4.1.108.Final，已探测） -->
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-codec-mqtt</artifactId>
+      <version>4.1.108.Final</version>
+    </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-handler</artifactId>
+      <version>4.1.108.Final</version>
+    </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-transport</artifactId>
+      <version>4.1.108.Final</version>
+    </dependency>
+
+    <!-- Kafka 原生客户端：跨节点路由 + 生命周期事件（替代缺失 starter，见 D9） -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.broker.MqttBrokerApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

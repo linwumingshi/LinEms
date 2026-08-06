@@ -1,0 +1,36 @@
+{
+  "index_patterns": ["es-alarm-log-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "index.lifecycle.name": "es_log_policy",
+      "index.routing.allocation.require.data": "hot",
+      "refresh_interval": "5s"
+    },
+    "aliases": {
+      "es-alarm-log": {}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp":     { "type": "date" },
+        "trace_id":       { "type": "keyword" },
+        "tenant_id":      { "type": "long" },
+        "alarm_event_id": { "type": "keyword" },
+        "device_id":      { "type": "keyword" },
+        "product_key":    { "type": "keyword" },
+        "rule_id":        { "type": "long" },
+        "rule_code":      { "type": "keyword" },
+        "level":          { "type": "keyword" },
+        "type":           { "type": "keyword" },
+        "status":         { "type": "keyword" },
+        "message": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "ext":            { "type": "object", "enabled": true }
+      }
+    }
+  }
+}

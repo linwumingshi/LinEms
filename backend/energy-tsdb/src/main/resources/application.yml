@@ -1,0 +1,44 @@
+server:
+  port: 8112
+
+spring:
+  application:
+    name: energy-tsdb
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+  # 本服务无 MySQL DataSource；DataSource/MyBatis 自动配置已在 TsdbApplication 排除
+
+sanduo:
+  tsdb:
+    node-id: tsdb-1
+    kafka-bootstrap-servers: 127.0.0.1:9092
+    consumer-threads: 4
+    poll-ms: 200
+    raw-db: iot_tsdb_raw
+    event-db: iot_tsdb_event
+    jdbc-url: jdbc:TAOS-RS://127.0.0.1:6041/iot_tsdb_raw
+    jdbc-username: root
+    batch-size: 1000
+    batch-bytes: 2097152
+    msg-dedup-ttl-seconds: 300
+    dlq-topic: iot-dlq
+
+logging:
+  level:
+    com.sanduo.energy: info

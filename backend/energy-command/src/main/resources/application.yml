@@ -1,0 +1,63 @@
+server:
+  port: 8114
+
+spring:
+  application:
+    name: energy-command
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_command?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # MySQL 不可用时允许服务先启动（设备解析降级，不阻塞 ACK/下线指令消费）
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+sanduo:
+  command:
+    node-id: command-1
+    kafka-bootstrap-servers: 127.0.0.1:9092
+    consumer-threads: 4
+    poll-ms: 200
+    idempotency-ttl-seconds: 86400
+    offline-queue-max: 500
+    offline-queue-drain-max: 500
+    inflight-ttl-ms: 300000
+    scan-interval-ms: 5000
+    scan-initial-delay-ms: 10000
+    scan-batch-size: 500
+    default-timeout-ms: 15000
+    default-max-retry: 3
+    dlq-topic: iot-dlq
+
+logging:
+  level:
+    com.sanduo.energy: info

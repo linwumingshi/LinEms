@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-tsdb：TDengine 时序写入服务（Phase 5）
+  - 消费 iot-thing-property（key=deviceId）：物模型宽表 SQL → TDengine iot_tsdb_raw
+  - 消费 iot-thing-event：事件落库 → iot_tsdb_event.st_event（payload JSON 列）
+  - 批量缓冲 + 整语句多 INSERT 块执行；跨边界幂等（stage=tsdb）
+  - 直连 TAOS-RS（taos-jdbcdriver），无 MySQL DataSource（启动排除 DataSource 自动配置）
+  注：Kafka 走原生 kafka-clients（同 energy-access），与共享消费引擎共用。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-tsdb</artifactId>
+  <name>energy-tsdb</name>
+  <description>TDengine 时序写入：属性宽表/事件批量摄取，幂等去重</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.6.2</version>
+    </dependency>
+
+    <!-- TDengine 连接器（TAOS-RS RESTful）：已在 aliyun mirror 验证 3.9.0 -->
+    <dependency>
+      <groupId>com.taosdata.jdbc</groupId>
+      <artifactId>taos-jdbcdriver</artifactId>
+      <version>3.9.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.sanduo.energy.tsdb.TsdbApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
