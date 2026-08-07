@@ -24,6 +24,8 @@ const menus = [
   { path: '/shadow', title: '影子', icon: 'Files' },
   { path: '/command', title: '指令中心', icon: 'Promotion' },
   { path: '/alarm', title: '告警中心', icon: 'Bell' },
+  { path: '/ems/strategy', title: '策略管理', icon: 'SetUp' },
+  { path: '/ems/plan', title: '充放电计划', icon: 'TrendCharts' },
 ]
 
 /** 登出：关 WS → 吊销会话（后端失败也清本地）→ 回登录页 */
