@@ -772,8 +772,8 @@ public class SafetyEnvelopeValidator {
      * 安全包络校验：SOC 越界 + 充电/放电功率越界。温度校验（tempMax）本期推迟——
      * PlanPoint 无温度数据（温度是遥测值非计划值），接口保留占位，后续接温感遥测时启用。
      */
-    public ValidationResult validate(List<PlanPoint> points, double socMin, double socMax,
-                                     double chargeMax, double dischargeMax, Double tempMax) {
+    public static ValidationResult validate(List<PlanPoint> points, double socMin, double socMax,
+                                            double chargeMax, double dischargeMax, Double tempMax) {
         List<String> rejections = new ArrayList<>();
         for (PlanPoint p : points) {
             if (p.socTarget() < socMin || p.socTarget() > socMax) {
