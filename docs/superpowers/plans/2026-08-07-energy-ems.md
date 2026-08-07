@@ -2111,6 +2111,7 @@ export function useEChart(elRef: Ref<HTMLElement | undefined>) {
 ```vue
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
 import type { EmsPlan, EmsPlanPoint } from '@/types/models'
@@ -2125,31 +2126,44 @@ const { render } = useEChart(chartEl)
 const currentPoints = ref<EmsPlanPoint[]>([])
 
 async function load() {
-  const data = await emsApi.planPage({ pageNo: pageNo.value, pageSize: pageSize.value })
-  list.value = data.records
-  total.value = data.total
+  try {
+    const data = await emsApi.planPage({ pageNo: pageNo.value, pageSize: pageSize.value })
+    list.value = data.records
+    total.value = data.total
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function viewDetail(row: EmsPlan) {
   drawerVisible.value = true
-  currentPoints.value = await emsApi.planPoints(row.planId)
-  render({
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: currentPoints.value.map(p => p.time) },
-    yAxis: { type: 'value', name: '功率 kW' },
-    series: [{
-      type: 'bar',
-      data: currentPoints.value.map(p => ({
-        value: p.powerKw,
-        itemStyle: { color: p.action === 'CHARGE' ? '#67c23a' : p.action === 'DISCHARGE' ? '#f56c6c' : '#909399' },
-      })),
-    }],
-  })
+  try {
+    currentPoints.value = await emsApi.planPoints(row.planId)
+    render({
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: currentPoints.value.map(p => p.time) },
+      yAxis: { type: 'value', name: '功率 kW' },
+      series: [{
+        type: 'bar',
+        data: currentPoints.value.map(p => ({
+          value: p.powerKw,
+          itemStyle: { color: p.action === 'CHARGE' ? '#67c23a' : p.action === 'DISCHARGE' ? '#f56c6c' : '#909399' },
+        })),
+      }],
+    })
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function dispatch(row: EmsPlan) {
-  await emsApi.dispatch(row.planId)
-  load()
+  try {
+    await emsApi.dispatch(row.planId)
+    ElMessage.success('已下发')
+    load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 onMounted(load)
