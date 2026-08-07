@@ -61,6 +61,12 @@ spring:
           uri: lb://energy-alarm
           predicates:
             - Path=/api/alarm/**
+        - id: energy-ems
+          uri: lb://energy-ems
+          predicates:
+            - Path=/api/ems/**
+          filters:
+            - StripPrefix=1
         # ---- WebSocket 转发：/ws/alarm 实时告警推送到 energy-alarm ----
         - id: energy-alarm-ws
           uri: lb://energy-alarm

@@ -41,6 +41,7 @@ SERVICES=(
   "energy-shadow:8113"
   "energy-command:8114"
   "energy-alarm:8115"
+  "energy-ems:8105"
 )
 GATEWAY_PORT=8000
 

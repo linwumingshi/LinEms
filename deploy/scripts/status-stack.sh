@@ -15,7 +15,7 @@ for entry in \
     "energy-gateway:8000" "energy-system:8101" "energy-product:8102" \
     "energy-device:8103" "energy-station:8104" "energy-mqtt-broker:1883" \
     "energy-access:8111" "energy-tsdb:8112" "energy-shadow:8113" \
-    "energy-command:8114" "energy-alarm:8115"; do
+    "energy-command:8114" "energy-alarm:8115" "energy-ems:8105"; do
   name="${entry%%:*}"; port="${entry##*:}"
   pid="$(service_pid "$name")"
   if port_open 127.0.0.1 "$port" && [ -n "$pid" ]; then

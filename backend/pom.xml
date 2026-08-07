@@ -39,6 +39,7 @@
     <module>energy-shadow</module>
     <module>energy-command</module>
     <module>energy-alarm</module>
+    <module>energy-ems</module>
   </modules>
 
   <properties>

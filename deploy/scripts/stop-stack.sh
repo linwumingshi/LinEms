@@ -14,7 +14,7 @@ STOP_INFRA=false
 log "========== 三多平台全栈停止 =========="
 
 # 停止后端服务（网关最后启动、最先停；顺序无强依赖，逐个停）
-for name in energy-gateway energy-alarm energy-command energy-shadow \
+for name in energy-gateway energy-alarm energy-ems energy-command energy-shadow \
             energy-tsdb energy-access energy-mqtt-broker \
             energy-station energy-device energy-product energy-system; do
   stop_service "$name"
