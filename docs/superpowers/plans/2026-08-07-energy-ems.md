@@ -1025,6 +1025,8 @@ git commit -m "feat(energy-ems): 策略/电价/约束 Service 层"
 ```java
 package com.sanduo.energy.ems.service;
 
+import com.sanduo.energy.common.exception.BusinessException;
+import com.sanduo.energy.common.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -1042,7 +1044,7 @@ public class CommandClient {
     @Value("${sanduo.ems.command-base-url:http://127.0.0.1:8114}")
     private String baseUrl;
 
-    /** 调 energy-command POST /api/command，返回 commandId。 */
+    /** 调 energy-command POST /api/command，返回 commandId。业务失败抛 BusinessException（message 透传 command 服务）。 */
     public String dispatch(String productKey, String deviceName, String command,
                            Map<String, Object> params, long createBy) {
         Map<String, Object> body = new HashMap<>();
@@ -1055,7 +1057,17 @@ public class CommandClient {
             body.put("params", params);
         }
         ResponseEntity<Map> resp = rest.postForEntity(baseUrl + "/api/command", body, Map.class);
-        Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
+        Map<String, Object> result = resp.getBody();
+        if (result == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "command 服务返回空响应");
+        }
+        if (!(result.get("code") instanceof Number n) || n.intValue() != 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "command 服务拒绝指令: " + result.get("message"));
+        }
+        Map<String, Object> data = (Map<String, Object>) result.get("data");
+        if (data == null || data.get("commandId") == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "command 服务响应缺少 commandId");
+        }
         return (String) data.get("commandId");
     }
 }
