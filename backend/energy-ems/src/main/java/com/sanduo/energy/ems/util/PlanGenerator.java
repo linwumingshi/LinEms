@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -59,6 +60,8 @@ public final class PlanGenerator {
             }
             // 当日尾点锚定待机（保证前端图时间轴完整）
             points.add(new PlanPoint(LocalTime.of(23, 55), "STANDBY", 0, soc));
+            // 按时间升序（不依赖 config 窗口书写顺序）
+            points.sort(Comparator.comparing(PlanPoint::time));
         } catch (Exception e) {
             throw new IllegalArgumentException("策略配置解析失败: " + e.getMessage(), e);
         }

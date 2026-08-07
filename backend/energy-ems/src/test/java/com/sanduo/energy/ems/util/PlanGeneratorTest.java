@@ -27,5 +27,9 @@ class PlanGeneratorTest {
         boolean hasCharge = points.stream().anyMatch(p -> p.action().equals("CHARGE"));
         boolean hasDischarge = points.stream().anyMatch(p -> p.action().equals("DISCHARGE"));
         assertTrue(hasCharge && hasDischarge);
+        // SOC 不越界 + 尾点锚定待机
+        assertTrue(points.stream().allMatch(p -> p.socTarget() >= 10 && p.socTarget() <= 90));
+        assertEquals(LocalTime.of(23, 55), points.get(points.size() - 1).time());
+        assertEquals("STANDBY", points.get(points.size() - 1).action());
     }
 }
