@@ -19,6 +19,8 @@ async function load() {
     const data = await emsApi.strategyPage({ pageNo: pageNo.value, pageSize: pageSize.value })
     list.value = data.records
     total.value = data.total
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
   } finally { loading.value = false }
 }
 
@@ -26,29 +28,51 @@ function openCreate() { editing.value = {}; isEdit.value = false; dialogVisible.
 function openEdit(row: EmsStrategy) { editing.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 
 async function save() {
-  if (isEdit.value) await emsApi.strategyUpdate(editing.value.strategyId!, editing.value)
-  else await emsApi.strategyCreate(editing.value)
-  ElMessage.success('保存成功')
-  dialogVisible.value = false
-  load()
+  try {
+    if (isEdit.value) await emsApi.strategyUpdate(editing.value.strategyId!, editing.value)
+    else await emsApi.strategyCreate(editing.value)
+    ElMessage.success('保存成功')
+    dialogVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function remove(row: EmsStrategy) {
-  await ElMessageBox.confirm(`确定删除策略「${row.strategyName}」吗？`, '提示', { type: 'warning' })
-  await emsApi.strategyDelete(row.strategyId)
-  ElMessage.success('已删除')
-  load()
+  try {
+    await ElMessageBox.confirm(`确定删除策略「${row.strategyName}」吗？`, '提示', { type: 'warning' })
+  } catch {
+    return // 取消
+  }
+  try {
+    await emsApi.strategyDelete(row.strategyId)
+    ElMessage.success('已删除')
+    load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function switchStatus(row: EmsStrategy, status: number) {
-  await emsApi.strategySwitchStatus(row.strategyId, status)
-  ElMessage.success(status === 1 ? '已启用' : '已停用')
-  load()
+  try {
+    await emsApi.strategySwitchStatus(row.strategyId, status)
+    ElMessage.success(status === 1 ? '已启用' : '已停用')
+    load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function generatePlan(row: EmsStrategy) {
-  await emsApi.planGenerate({ stationId: row.stationId, strategyId: row.strategyId, planDate: new Date().toISOString().slice(0,10) })
-  ElMessage.success('计划已生成')
+  const d = new Date()
+  const planDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  try {
+    await emsApi.planGenerate({ stationId: row.stationId, strategyId: row.strategyId, planDate })
+    ElMessage.success('计划已生成')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 onMounted(load)
