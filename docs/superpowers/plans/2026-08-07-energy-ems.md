@@ -1148,7 +1148,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/strategy")
+@RequestMapping("/ems/strategy")
 public class EmsStrategyController {
 
     private final EmsStrategyService service;
@@ -1206,7 +1206,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/price")
+@RequestMapping("/ems/price")
 public class EmsPriceController {
 
     private final EmsPriceService service;
@@ -1250,7 +1250,7 @@ import com.sanduo.energy.ems.service.EmsConstraintService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/constraint")
+@RequestMapping("/ems/constraint")
 public class EmsConstraintController {
 
     private final EmsConstraintService service;
@@ -1709,7 +1709,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/plan")
+@RequestMapping("/ems/plan")
 public class EmsPlanController {
 
     private final EmsPlanService service;
