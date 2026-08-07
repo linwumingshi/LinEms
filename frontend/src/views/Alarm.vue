@@ -128,17 +128,24 @@ onMounted(() => void load())
 </script>
 
 <template>
-  <div class="page-card">
+  <div class="ex-page">
+    <header class="ex-page-head">
+      <div class="head-title">
+        <h1 class="ex-title">告警中心</h1>
+        <p class="ex-sub">实时推送 + 历史检索 · 级别/状态语义色与设备监控保持一致</p>
+      </div>
+      <el-button link type="primary" @click="openRules">告警规则配置</el-button>
+    </header>
+
     <!-- 实时推送面板 -->
-    <el-card shadow="never" class="live-card">
-      <template #header>
-        <div class="live-header">
-          <span>实时告警推送</span>
-          <el-tag :type="connected ? 'success' : 'danger'" size="small" effect="dark">
-            {{ connected ? '已连接 /ws/alarm' : '未连接（自动重连中）' }}
-          </el-tag>
-        </div>
-      </template>
+    <section class="ex-card live-card">
+      <div class="ex-card-head">
+        <h2 class="ex-card-title">实时告警推送</h2>
+        <span class="ws-pill" :class="{ on: connected }">
+          <span class="dot"></span>
+          {{ connected ? '已连接 /ws/alarm' : '未连接（自动重连中）' }}
+        </span>
+      </div>
       <el-empty
         v-if="liveEvents.length === 0"
         description="暂无实时告警，等待设备上报触发告警规则…"
@@ -172,10 +179,10 @@ onMounted(() => void load())
           </div>
         </el-timeline-item>
       </el-timeline>
-    </el-card>
+    </section>
 
     <!-- 查询区 -->
-    <el-card shadow="never" class="filter-card">
+    <section class="ex-card filter-card">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="级别">
           <el-select v-model="filters.level" placeholder="全部" clearable style="width: 110px">
@@ -210,16 +217,14 @@ onMounted(() => void load())
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
-    </el-card>
+    </section>
 
     <!-- 告警表格 -->
-    <el-card shadow="never">
-      <template #header>
-        <div class="table-header">
-          <span>告警记录</span>
-          <el-button link type="primary" @click="openRules">告警规则配置</el-button>
-        </div>
-      </template>
+    <section class="ex-card table-card">
+      <div class="ex-card-head">
+        <h2 class="ex-card-title">告警记录</h2>
+        <span class="table-total">共 {{ total }} 条</span>
+      </div>
       <el-table :data="tableData" v-loading="loading" size="default" empty-text="暂无告警记录">
         <el-table-column prop="ruleCode" label="规则" width="140" show-overflow-tooltip />
         <el-table-column label="级别" width="80">
@@ -239,12 +244,12 @@ onMounted(() => void load())
           <template #default="{ row }">{{ extText(row) }}</template>
         </el-table-column>
         <el-table-column label="触发时间" width="160">
-          <template #default="{ row }">{{ toLocal(row.triggeredTime) }}</template>
+          <template #default="{ row }"><span class="ex-num">{{ toLocal(row.triggeredTime) }}</span></template>
         </el-table-column>
         <el-table-column label="恢复/确认" width="150">
           <template #default="{ row }">
-            <span v-if="row.status === 1">恢复 {{ toLocal(row.recoveredTime) }}</span>
-            <span v-else-if="row.status === 2">
+            <span v-if="row.status === 1" class="ex-num">恢复 {{ toLocal(row.recoveredTime) }}</span>
+            <span v-else-if="row.status === 2" class="ex-num">
               {{ row.ackedBy }} @ {{ toLocal(row.ackTime) }}
             </span>
             <span v-else>-</span>
@@ -277,7 +282,7 @@ onMounted(() => void load())
           @size-change="page = 1; void load()"
         />
       </div>
-    </el-card>
+    </section>
 
     <!-- 规则抽屉 -->
     <el-drawer v-model="rulesDrawer" title="告警规则（启用中）" size="480px">
@@ -294,18 +299,38 @@ onMounted(() => void load())
 </template>
 
 <style scoped>
-.live-card {
-  margin-bottom: 12px;
-}
-.live-header {
-  display: flex;
-  justify-content: space-between;
+.ws-pill {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ex-ink-2);
+  border: 1px solid var(--ex-hair);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.ws-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ex-danger);
+}
+.ws-pill.on .dot {
+  background: var(--ex-charge);
+}
+.ws-pill.on {
+  color: var(--ex-charge);
+  border-color: #cfe6d8;
+  background: #f2f9f5;
+}
+.live-card {
+  padding-bottom: 12px;
 }
 .live-timeline {
   max-height: 260px;
   overflow-y: auto;
-  padding-right: 8px;
+  padding: 6px 18px 0;
 }
 .live-item {
   display: flex;
@@ -315,27 +340,34 @@ onMounted(() => void load())
 }
 .live-rule {
   font-weight: 600;
-  color: #303133;
+  color: var(--ex-ink);
 }
 .live-msg {
-  color: #606266;
+  color: var(--ex-ink-2);
   flex: 1;
   min-width: 120px;
 }
 .filter-card {
+  padding: 4px 14px 0;
+}
+.filter-card :deep(.el-form-item) {
   margin-bottom: 12px;
 }
-.table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.table-card {
+  padding-bottom: 10px;
+}
+.table-total {
+  font-size: 12px;
+  color: var(--ex-ink-3);
+  font-variant-numeric: tabular-nums;
 }
 .pager {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+  padding: 0 18px;
 }
 .acked {
-  color: #909399;
+  color: var(--ex-ink-3);
 }
 </style>

@@ -1,16 +1,190 @@
+/* =====================================================================
+ * EnergyX 储能管理平台 · 仪表仪器风设计系统
+ * 语言参照 EmsPlan 页（light technical instrument）：
+ *   纸面 #F6F8FA / 油墨 #1F2833 / 发丝线 #DCE2EA / 充电绿 #2E9E5B / 放电琥珀 #E08A1E
+ * 数字用 Bahnschrift（DIN 工业字形），数据刻度用 Cascadia Mono，无多余动效。
+ * ===================================================================== */
+
+:root {
+  /* —— 设计 token —— */
+  --ex-bg: #f6f8fa;
+  --ex-card: #ffffff;
+  --ex-ink: #1f2833;
+  --ex-ink-2: #5b6b8c;
+  --ex-ink-3: #94a0ac;
+  --ex-hair: #dce2ea;
+  --ex-hair-soft: #eef1f6;
+  --ex-split: #ecf0f5;
+  --ex-charge: #2e9e5b;
+  --ex-discharge: #e08a1e;
+  --ex-danger: #d64541;
+  --ex-steel: #2b6cb0;
+
+  /* —— Element Plus 主题注入：统一为仪器钢蓝 + 能源语义色 —— */
+  --el-color-primary: #2b6cb0;
+  --el-color-primary-light-3: #6b96c6;
+  --el-color-primary-light-5: #9cb8d8;
+  --el-color-primary-light-7: #cddbe9;
+  --el-color-primary-light-8: #e3ecf4;
+  --el-color-primary-light-9: #eef3f8;
+  --el-color-primary-dark-2: #225a90;
+  --el-color-success: #2e9e5b;
+  --el-color-danger: #d64541;
+  --el-color-warning: #e08a1e;
+  --el-color-info: #5b6b8c;
+
+  --el-text-color-primary: #1f2833;
+  --el-text-color-regular: #3a4556;
+  --el-text-color-secondary: #5b6b8c;
+  --el-text-color-placeholder: #94a0ac;
+  --el-border-color: #dce2ea;
+  --el-border-color-light: #e3e8ef;
+  --el-border-color-lighter: #eef1f6;
+  --el-border-color-extra-light: #f0f3f7;
+  --el-fill-color: #f6f8fa;
+  --el-fill-color-light: #f7f9fb;
+  --el-fill-color-lighter: #fafbfd;
+
+  --el-table-header-bg-color: #f7f9fb;
+  --el-table-header-text-color: #5b6b8c;
+  --el-table-border-color: #eef1f6;
+  --el-table-row-hover-bg-color: #f2f6fb;
+}
+
 html,
 body,
 #app {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #f0f2f5;
+  background-color: var(--ex-bg);
+  color: var(--ex-ink);
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', Arial, sans-serif;
 }
 
-.page-card {
-  margin: 12px;
+/* =====================================================================
+ * 共享结构件（所有页面同一套仪表语言）
+ * ===================================================================== */
+
+/* 页面脚手架：居中纸面，卡片间 14px 呼吸 */
+.ex-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1240px;
+  margin: 0 auto;
+  color: var(--ex-ink);
+}
+
+/* 页头：标题 + 副题（Bahnschrift 数字刻度） */
+.ex-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ex-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--ex-ink);
+}
+.ex-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ex-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 白色仪器卡 */
+.ex-card {
+  background: var(--ex-card);
+  border: 1px solid var(--ex-hair);
+  border-radius: 6px;
+}
+.ex-card-pad {
+  padding: 16px 18px;
+}
+
+/* 卡片头：标题 + 右侧操作/图例 */
+.ex-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px 0;
+}
+.ex-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ex-ink);
+}
+
+/* 仪表读数带：白卡 + 发丝分隔，数字用 Bahnschrift */
+.ex-readout-band {
+  display: grid;
+  grid-template-columns: repeat(var(--ro-cols, 5), 1fr);
+  background: var(--ex-card);
+  border: 1px solid var(--ex-hair);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ex-readout {
+  padding: 14px 18px;
+  border-left: 1px solid var(--ex-hair-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ex-readout:first-child {
+  border-left: none;
+}
+.ex-readout-label {
+  font-size: 12px;
+  color: var(--ex-ink-2);
+  letter-spacing: 1px;
+}
+.ex-readout-value {
+  font-family: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', sans-serif;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ex-ink);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ex-readout-value em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--ex-ink-2);
+  font-weight: 400;
+}
+.ex-readout-value.md {
+  font-size: 20px;
+}
+.ex-readout-value.danger {
+  color: var(--ex-danger);
+}
+.ex-readout-value.charge {
+  color: var(--ex-charge);
+}
+.ex-readout-value.discharge {
+  color: var(--ex-discharge);
+}
+.ex-readout-value.steel {
+  color: var(--ex-steel);
+}
+
+/* 表格数字列刻度 */
+.ex-num {
+  font-variant-numeric: tabular-nums;
 }
 
 /* 统一小屏滚动条 */
@@ -19,6 +193,21 @@ body,
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(31, 40, 51, 0.18);
   border-radius: 3px;
+}
+
+@media (max-width: 900px) {
+  .ex-readout-band {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .ex-readout:nth-child(3) {
+    border-left: none;
+  }
+  .ex-readout {
+    border-top: 1px solid var(--ex-hair-soft);
+  }
+  .ex-readout:nth-child(-n + 2) {
+    border-top: none;
+  }
 }

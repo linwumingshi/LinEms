@@ -44,11 +44,19 @@ async function handleLogin(): Promise<void> {
 
 <template>
   <div class="login-page">
-    <el-card class="login-card">
+    <div class="login-grid" aria-hidden="true"></div>
+
+    <div class="login-card ex-card">
       <div class="brand">
-        <h1>EnergyX</h1>
-        <p>储能物联网监控与能量管理</p>
+        <span class="brand-row">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13.5 2.2 5 13h5.2l-1.6 8.8L17.5 11h-5.3L13.5 2.2z" fill="currentColor" />
+          </svg>
+          <h1 class="brand-name">EnergyX</h1>
+        </span>
+        <p class="brand-sub">储能物联网监控与能量管理</p>
       </div>
+
       <el-form ref="formRef" :model="model" :rules="rules" size="large" @keyup.enter="handleLogin">
         <el-form-item prop="username">
           <el-input v-model="model.username" placeholder="用户名" clearable />
@@ -62,44 +70,128 @@ async function handleLogin(): Promise<void> {
           </el-button>
         </el-form-item>
       </el-form>
+
       <div class="hint">演示账号：admin / admin123</div>
-    </el-card>
+    </div>
+
+    <div class="login-status" aria-hidden="true">
+      <span class="pulse"></span>
+      EnergyX 监控终端 · 系统服务就绪
+    </div>
   </div>
 </template>
 
 <style scoped>
 .login-page {
   height: 100%;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #001529 0%, #0b3d6e 100%);
+  background: var(--ex-bg);
+  overflow: hidden;
 }
+
+/* 蓝图网格纸底纹：发丝线正交网格，仪表设计图纸的世界 */
+.login-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--ex-hair-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ex-hair-soft) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 42%, #000 30%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 42%, #000 30%, transparent 72%);
+}
+
 .login-card {
   width: 380px;
-  padding: 8px 12px 4px;
+  padding: 34px 34px 22px;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 12px 40px rgba(31, 40, 51, 0.08);
 }
+.login-card::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: calc(100% + 2px);
+  height: 3px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(90deg, var(--ex-charge), var(--ex-steel));
+}
+
 .brand {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
-.brand h1 {
-  margin: 0 0 6px;
-  font-size: 20px;
-  color: #303133;
-  letter-spacing: 2px;
+.brand-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
 }
-.brand p {
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  color: var(--ex-charge);
+}
+.brand-name {
   margin: 0;
-  font-size: 13px;
-  color: #909399;
+  font-family: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ex-ink);
 }
+.brand-sub {
+  margin: 8px 0 0;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--ex-ink-2);
+}
+
 .submit {
   width: 100%;
+  font-weight: 600;
+  letter-spacing: 6px;
 }
 .hint {
   text-align: center;
   font-size: 12px;
-  color: #909399;
+  color: var(--ex-ink-3);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 登录页专属签名：控制室“系统就绪”脉搏灯 */
+.login-status {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--ex-ink-3);
+  z-index: 1;
+}
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ex-charge);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 158, 91, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(46, 158, 91, 0);
+  }
 }
 </style>

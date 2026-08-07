@@ -49,25 +49,35 @@ async function handleLogout(): Promise<void> {
   <el-container class="layout">
     <el-aside width="220px" class="aside">
       <div class="logo">
+        <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M13.5 2.2 5 13h5.2l-1.6 8.8L17.5 11h-5.3L13.5 2.2z"
+            fill="currentColor"
+          />
+        </svg>
         <span class="logo-text">EnergyX</span>
       </div>
-      <el-menu :default-active="route.path" router class="menu" background-color="#001529" text-color="#a6adb4" active-text-color="#fff">
+      <el-menu :default-active="route.path" router class="menu">
         <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
           <span>{{ m.title }}</span>
         </el-menu-item>
       </el-menu>
+      <div class="aside-foot">
+        <span class="foot-dot" :class="{ on: connected }"></span>
+        监控通道 {{ connected ? '在线' : '离线' }}
+      </div>
     </el-aside>
 
     <el-container>
       <el-header class="header">
         <div class="header-title">{{ route.meta.title || '' }}</div>
         <div class="header-right">
-          <el-tag :type="connected ? 'success' : 'danger'" size="small" effect="dark" class="ws-tag">
-            <span class="dot" :class="{ on: connected }"></span>
+          <span class="ws-pill" :class="{ on: connected }">
+            <span class="dot"></span>
             {{ connected ? '告警推送已连接' : '告警推送断开' }}
-          </el-tag>
-          <el-badge :value="unread" :hidden="unread === 0" :max="99">
-            <span class="bell">🔔</span>
+          </span>
+          <el-badge :value="unread" :hidden="unread === 0" :max="99" class="bell-badge">
+            <span class="bell" role="img" aria-label="未读告警">🔔</span>
           </el-badge>
           <el-dropdown>
             <span class="user">
@@ -95,25 +105,91 @@ async function handleLogout(): Promise<void> {
 .layout {
   height: 100%;
 }
+
+/* —— 左侧仪表导航：纸面底 + 发丝右线 + 充电绿激活标记 —— */
 .aside {
-  background-color: #001529;
+  background: var(--ex-card);
+  border-right: 1px solid var(--ex-hair);
+  display: flex;
+  flex-direction: column;
 }
 .logo {
   height: 60px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 1px;
+  gap: 9px;
+  border-bottom: 1px solid var(--ex-hair-soft);
+}
+.logo-mark {
+  width: 20px;
+  height: 20px;
+  color: var(--ex-charge);
+  flex: none;
+}
+.logo-text {
+  font-family: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--ex-ink);
 }
 .menu {
+  flex: 1;
   border-right: none;
+  padding: 8px 0;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--ex-ink-2);
+  --el-menu-active-color: var(--ex-ink);
+  --el-menu-hover-bg-color: var(--ex-bg);
+  --el-menu-hover-text-color: var(--ex-ink);
 }
+.menu :deep(.el-menu-item) {
+  margin: 2px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  height: 40px;
+  line-height: 40px;
+  position: relative;
+}
+.menu :deep(.el-menu-item.is-active) {
+  background: #e9f3ee;
+  font-weight: 600;
+}
+.menu :deep(.el-menu-item.is-active)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--ex-charge);
+}
+.aside-foot {
+  padding: 14px 20px;
+  font-size: 12px;
+  color: var(--ex-ink-3);
+  border-top: 1px solid var(--ex-hair-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.foot-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ex-ink-3);
+}
+.foot-dot.on {
+  background: var(--ex-charge);
+}
+
+/* —— 顶栏：纸面 + 发丝底线 —— */
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--ex-card);
+  border-bottom: 1px solid var(--ex-hair);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -121,46 +197,68 @@ async function handleLogout(): Promise<void> {
   height: 60px;
 }
 .header-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ex-ink);
+  letter-spacing: 0.3px;
 }
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
-.ws-tag .dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
+.ws-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ex-ink-2);
+  border: 1px solid var(--ex-hair);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.ws-pill .dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #f56c6c;
-  margin-right: 6px;
+  background: var(--ex-danger);
 }
-.ws-tag .dot.on {
-  background: #67c23a;
+.ws-pill.on .dot {
+  background: var(--ex-charge);
+}
+.ws-pill.on {
+  color: var(--ex-charge);
+  border-color: #cfe6d8;
+  background: #f2f9f5;
 }
 .bell {
-  color: #606266;
+  color: var(--ex-ink-2);
   cursor: pointer;
   font-size: 18px;
+  line-height: 1;
+  display: inline-block;
+  padding: 2px;
 }
 .user {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   cursor: pointer;
 }
 .avatar {
-  background: #409eff;
+  background: var(--ex-steel);
+  font-size: 12px;
 }
 .username {
-  color: #606266;
-  font-size: 14px;
+  color: var(--ex-ink-2);
+  font-size: 13px;
 }
+
+/* —— 主区：仪器纸面 —— */
 .main {
-  padding: 12px;
+  padding: 16px;
   overflow-y: auto;
+  background: var(--ex-bg);
 }
 </style>

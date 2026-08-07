@@ -118,97 +118,106 @@ const detailError = computed(() => (detail.value?.errorMsg ? `${detail.value.err
 </script>
 
 <template>
-  <div class="page-card">
-    <el-row :gutter="12">
-      <!-- 下发表单 -->
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never">
-          <template #header>指令下发</template>
-          <el-form label-width="110px" size="default">
-            <el-form-item label="productKey" required>
-              <el-input v-model="form.productKey" placeholder="产品标识" />
-            </el-form-item>
-            <el-form-item label="deviceName" required>
-              <el-input v-model="form.deviceName" placeholder="设备名（设备表 device_name）" />
-            </el-form-item>
-            <el-form-item label="命令">
-              <el-select v-model="form.command" allow-create filterable style="width: 100%">
-                <el-option v-for="c in commandOptions" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="指令类型">
-              <el-radio-group v-model="form.commandType">
-                <el-radio :value="1">读取</el-radio>
-                <el-radio :value="2">控制</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="参数">
-              <div class="params">
-                <div v-for="(row, index) in paramsRows" :key="index" class="row-line">
-                  <el-input v-model="row.key" placeholder="参数名" class="row-key" />
-                  <el-input v-model="row.value" placeholder="参数值（JSON 或字符串）" class="row-val" />
-                  <el-button type="danger" :icon="'Delete'" circle @click="removeParamRow(index)" />
-                </div>
-                <el-button :icon="'Plus'" size="small" @click="addParamRow">添加参数</el-button>
-              </div>
-            </el-form-item>
-            <el-form-item label="超时(ms)">
-              <el-input-number v-model="form.timeoutMs" :min="1000" :step="1000" />
-            </el-form-item>
-            <el-form-item label="最大重试">
-              <el-input-number v-model="form.maxRetry" :min="0" :max="10" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :loading="submitting" @click="submit">下发指令</el-button>
-            </el-form-item>
-          </el-form>
+  <div class="ex-page">
+    <header class="ex-page-head">
+      <div class="head-title">
+        <h1 class="ex-title">指令中心</h1>
+        <p class="ex-sub">下行控制指令下发 · 状态机跟踪（创建 → 已发送 → 设备收到 → 执行 → 成功）</p>
+      </div>
+    </header>
 
-          <el-alert v-if="lastCreated" :title="`已创建：${lastCreated.commandId}`" type="success" show-icon :closable="false">
-            <template #default>
-              状态 <b>{{ lastCreated.stateName }}</b>（{{ lastCreated.state }}），
-              deviceId={{ lastCreated.deviceId }}，超时 {{ lastCreated.timeoutMs }}ms，重试 {{ lastCreated.retryCount }}/{{ lastCreated.maxRetry }}
-            </template>
-          </el-alert>
-        </el-card>
-      </el-col>
+    <section class="dual-cols">
+      <!-- 下发表单 -->
+      <div class="ex-card form-card">
+        <div class="ex-card-head">
+          <h2 class="ex-card-title">指令下发</h2>
+        </div>
+        <el-form label-width="110px" size="default" class="command-form">
+          <el-form-item label="productKey" required>
+            <el-input v-model="form.productKey" placeholder="产品标识" />
+          </el-form-item>
+          <el-form-item label="deviceName" required>
+            <el-input v-model="form.deviceName" placeholder="设备名（设备表 device_name）" />
+          </el-form-item>
+          <el-form-item label="命令">
+            <el-select v-model="form.command" allow-create filterable style="width: 100%">
+              <el-option v-for="c in commandOptions" :key="c" :label="c" :value="c" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="指令类型">
+            <el-radio-group v-model="form.commandType">
+              <el-radio :value="1">读取</el-radio>
+              <el-radio :value="2">控制</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="参数">
+            <div class="params">
+              <div v-for="(row, index) in paramsRows" :key="index" class="row-line">
+                <el-input v-model="row.key" placeholder="参数名" class="row-key" />
+                <el-input v-model="row.value" placeholder="参数值（JSON 或字符串）" class="row-val" />
+                <el-button type="danger" :icon="'Delete'" circle @click="removeParamRow(index)" />
+              </div>
+              <el-button :icon="'Plus'" size="small" @click="addParamRow">添加参数</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="超时(ms)">
+            <el-input-number v-model="form.timeoutMs" :min="1000" :step="1000" />
+          </el-form-item>
+          <el-form-item label="最大重试">
+            <el-input-number v-model="form.maxRetry" :min="0" :max="10" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="submitting" @click="submit">下发指令</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-alert v-if="lastCreated" :title="`已创建：${lastCreated.commandId}`" type="success" show-icon :closable="false" class="created-alert">
+          <template #default>
+            状态 <b>{{ lastCreated.stateName }}</b>（{{ lastCreated.state }}），
+            deviceId={{ lastCreated.deviceId }}，超时 {{ lastCreated.timeoutMs }}ms，重试 {{ lastCreated.retryCount }}/{{ lastCreated.maxRetry }}
+          </template>
+        </el-alert>
+      </div>
 
       <!-- 查询 + 状态机 -->
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never">
-          <template #header>状态跟踪</template>
-          <el-form :inline="true" @submit.prevent>
-            <el-form-item>
-              <el-input v-model="queryId" placeholder="指令 ID（如 202608061530001）" style="width: 260px" />
-            </el-form-item>
-            <el-form-item>
+      <div class="right-col">
+        <div class="ex-card track-card">
+          <div class="ex-card-head">
+            <h2 class="ex-card-title">状态跟踪</h2>
+            <el-form :inline="true" class="query-inline" @submit.prevent>
+              <el-input v-model="queryId" placeholder="指令 ID（如 202608061530001）" style="width: 240px" />
               <el-button type="primary" :loading="querying" @click="queryDetail()">查询</el-button>
-            </el-form-item>
-          </el-form>
+            </el-form>
+          </div>
 
           <template v-if="detail">
-            <el-steps :active="currentStep(detail)" align-center finish-status="success" class="steps">
-              <el-step v-for="s in stateSteps" :key="s" :title="s" />
-            </el-steps>
-            <el-descriptions :column="2" border size="small" class="desc">
-              <el-descriptions-item label="指令 ID">{{ detail.commandId }}</el-descriptions-item>
-              <el-descriptions-item label="状态">
-                <el-tag :type="isTerminal ? (detail.stateName === 'SUCCESS' ? 'success' : 'danger') : 'primary'" size="small">
-                  {{ detail.stateName }}
-                </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="deviceId">{{ detail.deviceId }}</el-descriptions-item>
-              <el-descriptions-item label="command">{{ detail.command }}</el-descriptions-item>
-              <el-descriptions-item label="发送时间">{{ toLocal(detail.sentTime) }}</el-descriptions-item>
-              <el-descriptions-item label="完成时间">{{ toLocal(detail.finishTime) }}</el-descriptions-item>
-              <el-descriptions-item label="错误信息" :span="2">{{ detailError }}</el-descriptions-item>
-            </el-descriptions>
+            <div class="track-body">
+              <el-steps :active="currentStep(detail)" align-center finish-status="success" class="steps">
+                <el-step v-for="s in stateSteps" :key="s" :title="s" />
+              </el-steps>
+              <el-descriptions :column="2" border size="small" class="desc">
+                <el-descriptions-item label="指令 ID">{{ detail.commandId }}</el-descriptions-item>
+                <el-descriptions-item label="状态">
+                  <el-tag :type="isTerminal ? (detail.stateName === 'SUCCESS' ? 'success' : 'danger') : 'primary'" size="small">
+                    {{ detail.stateName }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="deviceId">{{ detail.deviceId }}</el-descriptions-item>
+                <el-descriptions-item label="command">{{ detail.command }}</el-descriptions-item>
+                <el-descriptions-item label="发送时间"><span class="ex-num">{{ toLocal(detail.sentTime) }}</span></el-descriptions-item>
+                <el-descriptions-item label="完成时间"><span class="ex-num">{{ toLocal(detail.finishTime) }}</span></el-descriptions-item>
+                <el-descriptions-item label="错误信息" :span="2">{{ detailError }}</el-descriptions-item>
+              </el-descriptions>
+            </div>
           </template>
-          <el-empty v-else description="查询指令状态" :image-size="60" />
-        </el-card>
+          <el-empty v-else description="查询指令状态" :image-size="60" class="track-empty" />
+        </div>
 
         <!-- 最近指令 -->
-        <el-card shadow="never" class="recent-card">
-          <template #header>本会话最近下发</template>
+        <div class="ex-card recent-card">
+          <div class="ex-card-head">
+            <h2 class="ex-card-title">本会话最近下发</h2>
+          </div>
           <el-table :data="recent" size="small" empty-text="暂无下发记录">
             <el-table-column prop="commandId" label="指令 ID" show-overflow-tooltip min-width="150" />
             <el-table-column prop="command" label="命令" width="110" />
@@ -226,32 +235,65 @@ const detailError = computed(() => (detail.value?.errorMsg ? `${detail.value.err
               </template>
             </el-table-column>
           </el-table>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.params .row-line {
+.dual-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 14px;
+  align-items: start;
+}
+.form-card {
+  padding-bottom: 16px;
+}
+.command-form {
+  padding: 14px 18px 0;
+}
+.created-alert {
+  margin: 4px 18px 0;
+}
+.right-col {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-  width: 100%;
+  flex-direction: column;
+  gap: 14px;
 }
-.row-key {
-  width: 160px;
+.track-card {
+  padding-bottom: 16px;
 }
-.row-val {
-  flex: 1;
+.query-inline {
+  gap: 6px;
+}
+.track-body {
+  padding: 14px 18px 0;
 }
 .steps {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+}
+.steps :deep(.el-step__title) {
+  font-size: 12px;
+  color: var(--ex-ink-2);
+}
+.steps :deep(.el-step__title.is-process) {
+  color: var(--ex-steel);
+  font-weight: 600;
 }
 .desc {
-  margin-top: 8px;
+  margin-top: 4px;
+}
+.track-empty {
+  padding: 32px 0;
 }
 .recent-card {
-  margin-top: 12px;
+  padding-bottom: 8px;
+}
+@media (max-width: 980px) {
+  .dual-cols {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

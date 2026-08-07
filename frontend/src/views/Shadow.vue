@@ -112,11 +112,14 @@ function display(v: unknown): string {
 </script>
 
 <template>
-  <div class="page-card">
-    <el-card shadow="never">
-      <template #header>影子查询 / desired 下发</template>
-      <el-form :inline="true" @submit.prevent>
-        <el-form-item label="设备 ID">
+  <div class="ex-page">
+    <header class="ex-page-head">
+      <div class="head-title">
+        <h1 class="ex-title">设备影子</h1>
+        <p class="ex-sub">设备上报状态（reported）与平台期望状态（desired）的双端比对与期望下发</p>
+      </div>
+      <el-form inline class="query-bar" @submit.prevent>
+        <el-form-item label="设备 ID" class="qi">
           <el-input-number
             v-model="deviceId"
             :min="1"
@@ -125,43 +128,61 @@ function display(v: unknown): string {
             style="width: 200px"
           />
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="query">查询影子</el-button>
-        </el-form-item>
+        <el-button type="primary" :loading="loading" @click="query">查询影子</el-button>
       </el-form>
+    </header>
 
-      <template v-if="hasView">
-        <el-descriptions :column="2" border size="small" class="desc">
-          <el-descriptions-item label="设备 ID">{{ view!.deviceId }}</el-descriptions-item>
-          <el-descriptions-item label="乐观锁版本">{{ view!.version ?? '不存在' }}</el-descriptions-item>
-        </el-descriptions>
+    <template v-if="hasView">
+      <!-- 仪表读数带 -->
+      <section class="ex-readout-band" style="--ro-cols: 4" aria-label="影子版本信息">
+        <div class="ex-readout">
+          <span class="ex-readout-label">设备 ID</span>
+          <span class="ex-readout-value md"><b>{{ view!.deviceId }}</b></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">乐观锁版本</span>
+          <span class="ex-readout-value md steel"><b>{{ view!.version ?? '不存在' }}</b></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">reported 属性</span>
+          <span class="ex-readout-value md"><b>{{ reportedKeys.length }}</b><em>项</em></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">desired 属性</span>
+          <span class="ex-readout-value md discharge"><b>{{ desiredKeys.length }}</b><em>项</em></span>
+        </div>
+      </section>
 
-        <el-row :gutter="12">
-          <el-col :xs="24" :md="12">
-            <el-card shadow="never" class="inner-card">
-              <template #header>reported（设备上报状态）</template>
-              <el-empty v-if="reportedKeys.length === 0" description="暂无 reported 数据" :image-size="60" />
-              <el-table v-else :data="reportedKeys.map((k) => ({ k, v: display(view!.reported[k]) }))" size="small">
-                <el-table-column prop="k" label="属性" width="180" />
-                <el-table-column prop="v" label="值" show-overflow-tooltip />
-              </el-table>
-            </el-card>
-          </el-col>
+      <section class="dual-cols">
+        <div class="ex-card">
+          <div class="ex-card-head">
+            <h2 class="ex-card-title">reported · 设备上报状态</h2>
+          </div>
+          <el-empty v-if="reportedKeys.length === 0" description="暂无 reported 数据" :image-size="60" />
+          <el-table v-else :data="reportedKeys.map((k) => ({ k, v: display(view!.reported[k]) }))" size="small">
+            <el-table-column prop="k" label="属性" width="180" />
+            <el-table-column prop="v" label="值" show-overflow-tooltip />
+          </el-table>
+        </div>
 
-          <el-col :xs="24" :md="12">
-            <el-card shadow="never" class="inner-card">
-              <template #header>desired（期望状态）</template>
-              <el-empty v-if="desiredKeys.length === 0" description="暂无 desired 数据" :image-size="60" />
-              <el-table v-else :data="desiredKeys.map((k) => ({ k, v: display(view!.desired[k]) }))" size="small">
-                <el-table-column prop="k" label="属性" width="180" />
-                <el-table-column prop="v" label="值" show-overflow-tooltip />
-              </el-table>
-            </el-card>
-          </el-col>
-        </el-row>
+        <div class="ex-card">
+          <div class="ex-card-head">
+            <h2 class="ex-card-title">desired · 期望状态</h2>
+          </div>
+          <el-empty v-if="desiredKeys.length === 0" description="暂无 desired 数据" :image-size="60" />
+          <el-table v-else :data="desiredKeys.map((k) => ({ k, v: display(view!.desired[k]) }))" size="small">
+            <el-table-column prop="k" label="属性" width="180" />
+            <el-table-column prop="v" label="值" show-overflow-tooltip />
+          </el-table>
+        </div>
+      </section>
 
-        <el-divider content-position="left">设置 desired</el-divider>
-        <el-form label-width="0">
+      <section class="ex-card editor-card">
+        <div class="ex-card-head">
+          <h2 class="ex-card-title">设置 desired</h2>
+          <span class="editor-note">值可填 JSON 或字符串，例如 5000 / {"level":3}</span>
+        </div>
+        <el-form label-width="0" class="editor-form">
           <div v-for="(row, index) in rows" :key="index" class="row-line">
             <el-input v-model="row.key" placeholder="属性名（如 power）" class="row-key" />
             <el-input v-model="row.value" placeholder="属性值（JSON 或字符串，如 5000）" class="row-val" />
@@ -182,17 +203,40 @@ function display(v: unknown): string {
           :closable="false"
           class="delta-alert"
         />
-      </template>
-    </el-card>
+      </section>
+    </template>
+
+    <section v-else class="ex-card empty-card">
+      <el-empty description="输入设备 ID 查询影子状态" :image-size="72" />
+    </section>
   </div>
 </template>
 
 <style scoped>
-.desc {
-  margin-bottom: 12px;
+.query-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
-.inner-card {
-  margin-bottom: 12px;
+.query-bar .qi {
+  margin-bottom: 0;
+}
+.dual-cols {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.editor-card {
+  padding-bottom: 16px;
+}
+.editor-note {
+  font-size: 12px;
+  color: var(--ex-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.editor-form {
+  padding: 14px 18px 0;
 }
 .row-line {
   display: flex;
@@ -208,9 +252,18 @@ function display(v: unknown): string {
 .row-actions {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  padding: 0 18px;
+  margin-top: 6px;
 }
 .delta-alert {
-  margin-top: 12px;
+  margin: 12px 18px 0;
+}
+.empty-card {
+  padding: 40px 0;
+}
+@media (max-width: 900px) {
+  .dual-cols {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
