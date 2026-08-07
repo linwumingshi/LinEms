@@ -577,7 +577,7 @@ class PlanGeneratorTest {
              "socRange":{"min":10,"max":90}}
             """,
             List.of(new PriceTier(LocalTime.of(0,0), LocalTime.of(8,0), "VALLEY", 0.3),
-                    new PriceTier(LocalTime.of(8,0), LocalTime.of(24,0), "PEAK", 1.2)),
+                    new PriceTier(LocalTime.of(8,0), LocalTime.of(23,59), "PEAK", 1.2)),
             50.0, 10.0, 90.0, 100.0, 80.0
         );
         List<PlanPoint> points = PlanGenerator.generate(in);
