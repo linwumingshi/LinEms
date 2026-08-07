@@ -10,6 +10,7 @@ deploy/env/*.tmp
 
 # 构建产物（Maven / 前端）
 **/target/
+**/dependency-reduced-pom.xml
 frontend/node_modules/
 frontend/dist/
 
