@@ -1,21 +1,48 @@
 import http from './http'
-import type { EmsStrategy } from '@/types/models'
+import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsConstraint, EmsElectricityPrice, PageResult } from '@/types/models'
 
+/** EMS 储能策略 API（网关路由 /api/ems/** → energy-ems） */
 export const emsApi = {
-  strategyPage(params: Record<string, unknown>) {
+  /** GET /api/ems/strategy/page 策略分页查询 */
+  strategyPage(params: Record<string, unknown>): Promise<PageResult<EmsStrategy>> {
     return http.get('/api/ems/strategy/page', { params })
   },
-  strategyCreate(body: Partial<EmsStrategy>) { return http.post('/api/ems/strategy', body) },
-  strategyUpdate(id: number, body: Partial<EmsStrategy>) { return http.put(`/api/ems/strategy/${id}`, body) },
-  strategyDelete(id: number) { return http.delete(`/api/ems/strategy/${id}`) },
-  strategySwitchStatus(id: number, status: number) { return http.put(`/api/ems/strategy/${id}/status?status=${status}`) },
-  pricePage(params: Record<string, unknown>) { return http.get('/api/ems/price/page', { params }) },
-  priceSave(body: unknown[]) { return http.post('/api/ems/price', body) },
-  constraintGet(stationId: number) { return http.get(`/api/ems/constraint?stationId=${stationId}`) },
-  constraintSave(body: unknown) { return http.put('/api/ems/constraint', body) },
-  planGenerate(body: { stationId: number; strategyId?: number; planDate: string }) {
+
+  /** POST /api/ems/strategy 创建策略 */
+  strategyCreate(body: Partial<EmsStrategy>): Promise<EmsStrategy> { return http.post('/api/ems/strategy', body) },
+
+  /** PUT /api/ems/strategy/{id} 更新策略 */
+  strategyUpdate(id: number, body: Partial<EmsStrategy>): Promise<EmsStrategy> { return http.put(`/api/ems/strategy/${id}`, body) },
+
+  /** DELETE /api/ems/strategy/{id} 删除策略 */
+  strategyDelete(id: number): Promise<void> { return http.delete(`/api/ems/strategy/${id}`) },
+
+  /** PUT /api/ems/strategy/{id}/status 启停策略 */
+  strategySwitchStatus(id: number, status: number): Promise<void> { return http.put(`/api/ems/strategy/${id}/status?status=${status}`) },
+
+  /** GET /api/ems/price/page 电价分页查询 */
+  pricePage(params: Record<string, unknown>): Promise<PageResult<EmsElectricityPrice>> { return http.get('/api/ems/price/page', { params }) },
+
+  /** POST /api/ems/price 批量保存电价 */
+  priceSave(body: EmsElectricityPrice[]): Promise<void> { return http.post('/api/ems/price', body) },
+
+  /** GET /api/ems/constraint 查询站点约束 */
+  constraintGet(stationId: number): Promise<EmsConstraint> { return http.get(`/api/ems/constraint?stationId=${stationId}`) },
+
+  /** PUT /api/ems/constraint 保存站点约束 */
+  constraintSave(body: EmsConstraint): Promise<EmsConstraint> { return http.put('/api/ems/constraint', body) },
+
+  /** POST /api/ems/plan/generate 生成调度计划 */
+  planGenerate(body: { stationId: number; strategyId?: number; planDate: string }): Promise<EmsPlan> {
     return http.post('/api/ems/plan/generate', body)
   },
-  planPage(params: Record<string, unknown>) { return http.get('/api/ems/plan/page', { params }) },
-  planPoints(planId: number) { return http.get(`/api/ems/plan/${planId}/points`) },
+
+  /** GET /api/ems/plan/page 计划分页查询 */
+  planPage(params: Record<string, unknown>): Promise<PageResult<EmsPlan>> { return http.get('/api/ems/plan/page', { params }) },
+
+  /** GET /api/ems/plan/{planId}/points 计划点位（充放电曲线） */
+  planPoints(planId: number): Promise<EmsPlanPoint[]> { return http.get(`/api/ems/plan/${planId}/points`) },
+
+  /** POST /api/ems/plan/{planId}/dispatch 下发调度计划 */
+  dispatch(planId: number): Promise<number> { return http.post(`/api/ems/plan/${planId}/dispatch`) },
 }
