@@ -1,6 +1,7 @@
 package com.sanduo.energy.shadow.web;
 
 import com.sanduo.energy.common.model.Result;
+import com.sanduo.energy.common.tenant.TenantContext;
 import com.sanduo.energy.shadow.service.ShadowService;
 import com.sanduo.energy.shadow.web.dto.DesiredRequest;
 import com.sanduo.energy.shadow.web.dto.ShadowView;
@@ -40,7 +41,10 @@ public class ShadowController {
     @PutMapping("/{deviceId}/desired")
     public Result<ShadowService.DesiredResult> setDesired(@PathVariable long deviceId,
                                                           @Valid @RequestBody DesiredRequest request) {
-        ShadowService.DesiredResult result = shadowService.setDesired(deviceId, 0L, request.getDesired());
+        // 租户取当前请求上下文（经网关 x-tenant-id 透传）；无上下文兜底 0，避免越权写他人租户
+        Long tenantId = TenantContext.getTenantId();
+        ShadowService.DesiredResult result = shadowService.setDesired(deviceId, tenantId == null ? 0L : tenantId,
+                request.getDesired());
         log.info("[Shadow] 设置 desired deviceId={} desiredKeys={} deltaKeys={}",
                 deviceId, request.getDesired().size(), result.delta().size());
         return Result.ok(result);
