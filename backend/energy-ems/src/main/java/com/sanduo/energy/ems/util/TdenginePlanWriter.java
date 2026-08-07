@@ -43,6 +43,12 @@ public class TdenginePlanWriter {
             st.execute("CREATE STABLE IF NOT EXISTS ems_plan_point "
                     + "(ts TIMESTAMP, action VARCHAR(16), power_kw DOUBLE, soc DOUBLE) "
                     + "TAGS (station_id BIGINT)");
+            // 幂等写：先清当日该站既有点，再插入——重复生成/手动+定时同日不产生重复点（对齐 generate 前置去重，双保险）
+            long start = planDate.atStartOfDay(ZONE).toInstant().toEpochMilli();
+            long end = planDate.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli();
+            st.execute("DELETE FROM ems_plan_point "
+                    + "WHERE station_id = " + stationId
+                    + " AND ts >= " + start + " AND ts < " + end);
             // INSERT ... USING 自动建子表并写 station_id tag（对齐 tsdb TdengineSqlBuilder 模式）
             String table = "plan_" + stationId;
             StringBuilder sb = new StringBuilder("INSERT INTO ").append(table)

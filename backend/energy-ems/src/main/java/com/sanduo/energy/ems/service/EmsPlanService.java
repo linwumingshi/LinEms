@@ -86,6 +86,14 @@ public class EmsPlanService {
                     "未找到启用策略: stationId=" + stationId + (strategyId != null ? ", strategyId=" + strategyId : ""));
         }
         Long tenant = strategy.getTenantId();
+        // 防重复生成：同电站同日期仅允许一个计划（配合 V2 唯一键 + writer 幂等写，杜绝重复下发）
+        Long existing = planMapper.selectCount(new LambdaQueryWrapper<EmsPlan>()
+                .eq(EmsPlan::getStationId, stationId)
+                .eq(EmsPlan::getPlanDate, planDate));
+        if (existing != null && existing > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "该电站该日期已存在计划，请勿重复生成: stationId=" + stationId + ", planDate=" + planDate);
+        }
         EmsConstraint constraint = constraintMapper.selectOne(new LambdaQueryWrapper<EmsConstraint>()
                 .eq(EmsConstraint::getTenantId, tenant)
                 .eq(EmsConstraint::getStationId, stationId));
