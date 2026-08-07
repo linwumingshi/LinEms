@@ -64,7 +64,16 @@ public final class Connector {
         try {
             d.connect();
             return "已连接 " + identity.clientId() + " @ " + host + ":" + port;
-        } catch (IllegalStateException e) {
+        } catch (Exception e) {
+            // 覆盖两类失败：CONNACK 拒绝/超时（IllegalStateException），以及
+            // SDK syncUninterruptibly() 透传的原始连接异常（ConnectException 等）。
+            // SDK 在该透传路径上不会调用 doClose，自建 EventLoopGroup 线程泄漏会导致
+            // JVM 在退出时不结束，这里尽力关闭释放（与 disconnect() 相同的兜底）。
+            try {
+                d.close();
+            } catch (Exception ignore) {
+                // 尽力释放，失败不阻塞提示
+            }
             device = null;
             return describeConnectError(e);
         }
@@ -210,20 +219,56 @@ public final class Connector {
         };
     }
 
-    static String describeConnectError(IllegalStateException e) {
+    static String describeConnectError(Exception e) {
         String msg = e.getMessage() == null ? "" : e.getMessage();
         if (msg.contains("连接被拒绝 code=")) {
+            // 真实 SDK 消息：code= 后可能是数字（老格式）或 CONNACK 枚举名
+            // （netty MqttConnectReturnCode 不重写 toString，故按常量名打印）。
             int idx = msg.indexOf("code=") + "code=".length();
             int end = idx;
-            while (end < msg.length() && Character.isDigit(msg.charAt(end))) {
+            while (end < msg.length() && !Character.isWhitespace(msg.charAt(end))) {
                 end++;
             }
-            int code = Integer.parseInt(msg.substring(idx, end));
-            return "连接被拒绝: " + connackHint(code);
+            String token = msg.substring(idx, end);
+            if (token.isEmpty()) {
+                return "连接被拒绝: " + msg;
+            }
+            boolean allDigits = true;
+            for (int i = 0; i < token.length(); i++) {
+                if (!Character.isDigit(token.charAt(i))) {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits) {
+                try {
+                    return "连接被拒绝: " + connackHint(Integer.parseInt(token));
+                } catch (NumberFormatException nfe) {
+                    return "连接被拒绝: " + msg;
+                }
+            }
+            return connackNameHint(token);
         }
-        if (msg.contains("CONNACK 超时") || msg.contains("TCP 连接失败")) {
+        if (msg.contains("CONNACK 超时") || msg.contains("TCP 连接失败")
+                || e instanceof java.io.IOException) {
+            // IOException 覆盖 SDK 透传的原始连接失败（ConnectException 等）
             return "连接失败: " + msg + "（检查 broker 是否在跑，或 --broker 地址）";
         }
         return "连接失败: " + msg;
+    }
+
+    /** CONNACK 枚举名 → 中文说明（与 connackHint(int) 的映射一致）。 */
+    private static String connackNameHint(String name) {
+        String hint = switch (name) {
+            case "CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION" -> "协议版本不支持（MQTT 3.1.1）";
+            case "CONNECTION_REFUSED_IDENTIFIER_REJECTED" -> "clientId 非法";
+            case "CONNECTION_REFUSED_BAD_USER_NAME_OR_PASSWORD" -> "密码错误或设备未注册/未激活（校验 --secret/--device 与 seed 一致）";
+            case "CONNECTION_REFUSED_NOT_AUTHORIZED" -> "未授权";
+            default -> null;
+        };
+        if (hint == null) {
+            return "连接被拒绝 " + name;
+        }
+        return "连接被拒绝: " + hint;
     }
 }
