@@ -9,6 +9,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +17,10 @@ import java.util.List;
 @Slf4j
 @Component
 public class TdenginePlanWriter {
+
+    /** 写时间戳用 JVM 默认时区换算 epoch 毫秒：TDengine 把裸 datetime 字符串按 UTC 解析（会 +8 偏移），
+     *  epoch 毫秒 + 读侧 getTime(ts).toLocalTime()（同样按 JVM 时区）可无偏移往返 */
+    private static final ZoneId ZONE = ZoneId.systemDefault();
 
     @Value("${sanduo.taos.jdbc-url:jdbc:TAOS-RS://127.0.0.1:6041/iot_ems}")
     private String jdbcUrl;
@@ -44,7 +49,8 @@ public class TdenginePlanWriter {
                     .append(" USING ems_plan_point TAGS (").append(stationId).append(") ")
                     .append("(ts, action, power_kw, soc) VALUES ");
             for (PlanPoint p : points) {
-                sb.append("('").append(planDate).append(" ").append(p.time()).append("', '")
+                long ts = p.time().atDate(planDate).atZone(ZONE).toInstant().toEpochMilli();
+                sb.append("(").append(ts).append(", '")
                   .append(p.action()).append("', ")
                   .append(p.powerKw()).append(", ")
                   .append(p.socTarget()).append(") ");
@@ -55,13 +61,16 @@ public class TdenginePlanWriter {
 
     /** 读取指定计划日期的点序列（按 ts 升序）。 */
     public List<PlanPoint> read(long stationId, LocalDate planDate) throws Exception {
+        // 与 write 一致：日期边界按 JVM 时区换算 epoch 毫秒，避免 TDengine 把裸 datetime 当 UTC 解析造成 +8 偏移
+        long start = planDate.atStartOfDay(ZONE).toInstant().toEpochMilli();
+        long end = planDate.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli();
         List<PlanPoint> out = new ArrayList<>();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(
                      "SELECT ts, action, power_kw, soc FROM plan_" + stationId
-                             + " WHERE ts >= '" + planDate + " 00:00:00'"
-                             + "   AND ts <  '" + planDate.plusDays(1) + " 00:00:00'"
+                             + " WHERE ts >= " + start
+                             + "   AND ts <  " + end
                              + " ORDER BY ts")) {
             while (rs.next()) {
                 java.sql.Time tm = rs.getTime("ts");

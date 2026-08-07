@@ -22,7 +22,7 @@
 | Phase 3 | 后端工程初始化（Maven 多模块 + 依赖环境） | ✅ 完成 |
 | Phase 4 | 设备接入模块（自研 MQTT Broker） | ✅ 完成 |
 | Phase 5 | 消息处理模块（接入适配 + 时序摄取） | ✅ 完成 |
-| Phase 6 | 业务模块（影子/指令/告警） | ✅ 完成 |
+| Phase 6 | 业务模块（影子/指令/告警/策略引擎） | ✅ 完成 |
 | Phase 7 | 前端开发（Vue3 驾驶舱等） | ✅ 完成 |
 | Phase 8 | 测试与压力测试（百万连接/故障演练） | ✅ 完成 |
 | Phase 9 | 生产化差距分析（缺陷追踪 + 路线图）＋ P0-1 网关鉴权落地（JWT 验签 + Spring Security RBAC + 用户/角色/菜单/单位管理模块） | ✅ 完成 |
@@ -70,6 +70,7 @@ cd test/drill && ./run-all.sh
 | 8102 | energy-product | 8113 | energy-shadow |
 | 8103 | energy-device | 8114 | energy-command |
 | 8104 | energy-station | 8115 | energy-alarm |
+| 8105 | energy-ems | | |
 | 1883 | MQTT 设备接入 | 8082 | Broker 统计 HTTP |
 | 8848/9848 | Nacos | 9092 | Kafka |
 | 6379 | Redis | 9200 | Elasticsearch |
@@ -84,7 +85,7 @@ cd test/drill && ./run-all.sh
 Energy Storage IoT Platform/
 ├── docs/          # 设计文档（design/ + decisions/）
 ├── sql/           # 数据库 DDL 脚本（mysql/tdengine/elasticsearch）
-├── backend/       # 后端微服务（Phase 3 起创建）
+├── backend/       # 后端微服务（Phase 3 起创建；含 energy-ems 策略引擎）
 ├── frontend/      # 前端（Phase 7 起创建）
 ├── edge/          # 边缘网关程序
 ├── sdk/           # 设备端 MQTT SDK
