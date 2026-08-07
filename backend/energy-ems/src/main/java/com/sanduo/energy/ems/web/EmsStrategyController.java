@@ -10,7 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/strategy")
+@RequestMapping("/ems/strategy")
 public class EmsStrategyController {
 
     private final EmsStrategyService service;

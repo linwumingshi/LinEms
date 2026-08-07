@@ -6,7 +6,7 @@ import com.sanduo.energy.ems.service.EmsConstraintService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/constraint")
+@RequestMapping("/ems/constraint")
 public class EmsConstraintController {
 
     private final EmsConstraintService service;
