@@ -33,6 +33,8 @@ energyx:
     secret: ${JWT_SECRET}
   tsdb:
     jdbc-password: ${TDENGINE_PASSWORD}
+  ems:
+    device-name: ${EMS_DEVICE_NAME:-sim-dev-000001}
 "
 
 # 4. 推送（--data-urlencode 自动 url-encode 多行值）
@@ -43,4 +45,4 @@ HTTP_CODE="$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST \
   --data-urlencode "type=yaml" \
   --data-urlencode "content=${CONTENT}")"
 [ "$HTTP_CODE" = "200" ] || { echo "[init-nacos] 推送失败 HTTP $HTTP_CODE" >&2; exit 1; }
-echo "[init-nacos] 已推送 ${DATA_ID} (group=${NACOS_GROUP})，内容含 3 个密钥"
+echo "[init-nacos] 已推送 ${DATA_ID} (group=${NACOS_GROUP})，内容含 3 个密钥 + ems.device-name"
