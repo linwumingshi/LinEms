@@ -23,12 +23,15 @@ import com.sanduo.energy.ems.util.PriceTier;
 import com.sanduo.energy.ems.util.TdenginePlanWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 计划生成编排：生成 → 安全包络校验 → TDengine 点序列 → 计划头落库 → 下发（复用 energy-command）。
@@ -119,6 +122,27 @@ public class EmsPlanService {
         planMapper.insert(plan);
         log.info("生成计划 planId={} stationId={} 点数={}", plan.getPlanId(), stationId, points.size());
         return plan;
+    }
+
+    /** 每日 00:05 为启用策略的电站生成次日计划（定时线程无租户上下文，遍历全量启用策略）。 */
+    @Scheduled(cron = "0 5 0 * * *")
+    public void generateDailyPlans() {
+        LocalDate tomorrow = LocalDate.now().plusDays(1);
+        List<EmsStrategy> enabled = strategyMapper.selectList(new LambdaQueryWrapper<EmsStrategy>()
+                .eq(EmsStrategy::getStatus, 1));
+        Set<String> handled = new HashSet<>();
+        for (EmsStrategy s : enabled) {
+            String key = s.getTenantId() + ":" + s.getStationId();
+            if (!handled.add(key)) {
+                continue; // 同电站多策略只生成一次
+            }
+            try {
+                generate(s.getStationId(), s.getStrategyId(), tomorrow);
+            } catch (BusinessException e) {
+                log.warn("定时生成失败 stationId={} strategyId={}: {}",
+                        s.getStationId(), s.getStrategyId(), e.getMessage());
+            }
+        }
     }
 
     /** 下发计划：先置计划为执行中（防重试重复下发）→ 重跑安全包络校验（全局约束：生成/下发前）
