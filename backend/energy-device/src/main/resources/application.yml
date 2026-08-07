@@ -59,4 +59,4 @@ management:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info

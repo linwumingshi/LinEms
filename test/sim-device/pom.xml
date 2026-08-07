@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.sanduo</groupId>
-    <artifactId>sanduo-sim-device</artifactId>
+    <groupId>com.energyx</groupId>
+    <artifactId>energyx-sim-device</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>sanduo-sim-device</name>
+    <name>energyx-sim-device</name>
     <description>EnergyX 平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
 
     <properties>
@@ -27,8 +27,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.sanduo</groupId>
-            <artifactId>sanduo-device-sdk</artifactId>
+            <groupId>com.energyx</groupId>
+            <artifactId>energyx-device-sdk</artifactId>
             <version>${sdk.version}</version>
         </dependency>
         <dependency>
@@ -73,7 +73,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.sanduo.simdevice.SimDeviceCli</mainClass>
+                                    <mainClass>com.energyx.simdevice.SimDeviceCli</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

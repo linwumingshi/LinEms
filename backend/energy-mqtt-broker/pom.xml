@@ -14,7 +14,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>com.sanduo</groupId>
+    <groupId>com.energyx</groupId>
     <artifactId>energy-ems-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
@@ -25,7 +25,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-common</artifactId>
     </dependency>
 
@@ -78,7 +78,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <mainClass>com.sanduo.energy.broker.MqttBrokerApplication</mainClass>
+          <mainClass>com.energyx.broker.MqttBrokerApplication</mainClass>
         </configuration>
       </plugin>
     </plugins>

@@ -5,7 +5,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>com.sanduo</groupId>
+    <groupId>com.energyx</groupId>
     <artifactId>energy-ems-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
@@ -17,12 +17,12 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-common</artifactId>
     </dependency>
     <!-- JWT 核心（纯库，签名/验签共用） -->
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-security-core</artifactId>
     </dependency>
     <!-- 认证：Spring Security（B 方案：UserDetailsService + AuthenticationManager + 方法级 @PreAuthorize） -->

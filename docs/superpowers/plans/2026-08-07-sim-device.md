@@ -4,20 +4,20 @@
 
 **Goal:** 交付 `test/sim-device` 独立 Maven 模块：交互式 CLI REPL 模拟单台设备接入EnergyX 平台（HMAC 接入 Broker、上报属性/事件/生命周期、手动/自动回 ACK 下行命令）。
 
-**Architecture:** 复用 `sanduo-device-sdk-1.0.0`（HMAC 认证、订阅、发布全在 SDK）。四个主类按职责拆分：`CliArgs`（纯参数解析）、`PendingCommands`（线程安全待处理队列）、`Connector`（MqttDevice 生命周期薄封装 + 可运行时切换的自动 ACK）、`Repl`（stdin 命令循环，解析抽为静态方法可单测）。构建用 maven-shade fat jar + `sim-device.sh`，完全复刻 `test/stress` 模式。
+**Architecture:** 复用 `energyx-device-sdk-1.0.0`（HMAC 认证、订阅、发布全在 SDK）。四个主类按职责拆分：`CliArgs`（纯参数解析）、`PendingCommands`（线程安全待处理队列）、`Connector`（MqttDevice 生命周期薄封装 + 可运行时切换的自动 ACK）、`Repl`（stdin 命令循环，解析抽为静态方法可单测）。构建用 maven-shade fat jar + `sim-device.sh`，完全复刻 `test/stress` 模式。
 
-**Tech Stack:** Java 17、Maven（shade 3.5.1）、sanduo-device-sdk 1.0.0、slf4j/logback、JUnit 5（test scope）。
+**Tech Stack:** Java 17、Maven（shade 3.5.1）、energyx-device-sdk 1.0.0、slf4j/logback、JUnit 5（test scope）。
 
 ## Global Constraints
 
 - Java 17；`maven.compiler.source/target = 17`；编码 UTF-8。
-- 运行期依赖仅：`sanduo-device-sdk:1.0.0` + slf4j-api + logback-classic（jackson 由 SDK 传递，不显式声明）。
+- 运行期依赖仅：`energyx-device-sdk:1.0.0` + slf4j-api + logback-classic（jackson 由 SDK 传递，不显式声明）。
 - 测试期新增 `junit-jupiter:5.10.2`（test scope）+ `maven-surefire-plugin:3.2.5`。
-- 构建方式：maven-shade-plugin 3.5.1，`finalName=sim-device`，mainClass=`com.sanduo.simdevice.SimDeviceCli`，`ServicesResourceTransformer`，剔除 META-INF 签名文件。
+- 构建方式：maven-shade-plugin 3.5.1，`finalName=sim-device`，mainClass=`com.energyx.simdevice.SimDeviceCli`，`ServicesResourceTransformer`，剔除 META-INF 签名文件。
 - 不写 MySQL、不连 Nacos、不实现 TLS、不做引号/转义解析、不写 .bat。
 - 密钥派生公式与 `test/stress` 的 `Secrets.deriveSecret` 完全一致：`hex(SHA-256(secretBase + ":" + index))`，index 取 `--device` 数字后缀。
 - 构建前必须先把 SDK install 到本地仓库：`cd sdk/java && mvn -q install -DskipTests`。
-- **本地 maven 仓库是 `D:\Program Files\maven-repo`**（全局 settings.xml 的 `localRepository`，非默认 `~/.m2`）；验证 SDK 是否已 install 查 `D:/Program Files/maven-repo/com/sanduo/sanduo-device-sdk/1.0.0/`。
+- **本地 maven 仓库是 `D:\Program Files\maven-repo`**（全局 settings.xml 的 `localRepository`，非默认 `~/.m2`）；验证 SDK 是否已 install 查 `D:/Program Files/maven-repo/com/energyxx-device-sdk/1.0.0/`。
 - 所有 REPL 输出与 IO 线程横幅打印共用一把 `printLock`，避免乱行。
 - Git 提交信息用 `feat(test/sim-device): <简述>` 前缀。
 
@@ -28,9 +28,9 @@
 **Files:**
 - Create: `test/sim-device/pom.xml`
 - Create: `test/sim-device/sim-device.sh`
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/DeviceSecret.java`
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/CliArgs.java`
-- Test: `test/sim-device/src/test/java/com/sanduo/simdevice/CliArgsTest.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/DeviceSecret.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/CliArgs.java`
+- Test: `test/sim-device/src/test/java/com/energyx/simdevice/CliArgsTest.java`
 
 **Interfaces:**
 - Produces（供 Task 3/5 使用）:
@@ -44,7 +44,7 @@
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform/sdk/java"
 mvn -q install -DskipTests
-ls "D:/Program Files/maven-repo/com/sanduo/sanduo-device-sdk/1.0.0/sanduo-device-sdk-1.0.0.jar"
+ls "D:/Program Files/maven-repo/com/energyxx-device-sdk/1.0.0/energyx-device-sdk-1.0.0.jar"
 ```
 Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能解析依赖）。
 > 本机 maven 本地仓库被全局 settings.xml 指到 `D:\Program Files\maven-repo`（非默认 `~/.m2`），上一条 `ls` 就是查那里。
@@ -58,12 +58,12 @@ Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.sanduo</groupId>
-    <artifactId>sanduo-sim-device</artifactId>
+    <groupId>com.energyx</groupId>
+    <artifactId>energyx-sim-device</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>sanduo-sim-device</name>
+    <name>energyx-sim-device</name>
     <description>EnergyX 平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
 
     <properties>
@@ -81,8 +81,8 @@ Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能
 
     <dependencies>
         <dependency>
-            <groupId>com.sanduo</groupId>
-            <artifactId>sanduo-device-sdk</artifactId>
+            <groupId>com.energyx</groupId>
+            <artifactId>energyx-device-sdk</artifactId>
             <version>${sdk.version}</version>
         </dependency>
         <dependency>
@@ -127,7 +127,7 @@ Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.sanduo.simdevice.SimDeviceCli</mainClass>
+                                    <mainClass>com.energyx.simdevice.SimDeviceCli</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
@@ -166,7 +166,7 @@ chmod +x "D:/ProgramData/Codex-Data/Energy Storage IoT Platform/test/sim-device/
 - [ ] **Step 4: 写失败测试 CliArgsTest**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
 import org.junit.jupiter.api.Test;
 
@@ -246,12 +246,12 @@ class CliArgsTest {
 - [ ] **Step 5: 跑测试确认失败**
 
 Run: `cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform/test/sim-device" && mvn -q test`
-Expected: 编译失败 `程序包 com.sanduo.simdevice 不存在`（CliArgs/DeviceSecret 尚未实现）。
+Expected: 编译失败 `程序包 com.energyx.simdevice 不存在`（CliArgs/DeviceSecret 尚未实现）。
 
 - [ ] **Step 6: 实现 DeviceSecret.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -283,7 +283,7 @@ final class DeviceSecret {
 - [ ] **Step 7: 实现 CliArgs.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -454,9 +454,9 @@ Expected: 生成 `target/sim-device.jar`（shade 产物，主类 Manifest 指向
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform"
 git add test/sim-device/pom.xml test/sim-device/sim-device.sh \
-        test/sim-device/src/main/java/com/sanduo/simdevice/DeviceSecret.java \
-        test/sim-device/src/main/java/com/sanduo/simdevice/CliArgs.java \
-        test/sim-device/src/test/java/com/sanduo/simdevice/CliArgsTest.java
+        test/sim-device/src/main/java/com/energyx/simdevice/DeviceSecret.java \
+        test/sim-device/src/main/java/com/energyx/simdevice/CliArgs.java \
+        test/sim-device/src/test/java/com/energyx/simdevice/CliArgsTest.java
 git commit -m "feat(test/sim-device): 模块脚手架 + CLI 参数解析（密钥派生/优先级/broker 校验）"
 ```
 
@@ -465,20 +465,20 @@ git commit -m "feat(test/sim-device): 模块脚手架 + CLI 参数解析（密�
 ### Task 2: PendingCommands 待处理命令队列
 
 **Files:**
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/PendingCommands.java`
-- Test: `test/sim-device/src/test/java/com/sanduo/simdevice/PendingCommandsTest.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/PendingCommands.java`
+- Test: `test/sim-device/src/test/java/com/energyx/simdevice/PendingCommandsTest.java`
 
 **Interfaces:**
-- Consumes: `com.sanduo.device.CommandMessage`（SDK，链式 `setCommandId/setCommand/setParams`，含 `commandId()`）。
+- Consumes: `com.energyx.device.CommandMessage`（SDK，链式 `setCommandId/setCommand/setParams`，含 `commandId()`）。
 - Produces（供 Task 3/4 使用）:
   - `PendingCommands.add(CommandMessage)`、`latest()`（队尾最新，空返回 null）、`remove(String commandId)`（命中返回并移除，否则 null）、`pendingCount()`、`isEmpty()`。
 
 - [ ] **Step 1: 写失败测试 PendingCommandsTest**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.device.CommandMessage;
+import com.energyx.device.CommandMessage;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
@@ -560,9 +560,9 @@ Expected: 编译失败 `找不到符号: 类 PendingCommands`。
 - [ ] **Step 3: 实现 PendingCommands.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.device.CommandMessage;
+import com.energyx.device.CommandMessage;
 
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -624,8 +624,8 @@ Expected: BUILD SUCCESS，PendingCommandsTest 4 个用例全绿。
 
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform"
-git add test/sim-device/src/main/java/com/sanduo/simdevice/PendingCommands.java \
-        test/sim-device/src/test/java/com/sanduo/simdevice/PendingCommandsTest.java
+git add test/sim-device/src/main/java/com/energyx/simdevice/PendingCommands.java \
+        test/sim-device/src/test/java/com/energyx/simdevice/PendingCommandsTest.java
 git commit -m "feat(test/sim-device): 下行命令待处理队列（线程安全，取最新/按 id 移除）"
 ```
 
@@ -634,8 +634,8 @@ git commit -m "feat(test/sim-device): 下行命令待处理队列（线程安全
 ### Task 3: Connector MqttDevice 生命周期封装
 
 **Files:**
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/Connector.java`
-- Test: `test/sim-device/src/test/java/com/sanduo/simdevice/ConnectorTest.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/Connector.java`
+- Test: `test/sim-device/src/test/java/com/energyx/simdevice/ConnectorTest.java`
 
 **Interfaces:**
 - Consumes: `DeviceIdentity`（SDK record，构造抛 IllegalArgumentException）、`MqttDevice`/`MqttClientConfig`/`DeviceListener`/`CommandMessage`（SDK）、`PendingCommands`（Task 2）。
@@ -651,9 +651,9 @@ git commit -m "feat(test/sim-device): 下行命令待处理队列（线程安全
 - [ ] **Step 1: 写失败测试 ConnectorTest**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.device.DeviceIdentity;
+import com.energyx.device.DeviceIdentity;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -706,14 +706,14 @@ Expected: 编译失败 `找不到符号: 类 Connector`。
 - [ ] **Step 3: 实现 Connector.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.sanduo.device.CommandMessage;
-import com.sanduo.device.DeviceIdentity;
-import com.sanduo.device.DeviceListener;
-import com.sanduo.device.MqttClientConfig;
-import com.sanduo.device.MqttDevice;
+import com.energyx.device.CommandMessage;
+import com.energyx.device.DeviceIdentity;
+import com.energyx.device.DeviceListener;
+import com.energyx.device.MqttClientConfig;
+import com.energyx.device.MqttDevice;
 
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -946,8 +946,8 @@ Expected: BUILD SUCCESS，ConnectorTest 4 个用例全绿（不依赖真实 brok
 
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform"
-git add test/sim-device/src/main/java/com/sanduo/simdevice/Connector.java \
-        test/sim-device/src/test/java/com/sanduo/simdevice/ConnectorTest.java
+git add test/sim-device/src/main/java/com/energyx/simdevice/Connector.java \
+        test/sim-device/src/test/java/com/energyx/simdevice/ConnectorTest.java
 git commit -m "feat(test/sim-device): Connector 封装 MqttDevice 生命周期 + 可切换自动 ACK"
 ```
 
@@ -956,11 +956,11 @@ git commit -m "feat(test/sim-device): Connector 封装 MqttDevice 生命周期 +
 ### Task 4: Repl 交互式命令循环
 
 **Files:**
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/Repl.java`
-- Test: `test/sim-device/src/test/java/com/sanduo/simdevice/ReplParseTest.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/Repl.java`
+- Test: `test/sim-device/src/test/java/com/energyx/simdevice/ReplParseTest.java`
 
 **Interfaces:**
-- Consumes: `Connector`（Task 3 全部方法）、`PendingCommands`（Task 2）、`com.sanduo.device.CommandMessage`。
+- Consumes: `Connector`（Task 3 全部方法）、`PendingCommands`（Task 2）、`com.energyx.device.CommandMessage`。
 - Produces（供 Task 5 使用）:
   - `Repl(Connector connector, PendingCommands pending, InputStream in, PrintStream out)`
   - `void run()`
@@ -971,9 +971,9 @@ git commit -m "feat(test/sim-device): Connector 封装 MqttDevice 生命周期 +
 - [ ] **Step 1: 写失败测试 ReplParseTest**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.simdevice.Repl.ParsedCommand;
+import com.energyx.simdevice.Repl.ParsedCommand;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -1060,9 +1060,9 @@ Expected: 编译失败 `找不到符号: 类 Repl`。
 - [ ] **Step 3: 实现 Repl.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.device.CommandMessage;
+import com.energyx.device.CommandMessage;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -1433,8 +1433,8 @@ Expected: BUILD SUCCESS，ReplParseTest 10 个用例全绿（其余任务用例�
 
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform"
-git add test/sim-device/src/main/java/com/sanduo/simdevice/Repl.java \
-        test/sim-device/src/test/java/com/sanduo/simdevice/ReplParseTest.java
+git add test/sim-device/src/main/java/com/energyx/simdevice/Repl.java \
+        test/sim-device/src/test/java/com/energyx/simdevice/ReplParseTest.java
 git commit -m "feat(test/sim-device): 交互式 REPL 命令循环（解析可单测，下行命令中断打印）"
 ```
 
@@ -1443,7 +1443,7 @@ git commit -m "feat(test/sim-device): 交互式 REPL 命令循环（解析可单
 ### Task 5: SimDeviceCli 入口 + 端到端冒烟
 
 **Files:**
-- Create: `test/sim-device/src/main/java/com/sanduo/simdevice/SimDeviceCli.java`
+- Create: `test/sim-device/src/main/java/com/energyx/simdevice/SimDeviceCli.java`
 
 **Interfaces:**
 - Consumes: `CliArgs`（Task 1）、`PendingCommands`（Task 2）、`Connector`（Task 3）、`Repl`（Task 4）、`DeviceIdentity`（SDK）。
@@ -1451,9 +1451,9 @@ git commit -m "feat(test/sim-device): 交互式 REPL 命令循环（解析可单
 - [ ] **Step 1: 实现 SimDeviceCli.java**
 
 ```java
-package com.sanduo.simdevice;
+package com.energyx.simdevice;
 
-import com.sanduo.device.DeviceIdentity;
+import com.energyx.device.DeviceIdentity;
 
 import java.util.Arrays;
 
@@ -1521,7 +1521,7 @@ Expected: 第一行打印 usage；第二行打印「参数错误: deviceName 不
 
 ```bash
 cd "D:/ProgramData/Codex-Data/Energy Storage IoT Platform"
-git add test/sim-device/src/main/java/com/sanduo/simdevice/SimDeviceCli.java
+git add test/sim-device/src/main/java/com/energyx/simdevice/SimDeviceCli.java
 git commit -m "feat(test/sim-device): sim-device 入口（--help/参数错误路径 + 自动连接进 REPL）"
 ```
 

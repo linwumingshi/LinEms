@@ -2,7 +2,7 @@
 
 日期：2026-08-07
 状态：已批准（方案 A：独立模块 + fat jar + 启动脚本）
-关联：`sdk/java`（sanduo-device-sdk-1.0.0）、`test/stress`（构建模式参照）
+关联：`sdk/java`（energyx-device-sdk-1.0.0）、`test/stress`（构建模式参照）
 
 ## 1. 目标
 
@@ -18,7 +18,7 @@
 
 ## 3. 约束
 
-- Java 17，复用 `sanduo-device-sdk-1.0.0`（HMAC 认证、订阅、自动 ACK 全在 SDK）
+- Java 17，复用 `energyx-device-sdk-1.0.0`（HMAC 认证、订阅、自动 ACK 全在 SDK）
 - 运行期零新增第三方依赖：仅 SDK + jackson + slf4j/logback（与 test/stress 相同）；测试期新增 `junit-jupiter`（test scope）
 - 构建方式：maven-shade fat jar + `sim-device.sh` 启动脚本，复刻 `test/stress/pom.xml` 模式
 - 不写 MySQL（不需要 seed 能力；设备密钥由 CLI 参数提供或确定性派生）
@@ -130,6 +130,6 @@ java -jar target/sim-device.jar --product snd_ess_pcs --device sim-dev-000001 --
 ## 12. 交付物清单
 
 - `test/sim-device/pom.xml`
-- `test/sim-device/src/main/java/com/sanduo/simdevice/{SimDeviceCli,Repl,Connector,PendingCommands}.java`
-- `test/sim-device/src/test/java/com/sanduo/simdevice/{CliArgsTest,ReplParseTest,PendingCommandsTest}.java`
+- `test/sim-device/src/main/java/com/energyx/simdevice/{SimDeviceCli,Repl,Connector,PendingCommands}.java`
+- `test/sim-device/src/test/java/com/energyx/simdevice/{CliArgsTest,ReplParseTest,PendingCommandsTest}.java`
 - `test/sim-device/sim-device.sh`

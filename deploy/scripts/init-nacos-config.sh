@@ -28,7 +28,7 @@ CONTENT="\
 spring:
   datasource:
     password: ${MYSQL_PASSWORD}
-sanduo:
+energyx:
   jwt:
     secret: ${JWT_SECRET}
   tsdb:

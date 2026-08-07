@@ -24,7 +24,7 @@ spring:
         namespace: public
   # 本服务无 MySQL DataSource；DataSource/MyBatis 自动配置已在 TsdbApplication 排除
 
-sanduo:
+energyx:
   tsdb:
     node-id: tsdb-1
     kafka-bootstrap-servers: 127.0.0.1:9092
@@ -41,4 +41,4 @@ sanduo:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info

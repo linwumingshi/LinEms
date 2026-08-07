@@ -82,9 +82,9 @@ describe('useAuthStore', () => {
   })
 
   it('restoreFromStorage：从 localStorage 恢复登录态', () => {
-    localStorage.setItem('sanduo_token', 'jwt-restored')
+    localStorage.setItem('energyx_token', 'jwt-restored')
     localStorage.setItem(
-      'sanduo_user',
+      'energyx_user',
       JSON.stringify({
         userId: 2,
         username: 'ops',

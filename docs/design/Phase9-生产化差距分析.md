@@ -228,7 +228,7 @@
 对应缺陷 **S-02 / F-01 / F-02**，验收口径见 §5 P0-2 行：未登录跳登录页；登出后刷新失效；WS 拒绝未授权握手。
 
 **前端（Vue3 + Pinia + vue-router）**
-- `utils/auth-storage.ts`：localStorage 持久化 `sanduo_token` / `sanduo_user`（http 与 store 共用，规避循环依赖）；
+- `utils/auth-storage.ts`：localStorage 持久化 `energyx_token` / `energyx_user`（http 与 store 共用，规避循环依赖）；
 - `api/auth.ts` + `stores/auth.ts`：登录写内存+持久化、登出先吊销 Redis 会话再清本地（`finally` 保证本地必清）、`restoreFromStorage` 启动恢复、`isAuthenticated` getter；
 - `api/http.ts`：请求拦截器自动附加 `Authorization: Bearer <token>`；**只认 HTTP 401**（登录失败是 200+业务码，不误触）→ 清本地 + `onUnauthorized` 回调跳登录页（`main.ts` 注册，携带 `?redirect=` 回跳）；
 - `views/Login.vue`：表单 + 回车提交 + 错误提示 + 演示账号 admin/admin123；登录成功重建告警 WS（登出已 close，App 不重挂载）；
@@ -238,7 +238,7 @@
 
 **后端**
 - `GlobalAuthFilter` 白名单追加 `/ws`（唯一改动一行，REST 路径仍全量验签；WS 验签下沉到 alarm，直连 alarm 绕过网关同样被拒——防御纵深）；
-- `energy-alarm` 新增 `WsAuthInterceptor`（`HandshakeInterceptor`，读 `?token=` 参数 → `JwtTokenUtil.parse` 验签；成功把 userId/username/tenantId 写入 attributes，失败 401 拒绝握手）+ `config/JwtConfig.java`（绑定 `sanduo.jwt.*`）+ `AlarmWebSocketConfig.addInterceptors` + `AlarmWebSocketHandler` 记录登录身份。
+- `energy-alarm` 新增 `WsAuthInterceptor`（`HandshakeInterceptor`，读 `?token=` 参数 → `JwtTokenUtil.parse` 验签；成功把 userId/username/tenantId 写入 attributes，失败 401 拒绝握手）+ `config/JwtConfig.java`（绑定 `energyx.jwt.*`）+ `AlarmWebSocketConfig.addInterceptors` + `AlarmWebSocketHandler` 记录登录身份。
 
 **验证证据**
 - 前端：`npm run test` **48 用例全绿**（新增 auth store / http 拦截器 / 路由守卫 / alarmSocket 认证 4 个 spec，既有 25 用例零回归）；`npm run build`（vue-tsc + vite）通过；
@@ -257,8 +257,8 @@
 对应缺陷 **S-03**。验收口径：`openssl s_client` 验证握手；SDK TLS 用例通过；演示/生产可切换。**「wss/tls」按 mqtts（TLS over TCP 8883）落地**——验收验证命令是 `openssl s_client` 直连 TCP 套接字，SDK/Broker 均无 WebSocket codec，MQTT-over-WebSocket 不在本次范围。
 
 **Broker 双监听（明文 1883 恒开 + TLS 8883 可切换）**
-- `sanduo.broker.tls.*` 配置（`BrokerProperties.Tls`）；`NettyServerConfig` 抽共享 acceptor 骨架 + pipeline 工厂，TLS 开启时 pipeline 头部加 `SslHandler`（先解密再走 MQTT 编解码），两个 acceptor 共享 boss/worker EventLoopGroup 与同一 `MqttChannelInboundHandler` 单例；
-- 条件 Bean（`@ConditionalOnProperty(prefix="sanduo.broker.tls", name="enabled", havingValue="true")`）：`brokerSslContext`（`SslContextBuilder.forServer(cert, key)`，证书缺失**启动即 fail-fast**）+ `mqttTlsServerBootstrap`；TLS 关闭时两个 Bean 均不存在 → 行为与明文单端口逐字节一致；
+- `energyx.broker.tls.*` 配置（`BrokerProperties.Tls`）；`NettyServerConfig` 抽共享 acceptor 骨架 + pipeline 工厂，TLS 开启时 pipeline 头部加 `SslHandler`（先解密再走 MQTT 编解码），两个 acceptor 共享 boss/worker EventLoopGroup 与同一 `MqttChannelInboundHandler` 单例；
+- 条件 Bean（`@ConditionalOnProperty(prefix="energyx.broker.tls", name="enabled", havingValue="true")`）：`brokerSslContext`（`SslContextBuilder.forServer(cert, key)`，证书缺失**启动即 fail-fast**）+ `mqttTlsServerBootstrap`；TLS 关闭时两个 Bean 均不存在 → 行为与明文单端口逐字节一致；
 - `MqttBrokerServer` 双 `@Qualifier` 注入 + `ObjectProvider` 惰性获取（避免 `NoUniqueBeanDefinitionException`），`start()` 依次绑定 1883 / 8883，`stop()` 双通道优雅关闭。
 
 **证书**：`deploy/scripts/gen-mqtt-certs.sh`（`openssl genpkey` PKCS#8 + 自签，SAN `DNS:localhost, IP:127.0.0.1`）→ `deploy/certs/server-cert.pem` / `server-key.pem`（gitignored，密钥外置，与 P0-4 同轨）。
@@ -296,15 +296,15 @@ Fail-fast：BROKER_TLS_CERT=/nonexistent/x.pem → 启动即中止（MQTT TLS �
 
 > 状态：✅ 已实现并验证（2026-08-06）。对应缺陷 **S-04 / M-02 关闭**。
 
-**方案**：密钥迁入 Nacos 配置中心（用户选定机制），服务经 `spring.config.import: nacos:energy-shared.yaml?group=ENERGY`（SCA 2023.0.1.0 config-data 导入流，非 legacy bootstrap）拉取；全部 11 个模块 `application.yml` 移除明文口令行（`spring.datasource.password` / `sanduo.jwt.secret` / `sanduo.tsdb.jdbc-password`），由 Nacos 注入。SCA config 客户端须显式 `spring.cloud.nacos.config.server-addr`（不回落 discovery.server-addr）。
+**方案**：密钥迁入 Nacos 配置中心（用户选定机制），服务经 `spring.config.import: nacos:energy-shared.yaml?group=ENERGY`（SCA 2023.0.1.0 config-data 导入流，非 legacy bootstrap）拉取；全部 11 个模块 `application.yml` 移除明文口令行（`spring.datasource.password` / `energyx.jwt.secret` / `energyx.tsdb.jdbc-password`），由 Nacos 注入。SCA config 客户端须显式 `spring.cloud.nacos.config.server-addr`（不回落 discovery.server-addr）。
 
 **密钥落点**（仓库零明文，grep 通过）：
 
 | 密钥 | 配置键 | 注入源 |
 |---|---|---|
 | MySQL 密码 | `spring.datasource.password` | Nacos `energy-shared.yaml`（本地经 `deploy/scripts/init-nacos-config.sh` 从 `deploy/env/local.env` 推送，group ENERGY） |
-| JWT 密钥 | `sanduo.jwt.secret` | 同上（system/gateway/alarm 三模块） |
-| TDengine 密码 | `sanduo.tsdb.jdbc-password` | 同上（tsdb） |
+| JWT 密钥 | `energyx.jwt.secret` | 同上（system/gateway/alarm 三模块） |
+| TDengine 密码 | `energyx.tsdb.jdbc-password` | 同上（tsdb） |
 | Nacos 客户端凭据 | `spring.cloud.nacos.username/password` | 环境变量 `NACOS_USERNAME` / `NACOS_PASSWORD`（yml `${...}` 引用） |
 
 **部署注入**：`deploy/env/local.env`（gitignored，含真实 dev 值；值含 `&` 须单引号）→ `deploy/env/local.env.example`（提交，全 `***`）→ `deploy/env/README.md`（用法）；`start-stack.sh` 与 `test/drill/lib.sh` 条件加载 local.env；生产经环境变量/KMS 注入同名键，不落仓库。
@@ -313,7 +313,7 @@ Fail-fast：BROKER_TLS_CERT=/nonexistent/x.pem → 启动即中止（MQTT TLS �
 
 **Fail-fast 实测**：`energy-shared.yaml` 缺失/不可达 → 配置导入强制失败 → 无 `spring.datasource.password` → `Access denied for user 'root'@'localhost' (using password: NO)` → **启动中止**（服务无法在密钥缺失下运行）。注意：`NACOS_USERNAME/PASSWORD` 缺失**不**触发占位符 fail-fast（SCA config-data 阶段把未解析占位符作字面量、客户端匿名回退，因 core auth 关闭）；生产开启 core auth 后缺失凭据将导致登录失败 → 导入失败 → 启动中止。
 
-**验证输出**：11/11 服务 Nacos 注册 healthy=1；网关登录 200（HS384 JWT 签发，secret 来自 Nacos）→ 带 token `/api/system/user/page` 200、无/伪造 token 401；全仓 grep `root&QAQ` / `sanduo-ems-dev-secret-…` / `QAQ123qaq` / `taosdata` 零命中（`com.taosdata.jdbc` 为驱动坐标除外）；`stress seed --count 3` 经 env 注入通过。
+**验证输出**：11/11 服务 Nacos 注册 healthy=1；网关登录 200（HS384 JWT 签发，secret 来自 Nacos）→ 带 token `/api/system/user/page` 200、无/伪造 token 401；全仓 grep `root&QAQ` / `energyx-ems-dev-secret-…` / `QAQ123qaq` / `taosdata` 零命中（`com.taosdata.jdbc` 为驱动坐标除外）；`stress seed --count 3` 经 env 注入通过。
 
 **附带修复**：Java 层兜底默认值移除（`JwtProperties.secret` / `TsdbProperties.jdbcPassword` / `StressCli.MYSQL_PASSWORD` 改 env 驱动，仓库不再有明文兜底）；`WsAuthInterceptorTest` 补显式测试 secret；`docker-compose.yml` 注释内口令脱敏；P0-4 全栈启动暴露的 `energy-access` `LifecycleProcessor` bean 名冲突（`@Component("accessLifecycleProcessor")`）一并修复。
 

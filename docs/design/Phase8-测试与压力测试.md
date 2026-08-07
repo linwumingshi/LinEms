@@ -60,14 +60,14 @@ Broker 统计   control P99  04 MySQL 切换
 sdk/java/                                # 8a 设备 SDK（独立 Maven 工程）
 ├── pom.xml                              # netty-codec-mqtt 4.1.111 / jackson 2.15.4 / logback
 └── src
-    ├── main/java/com/sanduo/device/
+    ├── main/java/com/energyx/device/
     │   ├── HmacAuth.java                # HMAC-SHA256 签名 / username 三段 / nonce / 密钥生成
     │   ├── DeviceIdentity.java          # productKey+deviceName → clientId / topic 推导 + 校验
     │   ├── CommandMessage.java          # 下行指令 DTO（fromMap 工厂）
     │   ├── DeviceListener.java          # onConnected / onCommand / onDisconnected / onError
     │   ├── MqttClientConfig.java        # 连接配置（含 autoReconnect 退避参数）
     │   └── MqttDevice.java              # Netty 客户端：认证/上行/下行 ack/keepalive/自动重连
-    └── test/java/com/sanduo/device/
+    └── test/java/com/energyx/device/
         ├── HmacAuthTest.java            # 9 用例（含 openssl 向量）
         ├── DeviceIdentityTest.java      # 4 用例
         ├── MqttTestBroker.java          # 最小 MQTT Broker（踢线/reject/silence 能力）
@@ -75,7 +75,7 @@ sdk/java/                                # 8a 设备 SDK（独立 Maven 工程�
 
 test/stress/                            # 8b 压测工具（独立 Maven 工程，依赖 SDK）
 ├── pom.xml                              # shade 插件 → target/stress.jar
-└── src/main/java/com/sanduo/stress/
+└── src/main/java/com/energyx/stress/
     ├── StressCli.java                   # 子命令入口 seed/connect/throughput/control
     ├── SeedDevices.java                 # JDBC 批量 INSERT IGNORE 造数（es_device 库）
     ├── ConnectLoad.java                 # 建连速率/延迟分位/保持连接

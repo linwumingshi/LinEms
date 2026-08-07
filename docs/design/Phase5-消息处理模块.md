@@ -90,7 +90,7 @@ Phase 6 command 只写 `iot-command-down`（key=deviceId）；access 消费后�
 ```text
 backend/
 ├── energy-common/                              # 共享契约（Phase 5 增量）
-│   └── src/main/java/com/sanduo/energy/common/
+│   └── src/main/java/com/energyx/common/
 │       ├── mqtt/        RouterEnvelope.java、MqttUpType.java、MqttTopicInfo.java、MqttTopicUtil.java
 │       ├── message/     ThingPropertyMessage / ThingEventMessage / CommandAckMessage /
 │       │                CommandDownMessage / LifecycleMessage / RawMessage（6 个 @Data DTO）
@@ -99,7 +99,7 @@ backend/
 │       └── constant/    KafkaTopicConstant.java（16 topic，含 iot-dlq）
 │
 ├── energy-access/                              # 接入适配服务（8111）
-│   └── src/main/java/com/sanduo/energy/access/
+│   └── src/main/java/com/energyx/access/
 │       ├── AccessApplication.java
 │       ├── config/     AccessProperties.java、AccessConsumerConfig.java
 │       ├── mqtt/       AccessKafkaProducer.java
@@ -112,7 +112,7 @@ backend/
 │       └── lifecycle/  LifecycleProcessor.java、OfflineCommandRedeliverer.java
 │
 └── energy-tsdb/                                # 时序摄取服务（8112）
-    └── src/main/java/com/sanduo/energy/tsdb/
+    └── src/main/java/com/energyx/tsdb/
         ├── TsdbApplication.java                # 排除 DataSource/MyBatis 自动配置，无 MySQL
         ├── config/     TsdbProperties.java、TsdbConsumerConfig.java
         ├── kafka/      TsdbKafkaProducer.java

@@ -30,7 +30,7 @@
 - Create: `backend/energy-ems/pom.xml`
 - Create: `backend/energy-ems/src/main/resources/application.yml`
 - Create: `backend/energy-ems/src/main/resources/bootstrap.yml`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/EnergyEmsApplication.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/EnergyEmsApplication.java`
 - Create: `backend/energy-ems/src/main/resources/db/migration/V1__init_ems.sql`（Flyway，复制 70_ems.sql 的 5 表）
 - Modify: `backend/pom.xml`（模块列表加 `energy-ems`）
 - Modify: `backend/energy-gateway/src/main/resources/application.yml`（加 `/api/ems/**` 路由）
@@ -50,7 +50,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>com.sanduo</groupId>
+    <groupId>com.energyx</groupId>
     <artifactId>energy-ems-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
@@ -61,7 +61,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-common</artifactId>
     </dependency>
     <dependency>
@@ -100,15 +100,15 @@
 - [ ] **Step 2: 创建启动类 `EnergyEmsApplication.java`**
 
 ```java
-package com.sanduo.energy.ems;
+package com.energyx.ems;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = "com.sanduo.energy")
-@MapperScan("com.sanduo.energy.ems.mapper")
+@SpringBootApplication(scanBasePackages = "com.energyx")
+@MapperScan("com.energyx.ems.mapper")
 @EnableScheduling
 public class EnergyEmsApplication {
     public static void main(String[] args) {
@@ -173,7 +173,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-sanduo:
+energyx:
   taos:
     jdbc-url: jdbc:TAOS-RS://127.0.0.1:6041/iot_ems
     username: root
@@ -190,7 +190,7 @@ management:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info
 ```
 
 > 注：与 energy-product 的 application.yml 对齐——`spring.config.import: nacos:energy-shared.yaml` 注入密钥（DB 密码、Nacos 凭据等，见 [[nacos-config-secrets]]）；本地启动从 `deploy/env/local.env` 加载（start-stack.sh 已 source）。全局 `id-type: assign_id` 由各实体的 `@TableId(type = IdType.AUTO)` 覆盖（见 Task 2）。`logic-delete-field: deleted` 仅对含 `deleted` 字段的实体生效，EMS 实体无该字段故不受影响。
@@ -233,11 +233,11 @@ git commit -m "feat(energy-ems): 模块脚手架（pom/启动类/配置/Flyway/�
 ### Task 2: 实体 + Mapper（5 表）
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsStrategy.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsPlan.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsElectricityPrice.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsConstraint.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsExecutionRecord.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/entity/EmsStrategy.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/entity/EmsPlan.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/entity/EmsElectricityPrice.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/entity/EmsConstraint.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/entity/EmsExecutionRecord.java`
 - Create: 对应 5 个 `mapper/*Mapper.java`
 
 **Interfaces:**
@@ -246,14 +246,14 @@ git commit -m "feat(energy-ems): 模块脚手架（pom/启动类/配置/Flyway/�
 
 - [ ] **Step 1: 确认实体基类结论**（对照 product 的 `Product extends BaseEntity` 差异）
 
-Run: `grep -n "class BaseEntity" -A 20 backend/energy-common/src/main/java/com/sanduo/energy/common/entity/BaseEntity.java`
+Run: `grep -n "class BaseEntity" -A 20 backend/energy-common/src/main/java/com/energyx/common/entity/BaseEntity.java`
 
 > **重要差异：** `BaseEntity` 带 `deleted`（@TableLogic）与 `id` 无关的 create/update_time，而 `70_ems.sql` 的 5 张表**都没有 `deleted` 列**、且各自 PK 名为 `strategy_id/plan_id/price_id/constraint_id/exec_id`。因此 EMS 实体**不能 extends BaseEntity**（否则 @TableLogic 会拼 `deleted=0` 查询条件与 `deleted` 插入列 → SQL 报错）。改为显式声明 `@TableId(type = IdType.AUTO)` PK + `tenantId` + `createTime/updateTime`（带 `@TableField(fill=...)`，由 energy-common `AuditMetaObjectHandler` 自动填充，同 BaseEntity 模式）。全局 `id-type: assign_id` 被 `@TableId(type=IdType.AUTO)` 覆盖。
 
 - [ ] **Step 2: 创建 `EmsStrategy.java`**
 
 ```java
-package com.sanduo.energy.ems.entity;
+package com.energyx.ems.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -310,7 +310,7 @@ public class EmsStrategy {
 `EmsPlan.java`（ems_plan，有 create_time/update_time）：
 
 ```java
-package com.sanduo.energy.ems.entity;
+package com.energyx.ems.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -361,7 +361,7 @@ public class EmsPlan {
 `EmsElectricityPrice.java`（ems_electricity_price，**只有 create_time**）：
 
 ```java
-package com.sanduo.energy.ems.entity;
+package com.energyx.ems.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -412,7 +412,7 @@ public class EmsElectricityPrice {
 `EmsConstraint.java`（ems_constraint，一电站一条 uk_constraint_station）：
 
 ```java
-package com.sanduo.energy.ems.entity;
+package com.energyx.ems.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -466,7 +466,7 @@ public class EmsConstraint {
 `EmsExecutionRecord.java`（ems_execution_record，**时间列名 execute_time**）：
 
 ```java
-package com.sanduo.energy.ems.entity;
+package com.energyx.ems.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -507,10 +507,10 @@ public class EmsExecutionRecord {
 - [ ] **Step 4: 创建 5 个 Mapper**（extends `BaseMapper<T>`，`@Mapper` 注解可选——@MapperScan 已覆盖）
 
 ```java
-package com.sanduo.energy.ems.mapper;
+package com.energyx.ems.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.sanduo.energy.ems.entity.EmsStrategy;
+import com.energyx.ems.entity.EmsStrategy;
 
 public interface EmsStrategyMapper extends BaseMapper<EmsStrategy> {
 }
@@ -526,7 +526,7 @@ Expected: BUILD SUCCESS
 - [ ] **Step 6: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity backend/energy-ems/src/main/java/com/sanduo/energy/ems/mapper
+git add backend/energy-ems/src/main/java/com/energyx/ems/entity backend/energy-ems/src/main/java/com/energyx/ems/mapper
 git commit -m "feat(energy-ems): 5 表实体 + Mapper"
 ```
 
@@ -535,10 +535,10 @@ git commit -m "feat(energy-ems): 5 表实体 + Mapper"
 ### Task 3: 纯函数 `PlanGenerator`（峰谷套利 → 24h 点序列）
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanGenerator.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanPoint.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanInput.java`
-- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/util/PlanGeneratorTest.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/util/PlanGenerator.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/util/PlanPoint.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/util/PlanInput.java`
+- Test: `backend/energy-ems/src/test/java/com/energyx/ems/util/PlanGeneratorTest.java`
 
 **Interfaces:**
 - Produces: `PlanGenerator.generate(PlanInput) -> List<PlanPoint>`，纯函数无副作用
@@ -558,7 +558,7 @@ public record PriceTier(LocalTime start, LocalTime end, String priceType, double
 - [ ] **Step 1: 写失败的测试**（峰谷套利基础：谷充峰放）
 
 ```java
-package com.sanduo.energy.ems.util;
+package com.energyx.ems.util;
 
 import org.junit.jupiter.api.Test;
 import java.time.LocalTime;
@@ -606,7 +606,7 @@ Expected: 编译失败（类不存在）
 `PlanGenerator` 核心算法（纯函数）：
 
 ```java
-package com.sanduo.energy.ems.util;
+package com.energyx.ems.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -693,7 +693,7 @@ Expected: PASS
 - [ ] **Step 5: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/util backend/energy-ems/src/test/java/com/sanduo/energy/ems/util
+git add backend/energy-ems/src/main/java/com/energyx/ems/util backend/energy-ems/src/test/java/com/energyx/ems/util
 git commit -m "feat(energy-ems): PlanGenerator 峰谷套利计划生成（纯函数+TDD）"
 ```
 
@@ -702,8 +702,8 @@ git commit -m "feat(energy-ems): PlanGenerator 峰谷套利计划生成（纯函
 ### Task 4: 纯函数 `SafetyEnvelopeValidator`
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidator.java`
-- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidatorTest.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/SafetyEnvelopeValidator.java`
+- Test: `backend/energy-ems/src/test/java/com/energyx/ems/service/SafetyEnvelopeValidatorTest.java`
 
 **Interfaces:**
 - Consumes: `PlanPoint` (Task 3)
@@ -716,9 +716,9 @@ public record ValidationResult(boolean valid, List<String> rejections) {}
 - [ ] **Step 1: 写失败的测试**（SOC 越界、功率越界、合法通过；温度校验本期推迟——PlanPoint 无温度数据，见 Step 3 注释）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
-import com.sanduo.energy.ems.util.PlanPoint;
+import com.energyx.ems.util.PlanPoint;
 import org.junit.jupiter.api.Test;
 import java.time.LocalTime;
 import java.util.List;
@@ -756,9 +756,9 @@ class SafetyEnvelopeValidatorTest {
 - [ ] **Step 3: 实现**
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
-import com.sanduo.energy.ems.util.PlanPoint;
+import com.energyx.ems.util.PlanPoint;
 import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
@@ -799,7 +799,7 @@ public class SafetyEnvelopeValidator {
 - [ ] **Step 5: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidator.java backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidatorTest.java
+git add backend/energy-ems/src/main/java/com/energyx/ems/service/SafetyEnvelopeValidator.java backend/energy-ems/src/test/java/com/energyx/ems/service/SafetyEnvelopeValidatorTest.java
 git commit -m "feat(energy-ems): SafetyEnvelopeValidator 安全包络校验（纯函数+TDD）"
 ```
 
@@ -808,9 +808,9 @@ git commit -m "feat(energy-ems): SafetyEnvelopeValidator 安全包络校验（�
 ### Task 5: Service 层（策略/电价/约束 CRUD）
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsStrategyService.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPriceService.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsConstraintService.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/EmsStrategyService.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/EmsPriceService.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/EmsConstraintService.java`
 
 **Interfaces:**
 - Consumes: 5 Mapper + `TenantContext` + `Result`
@@ -821,21 +821,21 @@ git commit -m "feat(energy-ems): SafetyEnvelopeValidator 安全包络校验（�
 
 - [ ] **Step 1: 看 product 的 `ProductServiceImpl` 租户模式**（requireTenant + TenantContext.getTenantId）
 
-Run: `sed -n '40,60p' backend/energy-product/src/main/java/com/sanduo/energy/product/service/impl/ProductServiceImpl.java`
+Run: `sed -n '40,60p' backend/energy-product/src/main/java/com/energyx/product/service/impl/ProductServiceImpl.java`
 
 - [ ] **Step 2: 实现 `EmsStrategyService`**（仿 ProductServiceImpl：`extends ServiceImpl`，创建时 `setTenantId(requireTenant())`，分页用 `Page` + LambdaQueryWrapper 条件过滤 stationId/type/status）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.sanduo.energy.common.exception.BusinessException;
-import com.sanduo.energy.common.exception.ErrorCode;
-import com.sanduo.energy.common.tenant.TenantContext;
-import com.sanduo.energy.ems.entity.EmsStrategy;
-import com.sanduo.energy.ems.mapper.EmsStrategyMapper;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.tenant.TenantContext;
+import com.energyx.ems.entity.EmsStrategy;
+import com.energyx.ems.mapper.EmsStrategyMapper;
 import org.springframework.stereotype.Service;
 
 /**
@@ -895,16 +895,16 @@ public class EmsStrategyService extends ServiceImpl<EmsStrategyMapper, EmsStrate
 - [ ] **Step 3: 实现 `EmsPriceService`**（分页/批量保存/更新，结构同 Step 2）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.sanduo.energy.common.exception.BusinessException;
-import com.sanduo.energy.common.exception.ErrorCode;
-import com.sanduo.energy.common.tenant.TenantContext;
-import com.sanduo.energy.ems.entity.EmsElectricityPrice;
-import com.sanduo.energy.ems.mapper.EmsElectricityPriceMapper;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.tenant.TenantContext;
+import com.energyx.ems.entity.EmsElectricityPrice;
+import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -947,15 +947,15 @@ public class EmsPriceService extends ServiceImpl<EmsElectricityPriceMapper, EmsE
 - [ ] **Step 4: 实现 `EmsConstraintService`**（一电站一条，getOne + uk_constraint_station 做 upsert）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.sanduo.energy.common.exception.BusinessException;
-import com.sanduo.energy.common.exception.ErrorCode;
-import com.sanduo.energy.common.tenant.TenantContext;
-import com.sanduo.energy.ems.entity.EmsConstraint;
-import com.sanduo.energy.ems.mapper.EmsConstraintMapper;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.tenant.TenantContext;
+import com.energyx.ems.entity.EmsConstraint;
+import com.energyx.ems.mapper.EmsConstraintMapper;
 import org.springframework.stereotype.Service;
 
 /** 安全约束管理（一电站一条，uk_constraint_station）。 */
@@ -999,7 +999,7 @@ Expected: BUILD SUCCESS
 - [ ] **Step 6: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service
+git add backend/energy-ems/src/main/java/com/energyx/ems/service
 git commit -m "feat(energy-ems): 策略/电价/约束 Service 层"
 ```
 
@@ -1008,13 +1008,13 @@ git commit -m "feat(energy-ems): 策略/电价/约束 Service 层"
 ### Task 6: Web 层 Controller（4 个）+ CommandClient
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsStrategyController.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPriceController.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsConstraintController.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPlanController.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/dto/EmsStrategySaveReq.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/dto/EmsPlanGenerateReq.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/CommandClient.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/EmsStrategyController.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/EmsPriceController.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/EmsConstraintController.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/EmsPlanController.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/dto/EmsStrategySaveReq.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/dto/EmsPlanGenerateReq.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/CommandClient.java`
 
 **Interfaces:**
 - Consumes: Service 层 (Task 5), `Result`, `TenantContext`
@@ -1023,10 +1023,10 @@ git commit -m "feat(energy-ems): 策略/电价/约束 Service 层"
 - [ ] **Step 1: 实现 `CommandClient`**（RestTemplate 调 command 服务；`params` 可能为 null 用 HashMap，不用 `Map.of`）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
-import com.sanduo.energy.common.exception.BusinessException;
-import com.sanduo.energy.common.exception.ErrorCode;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -1041,7 +1041,7 @@ public class CommandClient {
 
     private final RestTemplate rest = new RestTemplate();
 
-    @Value("${sanduo.ems.command-base-url:http://127.0.0.1:8114}")
+    @Value("${energyx.ems.command-base-url:http://127.0.0.1:8114}")
     private String baseUrl;
 
     /** 调 energy-command POST /api/command，返回 commandId。业务失败抛 BusinessException（message 透传 command 服务）。 */
@@ -1076,9 +1076,9 @@ public class CommandClient {
 - [ ] **Step 2: 创建 DTO**（`web/dto/EmsStrategySaveReq.java` + `EmsPlanGenerateReq.java`）
 
 ```java
-package com.sanduo.energy.ems.web.dto;
+package com.energyx.ems.web.dto;
 
-import com.sanduo.energy.ems.entity.EmsStrategy;
+import com.energyx.ems.entity.EmsStrategy;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -1116,7 +1116,7 @@ public class EmsStrategySaveReq {
 ```
 
 ```java
-package com.sanduo.energy.ems.web.dto;
+package com.energyx.ems.web.dto;
 
 import lombok.Data;
 
@@ -1136,14 +1136,14 @@ public class EmsPlanGenerateReq {
 - [ ] **Step 3: 实现 `EmsStrategyController`**（映射不带 /api，网关 StripPrefix 处理；分页返回 `PageResult` 对齐 product）
 
 ```java
-package com.sanduo.energy.ems.web;
+package com.energyx.ems.web;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.sanduo.energy.common.model.PageResult;
-import com.sanduo.energy.common.model.Result;
-import com.sanduo.energy.ems.entity.EmsStrategy;
-import com.sanduo.energy.ems.service.EmsStrategyService;
-import com.sanduo.energy.ems.web.dto.EmsStrategySaveReq;
+import com.energyx.common.model.PageResult;
+import com.energyx.common.model.Result;
+import com.energyx.ems.entity.EmsStrategy;
+import com.energyx.ems.service.EmsStrategyService;
+import com.energyx.ems.web.dto.EmsStrategySaveReq;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -1194,13 +1194,13 @@ public class EmsStrategyController {
 - [ ] **Step 4: 实现 `EmsPriceController`**（分页 / 批量保存 / 更新）
 
 ```java
-package com.sanduo.energy.ems.web;
+package com.energyx.ems.web;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.sanduo.energy.common.model.PageResult;
-import com.sanduo.energy.common.model.Result;
-import com.sanduo.energy.ems.entity.EmsElectricityPrice;
-import com.sanduo.energy.ems.service.EmsPriceService;
+import com.energyx.common.model.PageResult;
+import com.energyx.common.model.Result;
+import com.energyx.ems.entity.EmsElectricityPrice;
+import com.energyx.ems.service.EmsPriceService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -1242,11 +1242,11 @@ public class EmsPriceController {
 - [ ] **Step 5: 实现 `EmsConstraintController`**（按电站查 / upsert）
 
 ```java
-package com.sanduo.energy.ems.web;
+package com.energyx.ems.web;
 
-import com.sanduo.energy.common.model.Result;
-import com.sanduo.energy.ems.entity.EmsConstraint;
-import com.sanduo.energy.ems.service.EmsConstraintService;
+import com.energyx.common.model.Result;
+import com.energyx.ems.entity.EmsConstraint;
+import com.energyx.ems.service.EmsConstraintService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -1282,7 +1282,7 @@ Expected: BUILD SUCCESS（Strategy/Price/Constraint Controller 仅依赖 Task 5 
 - [ ] **Step 8: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/web backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/CommandClient.java
+git add backend/energy-ems/src/main/java/com/energyx/ems/web backend/energy-ems/src/main/java/com/energyx/ems/service/CommandClient.java
 git commit -m "feat(energy-ems): Web 层 Controller + CommandClient 下发封装"
 ```
 
@@ -1291,10 +1291,10 @@ git commit -m "feat(energy-ems): Web 层 Controller + CommandClient 下发封装
 ### Task 7: 计划生成编排 `EmsPlanService`
 
 **Files:**
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java`
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/TdenginePlanWriter.java`（TAOS-RS 读写点序列）
-- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPlanController.java`（自 Task 6 移入，依赖本任务的 EmsPlanService）
-- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/EmsPlanServiceTest.java`（Mockito）
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/service/EmsPlanService.java`
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/util/TdenginePlanWriter.java`（TAOS-RS 读写点序列）
+- Create: `backend/energy-ems/src/main/java/com/energyx/ems/web/EmsPlanController.java`（自 Task 6 移入，依赖本任务的 EmsPlanService）
+- Test: `backend/energy-ems/src/test/java/com/energyx/ems/service/EmsPlanServiceTest.java`（Mockito）
 
 **Interfaces:**
 - Consumes: `PlanGenerator` (Task 3), `SafetyEnvelopeValidator` (Task 4), 5 Mapper, `CommandClient` (Task 6)
@@ -1306,17 +1306,17 @@ git commit -m "feat(energy-ems): Web 层 Controller + CommandClient 下发封装
 - [ ] **Step 1: 写 `EmsPlanServiceTest`（Mockito 编排测试）**：mock Mapper/Writer/CommandClient，真实 SafetyEnvelopeValidator，断言生成→校验→落库→写 TDengine 调用链；**租户取自策略行**（generate 不依赖请求租户上下文）
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
-import com.sanduo.energy.ems.entity.EmsConstraint;
-import com.sanduo.energy.ems.entity.EmsPlan;
-import com.sanduo.energy.ems.entity.EmsStrategy;
-import com.sanduo.energy.ems.mapper.EmsConstraintMapper;
-import com.sanduo.energy.ems.mapper.EmsElectricityPriceMapper;
-import com.sanduo.energy.ems.mapper.EmsExecutionRecordMapper;
-import com.sanduo.energy.ems.mapper.EmsPlanMapper;
-import com.sanduo.energy.ems.mapper.EmsStrategyMapper;
-import com.sanduo.energy.ems.util.TdenginePlanWriter;
+import com.energyx.ems.entity.EmsConstraint;
+import com.energyx.ems.entity.EmsPlan;
+import com.energyx.ems.entity.EmsStrategy;
+import com.energyx.ems.mapper.EmsConstraintMapper;
+import com.energyx.ems.mapper.EmsElectricityPriceMapper;
+import com.energyx.ems.mapper.EmsExecutionRecordMapper;
+import com.energyx.ems.mapper.EmsPlanMapper;
+import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.util.TdenginePlanWriter;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -1376,7 +1376,7 @@ Expected: 编译失败（EmsPlanService/TdenginePlanWriter 不存在）
 - [ ] **Step 3: 实现 `TdenginePlanWriter`**（TAOS-RS 直连，仿 tsdb `TdengineWriter`；幂等建库/建 STABLE，时间戳用 `planDate + HH:MM:SS` 完整格式，含 `read` 回读供 dispatch/getPoints）
 
 ```java
-package com.sanduo.energy.ems.util;
+package com.energyx.ems.util;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -1395,13 +1395,13 @@ import java.util.List;
 @Component
 public class TdenginePlanWriter {
 
-    @Value("${sanduo.taos.jdbc-url:jdbc:TAOS-RS://127.0.0.1:6041/iot_ems}")
+    @Value("${energyx.taos.jdbc-url:jdbc:TAOS-RS://127.0.0.1:6041/iot_ems}")
     private String jdbcUrl;
 
-    @Value("${sanduo.taos.username:root}")
+    @Value("${energyx.taos.username:root}")
     private String username;
 
-    @Value("${sanduo.taos.password:taosdata}")
+    @Value("${energyx.taos.password:taosdata}")
     private String password;
 
     /** 写入计划点序列（幂等建库/建 STABLE）。 */
@@ -1457,27 +1457,27 @@ public class TdenginePlanWriter {
 - [ ] **Step 4: 实现 `EmsPlanService`（generate + page + getPoints）**
 
 ```java
-package com.sanduo.energy.ems.service;
+package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.sanduo.energy.common.exception.BusinessException;
-import com.sanduo.energy.common.exception.ErrorCode;
-import com.sanduo.energy.ems.entity.EmsConstraint;
-import com.sanduo.energy.ems.entity.EmsElectricityPrice;
-import com.sanduo.energy.ems.entity.EmsExecutionRecord;
-import com.sanduo.energy.ems.entity.EmsPlan;
-import com.sanduo.energy.ems.entity.EmsStrategy;
-import com.sanduo.energy.ems.mapper.EmsConstraintMapper;
-import com.sanduo.energy.ems.mapper.EmsElectricityPriceMapper;
-import com.sanduo.energy.ems.mapper.EmsExecutionRecordMapper;
-import com.sanduo.energy.ems.mapper.EmsPlanMapper;
-import com.sanduo.energy.ems.mapper.EmsStrategyMapper;
-import com.sanduo.energy.ems.util.PlanGenerator;
-import com.sanduo.energy.ems.util.PlanInput;
-import com.sanduo.energy.ems.util.PlanPoint;
-import com.sanduo.energy.ems.util.PriceTier;
-import com.sanduo.energy.ems.util.TdenginePlanWriter;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
+import com.energyx.ems.entity.EmsConstraint;
+import com.energyx.ems.entity.EmsElectricityPrice;
+import com.energyx.ems.entity.EmsExecutionRecord;
+import com.energyx.ems.entity.EmsPlan;
+import com.energyx.ems.entity.EmsStrategy;
+import com.energyx.ems.mapper.EmsConstraintMapper;
+import com.energyx.ems.mapper.EmsElectricityPriceMapper;
+import com.energyx.ems.mapper.EmsExecutionRecordMapper;
+import com.energyx.ems.mapper.EmsPlanMapper;
+import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.util.PlanGenerator;
+import com.energyx.ems.util.PlanInput;
+import com.energyx.ems.util.PlanPoint;
+import com.energyx.ems.util.PriceTier;
+import com.energyx.ems.util.TdenginePlanWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -1505,10 +1505,10 @@ public class EmsPlanService {
     private final TdenginePlanWriter writer;
     private final CommandClient commandClient;
 
-    @Value("${sanduo.ems.product-key:snd_ess_pcs}")
+    @Value("${energyx.ems.product-key:snd_ess_pcs}")
     private String productKey;
 
-    @Value("${sanduo.ems.device-name:}")
+    @Value("${energyx.ems.device-name:}")
     private String deviceName;
 
     public EmsPlanService(EmsStrategyMapper strategyMapper,
@@ -1636,7 +1636,7 @@ public class EmsPlanService {
             throw new BusinessException(ErrorCode.CONFLICT, "计划状态非待执行: " + plan.getStatus());
         }
         if (deviceName == null || deviceName.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 sanduo.ems.device-name");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 energyx.ems.device-name");
         }
         List<PlanPoint> points;
         try {
@@ -1696,14 +1696,14 @@ public class EmsPlanService {
 `web/EmsPlanController.java`（自 Task 6 移入，依赖本任务的 `EmsPlanService`）：
 
 ```java
-package com.sanduo.energy.ems.web;
+package com.energyx.ems.web;
 
-import com.sanduo.energy.common.model.PageResult;
-import com.sanduo.energy.common.model.Result;
-import com.sanduo.energy.ems.entity.EmsPlan;
-import com.sanduo.energy.ems.service.EmsPlanService;
-import com.sanduo.energy.ems.util.PlanPoint;
-import com.sanduo.energy.ems.web.dto.EmsPlanGenerateReq;
+import com.energyx.common.model.PageResult;
+import com.energyx.common.model.Result;
+import com.energyx.ems.entity.EmsPlan;
+import com.energyx.ems.service.EmsPlanService;
+import com.energyx.ems.util.PlanPoint;
+import com.energyx.ems.web.dto.EmsPlanGenerateReq;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -1750,7 +1750,7 @@ Expected: PASS
 - [ ] **Step 7: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/TdenginePlanWriter.java backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPlanController.java backend/energy-ems/src/test/java/com/sanduo/energy/ems/service
+git add backend/energy-ems/src/main/java/com/energyx/ems/service backend/energy-ems/src/main/java/com/energyx/ems/util/TdenginePlanWriter.java backend/energy-ems/src/main/java/com/energyx/ems/web/EmsPlanController.java backend/energy-ems/src/test/java/com/energyx/ems/service
 git commit -m "feat(energy-ems): EmsPlanService 计划生成编排 + TDengine 点序列写入"
 ```
 
@@ -1759,7 +1759,7 @@ git commit -m "feat(energy-ems): EmsPlanService 计划生成编排 + TDengine �
 ### Task 8: 每日定时生成 + 全量构建/测试
 
 **Files:**
-- Modify: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java`（加 `@Scheduled` 方法）
+- Modify: `backend/energy-ems/src/main/java/com/energyx/ems/service/EmsPlanService.java`（加 `@Scheduled` 方法）
 
 **Interfaces:**
 - Produces: `EmsPlanService.generateDailyPlans()` —— 每日 00:05 为启用策略的电站生成次日计划
@@ -1800,7 +1800,7 @@ Expected: BUILD SUCCESS，全部单测通过（含 PlanGeneratorTest / SafetyEnv
 - [ ] **Step 3: 提交**
 
 ```bash
-git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java
+git add backend/energy-ems/src/main/java/com/energyx/ems/service/EmsPlanService.java
 git commit -m "feat(energy-ems): 每日定时生成次日计划"
 ```
 
@@ -2250,7 +2250,7 @@ Expected: code=0，拿 token
 
 - [ ] **Step 4: 配约束 → 建策略 → 启用 → 生成计划 → 查点 → 下发**
 
-> 前置：generate 依赖 `ems_constraint`（无约束直接报错），必须先配。下发依赖 `sanduo.ems.device-name`（在 Nacos energy-shared.yaml 配 `sanduo.ems.device-name: <设备名>`，指向 snd_ess_pcs 下已注册设备；deviceName 禁 `_`/`&`，见 [[clientid-productkey-contract]]）——未配置则 dispatch 抛 `BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 sanduo.ems.device-name")`。策略名用 ASCII（中文在 Git Bash curl -d 会破 UTF-8，见 [[gitbash-curl-encoding]]）。
+> 前置：generate 依赖 `ems_constraint`（无约束直接报错），必须先配。下发依赖 `energyx.ems.device-name`（在 Nacos energy-shared.yaml 配 `energyx.ems.device-name: <设备名>`，指向 snd_ess_pcs 下已注册设备；deviceName 禁 `_`/`&`，见 [[clientid-productkey-contract]]）——未配置则 dispatch 抛 `BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 energyx.ems.device-name")`。策略名用 ASCII（中文在 Git Bash curl -d 会破 UTF-8，见 [[gitbash-curl-encoding]]）。
 
 ```bash
 TOKEN=<登录token>
@@ -2267,7 +2267,7 @@ curl -s -X POST http://127.0.0.1:8000/api/ems/plan/generate -H "Authorization: B
   -d '{"stationId":1,"planDate":"2026-08-08"}'
 # 4) 查计划点（TDengine）
 curl -s "http://127.0.0.1:8000/api/ems/plan/<planId>/points" -H "Authorization: Bearer $TOKEN"
-# 5) 下发（需已配 sanduo.ems.device-name）
+# 5) 下发（需已配 energyx.ems.device-name）
 curl -s -X POST "http://127.0.0.1:8000/api/ems/plan/<planId>/dispatch" -H "Authorization: Bearer $TOKEN"
 ```
 

@@ -47,7 +47,7 @@
 ### 后端模块 `backend/energy-ems/`
 
 ```
-├── EnergyEmsApplication.java          # @SpringBootApplication + @MapperScan("com.sanduo.energy.ems.mapper")
+├── EnergyEmsApplication.java          # @SpringBootApplication + @MapperScan("com.energyx.ems.mapper")
 ├── entity/    EmsStrategy / EmsPlan / EmsElectricityPrice / EmsConstraint / EmsExecutionRecord
 ├── mapper/    对应 5 表 Mapper（extends BaseMapper<T>）
 ├── service/

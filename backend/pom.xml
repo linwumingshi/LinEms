@@ -18,7 +18,7 @@
     <relativePath/>
   </parent>
 
-  <groupId>com.sanduo</groupId>
+  <groupId>com.energyx</groupId>
   <artifactId>energy-ems-parent</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
@@ -82,12 +82,12 @@
       </dependency>
       <!-- 内部模块统一版本 -->
       <dependency>
-        <groupId>com.sanduo</groupId>
+        <groupId>com.energyx</groupId>
         <artifactId>energy-common</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>com.sanduo</groupId>
+        <groupId>com.energyx</groupId>
         <artifactId>energy-security-core</artifactId>
         <version>${project.version}</version>
       </dependency>

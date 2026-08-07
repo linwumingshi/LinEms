@@ -56,7 +56,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 # ---------------- 自研 Broker 核心配置 ----------------
-sanduo:
+energyx:
   broker:
     node-id: ${BROKER_NODE_ID:broker-1}
     port: ${BROKER_MQTT_PORT:1883}
@@ -87,6 +87,6 @@ sanduo:
 
 logging:
   level:
-    com.sanduo.energy.broker: info
+    com.energyx.broker: info
     org.apache.kafka: warn
     io.netty: warn

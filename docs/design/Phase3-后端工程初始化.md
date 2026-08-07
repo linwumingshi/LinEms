@@ -79,7 +79,7 @@ system 服务提供完整 CRUD（分页 / 详情 / 新增 / 修改 / 逻辑删�
 backend/
 ├── pom.xml                        # 父 POM：统一版本矩阵（Spring Cloud / SCA / MP / Redisson）
 ├── energy-common/                 # 基础库（所有 Servlet 服务共享）
-│   └── src/main/java/com/sanduo/energy/common/
+│   └── src/main/java/com/energyx/common/
 │       ├── model/                 # Result<T> / PageResult<T>（统一返回 + 分页）
 │       ├── exception/             # ErrorCode 枚举 / BusinessException / GlobalExceptionHandler
 │       ├── entity/                # BaseEntity（审计字段 + 逻辑删除）

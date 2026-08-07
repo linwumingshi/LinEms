@@ -41,11 +41,11 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-sanduo:
+energyx:
   # WS 握手鉴权（P0-2）：与网关/energy-system 共享的 JWT 配置，见 energy-security-core JwtProperties
   jwt:
     expire-seconds: 7200
-    issuer: sanduo-ems
+    issuer: energyx-ems
   alarm:
     node-id: alarm-1
     kafka-bootstrap-servers: 127.0.0.1:9092
@@ -61,4 +61,4 @@ sanduo:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info

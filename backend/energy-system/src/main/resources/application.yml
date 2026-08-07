@@ -43,10 +43,10 @@ spring:
         namespace: public
 
 # ---- P0-1 网关鉴权：JWT 配置（HS 系列，算法由密钥长度决定；secret ≥32 字节；生产须经环境变量注入，见 P0-4） ----
-sanduo:
+energyx:
   jwt:
     expire-seconds: 7200
-    issuer: sanduo-ems
+    issuer: energyx-ems
 
 mybatis-plus:
   global-config:
@@ -68,4 +68,4 @@ management:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info

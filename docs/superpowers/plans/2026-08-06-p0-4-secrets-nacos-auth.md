@@ -130,7 +130,7 @@ cat > "$CONTENT_FILE" <<EOF
 spring:
   datasource:
     password: ${MYSQL_PASSWORD}
-sanduo:
+energyx:
   jwt:
     secret: ${JWT_SECRET}
   tsdb:
@@ -194,8 +194,8 @@ Expected: 树中含 `com.alibaba.cloud:spring-cloud-starter-alibaba-nacos-config
 **Files:**
 - Modify: 全部 11 个 `backend/*/src/main/resources/application.yml`
   - energy-system、energy-product、energy-device、energy-station、energy-mqtt-broker、energy-access、energy-shadow、energy-command、energy-alarm（9 个：删 datasource `password: ${MYSQL_PASSWORD}`）
-  - energy-gateway、energy-alarm（2 个：另删 `sanduo.jwt.secret`）
-  - energy-tsdb（1 个：删 `sanduo.tsdb.jdbc-password`）
+  - energy-gateway、energy-alarm（2 个：另删 `energyx.jwt.secret`）
+  - energy-tsdb（1 个：删 `energyx.tsdb.jdbc-password`）
 
 **Interfaces:**
 - Consumes: Task 2 的 dataId（服务启动时经 `spring.config.import` 拉取）；env `NACOS_USERNAME/NACOS_PASSWORD`。
@@ -238,12 +238,12 @@ Expected: 树中含 `com.alibaba.cloud:spring-cloud-starter-alibaba-nacos-config
 
 - [ ] **Step 2: energy-gateway（reactive，无 datasource）**
 
-- 删 `sanduo.jwt` 块中的 `secret: ${JWT_SECRET}` 行（保留 `expire-seconds`/`issuer`）。
+- 删 `energyx.jwt` 块中的 `secret: ${JWT_SECRET}` 行（保留 `expire-seconds`/`issuer`）。
 - 做 Step 1 的编辑 B + C（gateway 的 `spring:` 块目前无 datasource/data/redis/kafka，直接加 `config.import`；nacos 块为 `spring.cloud.nacos.discovery`，补 username/password/config）。
 
 - [ ] **Step 3: energy-tsdb（无 DataSource，删 TDengine 口令）**
 
-- 删 `sanduo.tsdb` 块中的 `jdbc-password: ${TDENGINE_PASSWORD}` 行（保留 `jdbc-username: root`、`jdbc-url`）。
+- 删 `energyx.tsdb` 块中的 `jdbc-password: ${TDENGINE_PASSWORD}` 行（保留 `jdbc-username: root`、`jdbc-url`）。
 - 做 Step 1 的编辑 B + C。
 
 - [ ] **Step 4: energy-mqtt-broker（特殊：nacos discovery 无 namespace，配置照补）**

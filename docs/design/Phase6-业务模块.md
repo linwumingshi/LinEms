@@ -94,7 +94,7 @@ energy-alarm → iot-alarm (key=deviceId) + WebSocket /ws/alarm + ES es-alarm-lo
 ```text
 backend/
 ├── energy-shadow/          # 影子服务（8113）
-│   └── src/main/java/com/sanduo/energy/shadow/
+│   └── src/main/java/com/energyx/shadow/
 │       ├── ShadowApplication.java
 │       ├── config/  ShadowProperties.java   ShadowConsumerConfig.java
 │       ├── consumer/ PropertyShadowConsumer.java
@@ -107,7 +107,7 @@ backend/
 │       └── test/    delta/DeltaCalculatorTest.java   service/ShadowServiceTest.java
 │
 ├── energy-command/         # 指令中心（8114）
-│   └── src/main/java/com/sanduo/energy/command/
+│   └── src/main/java/com/energyx/command/
 │       ├── CommandApplication.java
 │       ├── config/  CommandProperties.java  CommandConsumerConfig.java
 │       ├── consumer/ AckCommandConsumer.java  DeltaCommandConsumer.java  LifecycleCommandConsumer.java
@@ -122,7 +122,7 @@ backend/
 │       └── test/    state/CommandStateTest.java   service/CommandServiceTest.java
 │
 ├── energy-alarm/           # 告警中心（8115）
-│   └── src/main/java/com/sanduo/energy/alarm/
+│   └── src/main/java/com/energyx/alarm/
 │       ├── AlarmApplication.java
 │       ├── config/  AlarmProperties.java    AlarmConsumerConfig.java
 │       ├── consumer/ PropertyAlarmConsumer.java  EventAlarmConsumer.java

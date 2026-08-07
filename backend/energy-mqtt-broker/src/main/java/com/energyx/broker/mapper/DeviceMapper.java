@@ -1,0 +1,16 @@
+package com.energyx.broker.mapper;
+
+import com.energyx.broker.auth.DeviceRow;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+/**
+ * iot_device 只读投影（认证凭据兜底查询）。
+ * 注：分片场景（ShardingSphere 按 device_id hash）SQL 不变，物理表由中间件改写。
+ */
+public interface DeviceMapper {
+
+    @Select("SELECT device_id, tenant_id, product_key, device_name, status " +
+            "FROM iot_device WHERE product_key = #{pk} AND device_name = #{dn} AND deleted = 0 LIMIT 1")
+    DeviceRow selectByProductKeyAndName(@Param("pk") String productKey, @Param("dn") String deviceName);
+}

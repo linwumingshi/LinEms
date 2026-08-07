@@ -41,7 +41,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-sanduo:
+energyx:
   shadow:
     node-id: shadow-1
     kafka-bootstrap-servers: 127.0.0.1:9092
@@ -55,4 +55,4 @@ sanduo:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info

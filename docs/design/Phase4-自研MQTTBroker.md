@@ -105,10 +105,10 @@ Pipeline 预置 90s 兜底 idle；CONNECT 携带 keepalive 后按 `ceil(keepaliv
 backend/energy-mqtt-broker/
 ├── pom.xml                                # netty-codec-mqtt/handler/transport + kafka-clients 3.6.2 + common
 └── src/
-    ├── main/java/com/sanduo/energy/broker/
+    ├── main/java/com/energyx/broker/
     │   ├── MqttBrokerApplication.java     # @MapperScan(broker.mapper) + BrokerProperties
     │   ├── config/
-    │   │   ├── BrokerProperties.java      # sanduo.broker.*（端口/容量/阈值/ttl/kafka）
+    │   │   ├── BrokerProperties.java      # energyx.broker.*（端口/容量/阈值/ttl/kafka）
     │   │   ├── BrokerExecutorConfig.java  # 业务线程池（IO 线程零阻塞）
     │   │   └── NettyServerConfig.java     # NIO ServerBootstrap + Pipeline（decoder/encoder/idle/handler）
     │   ├── server/

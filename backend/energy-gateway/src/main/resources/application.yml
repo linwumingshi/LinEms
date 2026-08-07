@@ -74,10 +74,10 @@ spring:
             - Path=/ws/**
 
 # ---- P0-1 网关鉴权：JWT 配置（与 energy-system 一致；生产经环境变量注入，见 P0-4） ----
-sanduo:
+energyx:
   jwt:
     expire-seconds: 7200
-    issuer: sanduo-ems
+    issuer: energyx-ems
 
 management:
   endpoints:

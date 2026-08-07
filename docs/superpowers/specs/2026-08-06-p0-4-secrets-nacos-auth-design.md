@@ -12,8 +12,8 @@
 | 密钥 | 值 | 位置 |
 |---|---|---|
 | MySQL 密码 | `${MYSQL_PASSWORD}` | energy-system / product / device / station / mqtt-broker / access / shadow / command / alarm（9 个模块的 `spring.datasource.password`） |
-| JWT 密钥 | `${JWT_SECRET}` | energy-system / gateway / alarm（3 个模块的 `sanduo.jwt.secret`） |
-| TDengine 密码 | `${TDENGINE_PASSWORD}` | energy-tsdb（`sanduo.tsdb.jdbc-password`） |
+| JWT 密钥 | `${JWT_SECRET}` | energy-system / gateway / alarm（3 个模块的 `energyx.jwt.secret`） |
+| TDengine 密码 | `${TDENGINE_PASSWORD}` | energy-tsdb（`energyx.tsdb.jdbc-password`） |
 
 **Nacos 服务器现状**（本机 `D:\Program Files\nacos-server-3.1.0`，standalone）：
 - `nacos.core.auth.console.enabled=true` + `nacos.core.auth.admin.enabled=true` → 控制台/管理 API 已认证（实测 `POST /v1/auth/users/login` 需凭据，`nacos/${NACOS_PASSWORD}` 返回 accessToken）。
@@ -40,7 +40,7 @@ init-nacos-config.sh         ▼
   │ 登录 Nacos 取 accessToken  spring 解析 env → 带凭据连 Nacos → 拉取 dataId
   │ POST /v1/cs/configs        │
   │ dataId=energy-shared.yaml ▼
-  ▼                       绑定 spring.datasource.password / sanduo.jwt.secret / sanduo.tsdb.jdbc-password
+  ▼                       绑定 spring.datasource.password / energyx.jwt.secret / energyx.tsdb.jdbc-password
 Nacos dataId（密钥）───────────────────────────────┐
 ```
 
@@ -63,7 +63,7 @@ Nacos dataId（密钥）──────────────────�
 spring:
   datasource:
     password: ${MYSQL_PASSWORD}
-sanduo:
+energyx:
   jwt:
     secret: ${JWT_SECRET}
   tsdb:
@@ -90,7 +90,7 @@ spring:
       username: ${NACOS_USERNAME}
       password: ${NACOS_PASSWORD}
 ```
-gateway 删 `sanduo.jwt.secret` 行、alarm 删 `sanduo.jwt.secret` 行、tsdb 删 `sanduo.tsdb.jdbc-password` 行，各自补 config import + nacos 凭据。
+gateway 删 `energyx.jwt.secret` 行、alarm 删 `energyx.jwt.secret` 行、tsdb 删 `energyx.tsdb.jdbc-password` 行，各自补 config import + nacos 凭据。
 
 ## 4. 错误处理
 

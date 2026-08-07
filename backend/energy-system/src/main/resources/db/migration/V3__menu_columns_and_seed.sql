@@ -10,9 +10,9 @@
 -- 1. sys_permission 补充菜单展示字段（幂等加列）
 --    MySQL 8.0 无 ADD COLUMN IF NOT EXISTS，借助临时存过 + 动态 SQL 判断。
 -- ---------------------------------------------------------------------
-DROP PROCEDURE IF EXISTS sp_sanduo_add_column;
+DROP PROCEDURE IF EXISTS sp_energyx_add_column;
 DELIMITER //
-CREATE PROCEDURE sp_sanduo_add_column(
+CREATE PROCEDURE sp_energyx_add_column(
     IN p_table_name VARCHAR(64),
     IN p_column_name VARCHAR(64),
     IN p_column_ddl VARCHAR(1024)
@@ -24,28 +24,28 @@ BEGIN
           AND TABLE_NAME = p_table_name
           AND COLUMN_NAME = p_column_name
     ) THEN
-        SET @sanduo_ddl = p_column_ddl;
-        PREPARE sanduo_stmt FROM @sanduo_ddl;
-        EXECUTE sanduo_stmt;
-        DEALLOCATE PREPARE sanduo_stmt;
+        SET @energyx_ddl = p_column_ddl;
+        PREPARE energyx_stmt FROM @energyx_ddl;
+        EXECUTE energyx_stmt;
+        DEALLOCATE PREPARE energyx_stmt;
     END IF;
 END //
 DELIMITER ;
 
-CALL sp_sanduo_add_column('sys_permission', 'icon',
+CALL sp_energyx_add_column('sys_permission', 'icon',
     'ALTER TABLE `sys_permission` ADD COLUMN `icon` VARCHAR(100) NOT NULL DEFAULT ''#'' COMMENT ''菜单图标''');
-CALL sp_sanduo_add_column('sys_permission', 'component',
+CALL sp_energyx_add_column('sys_permission', 'component',
     'ALTER TABLE `sys_permission` ADD COLUMN `component` VARCHAR(255) DEFAULT NULL COMMENT ''前端组件路径''');
-CALL sp_sanduo_add_column('sys_permission', 'visible',
+CALL sp_energyx_add_column('sys_permission', 'visible',
     'ALTER TABLE `sys_permission` ADD COLUMN `visible` TINYINT NOT NULL DEFAULT 0 COMMENT ''是否显示：0显示 1隐藏''');
-CALL sp_sanduo_add_column('sys_permission', 'status',
+CALL sp_energyx_add_column('sys_permission', 'status',
     'ALTER TABLE `sys_permission` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 0 COMMENT ''状态：0正常 1停用''');
-CALL sp_sanduo_add_column('sys_permission', 'remark',
+CALL sp_energyx_add_column('sys_permission', 'remark',
     'ALTER TABLE `sys_permission` ADD COLUMN `remark` VARCHAR(500) DEFAULT NULL COMMENT ''备注''');
-CALL sp_sanduo_add_column('sys_permission', 'update_time',
+CALL sp_energyx_add_column('sys_permission', 'update_time',
     'ALTER TABLE `sys_permission` ADD COLUMN `update_time` DATETIME(3) DEFAULT NULL COMMENT ''更新时间''');
 
-DROP PROCEDURE sp_sanduo_add_column;
+DROP PROCEDURE sp_energyx_add_column;
 
 -- ---------------------------------------------------------------------
 -- 2. 系统管理菜单种子（perm_type：1菜单 2按钮 3数据；perm_code 即 @ss.hasPermi 权限标识）

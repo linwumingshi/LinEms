@@ -5,10 +5,10 @@
  * stores/auth.ts（读写登录态）共用，避免两者互相 import 造成循环依赖。
  * token 与用户信息分键存储，登录/登出/会话失效统一走本模块。</p>
  */
-export const TOKEN_KEY = 'sanduo_token'
-export const USER_KEY = 'sanduo_user'
+export const TOKEN_KEY = 'energyx_token'
+export const USER_KEY = 'energyx_user'
 
-/** 持久化的用户子集（token 独立存 sanduo_token） */
+/** 持久化的用户子集（token 独立存 energyx_token） */
 export interface StoredUser {
   userId: number
   username: string

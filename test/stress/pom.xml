@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.sanduo</groupId>
-    <artifactId>sanduo-stress</artifactId>
+    <groupId>com.energyx</groupId>
+    <artifactId>energyx-stress</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>sanduo-stress</name>
+    <name>energyx-stress</name>
     <description>EnergyX 平台压测与演练工具：造数 / 连接压测 / 吞吐压测 / 控制链路 P99</description>
 
     <properties>
@@ -28,8 +28,8 @@
     <dependencies>
         <!-- 设备端 SDK：真实 Broker 认证 / 上行 / 下行指令 -->
         <dependency>
-            <groupId>com.sanduo</groupId>
-            <artifactId>sanduo-device-sdk</artifactId>
+            <groupId>com.energyx</groupId>
+            <artifactId>energyx-device-sdk</artifactId>
             <version>${sdk.version}</version>
         </dependency>
 
@@ -79,7 +79,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.sanduo.stress.StressCli</mainClass>
+                                    <mainClass>com.energyx.stress.StressCli</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

@@ -12,7 +12,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>com.sanduo</groupId>
+    <groupId>com.energyx</groupId>
     <artifactId>energy-ems-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
@@ -23,13 +23,13 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-common</artifactId>
     </dependency>
 
     <!-- WS 握手 JWT 验签（与网关/系统共享 secret/issuer，P0-2） -->
     <dependency>
-      <groupId>com.sanduo</groupId>
+      <groupId>com.energyx</groupId>
       <artifactId>energy-security-core</artifactId>
     </dependency>
 
@@ -69,7 +69,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <mainClass>com.sanduo.energy.alarm.AlarmApplication</mainClass>
+          <mainClass>com.energyx.alarm.AlarmApplication</mainClass>
         </configuration>
       </plugin>
     </plugins>

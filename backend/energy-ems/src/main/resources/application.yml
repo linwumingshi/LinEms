@@ -51,7 +51,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-sanduo:
+energyx:
   taos:
     jdbc-url: jdbc:TAOS-RS://127.0.0.1:6041/iot_ems
     username: root
@@ -68,4 +68,4 @@ management:
 
 logging:
   level:
-    com.sanduo.energy: info
+    com.energyx: info
