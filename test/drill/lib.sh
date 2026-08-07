@@ -125,7 +125,7 @@ stress() { # 转发全部参数到 stress.jar
   if [ ! -f "$STRESS_JAR" ]; then
     die "[Drill] 缺少压测工具 ${STRESS_JAR}，请先 cd test/stress && mvn package"
   fi
-  java -Dfile.encoding=UTF-8 -jar "$STRESS_JAR" "$@"
+  java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -jar "$STRESS_JAR" "$@"
 }
 
 # ----------------------------------------------------------------
