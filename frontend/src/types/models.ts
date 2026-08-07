@@ -172,3 +172,68 @@ export interface LoginResult {
   permissions: string[]
   roles: string[]
 }
+
+// ---------------- 储能策略 EMS ----------------
+
+export interface EmsStrategy {
+  strategyId: number
+  stationId: number
+  strategyName: string
+  strategyType: string
+  config: string
+  priority: number
+  status: number
+  version: number
+  tenantId: number
+  createTime: string
+}
+
+export interface EmsPlan {
+  planId: number
+  stationId: number
+  strategyId: number
+  planDate: string
+  planType: number
+  totalEnergy: number | null
+  status: number
+}
+
+export interface EmsPlanPoint {
+  time: string
+  action: string
+  powerKw: number
+  socTarget: number
+}
+
+export interface EmsConstraint {
+  constraintId: number
+  tenantId: number
+  stationId: number
+  socMin: number | null
+  socMax: number | null
+  chargePowerMax: number | null
+  dischargePowerMax: number | null
+  tempMax: number | null
+  voltageMax: number | null
+  currentMax: number | null
+  safetyEnvelope: string | null
+  status: number
+  createTime: string
+  updateTime: string
+}
+
+export interface EmsElectricityPrice {
+  priceId: number
+  tenantId: number
+  stationId: number
+  region: string
+  /** DEEP/PEEK/PEAK/FLAT/VALLEY */
+  priceType: string
+  startTime: string
+  endTime: string
+  price: number
+  validFrom: string
+  validTo: string
+  status: number
+  createTime: string
+}
