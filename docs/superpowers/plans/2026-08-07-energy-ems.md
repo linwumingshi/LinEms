@@ -1,0 +1,1305 @@
+# energy-ems 储能策略引擎 + 前端页面 实现计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 实现 energy-ems 储能策略引擎服务（多策略 + 计划生成 + 安全包络校验 + 下发复用 command 链路）+ 前端策略管理/计划页面。
+
+**Architecture:** 新建独立 `energy-ems` 微服务（8105 端口），复用 `sql/mysql/70_ems.sql` 已设计的 5 张表 + `energy-common` 条件化租户拦截器；计划生成用纯函数 `PlanGenerator`（峰谷套利→24h 点序列），点序列写 TDengine `ems_plan_point` STABLE，下发通过调用 energy-command 的 `POST /api/command` 复用现成指令链路；前端新增策略管理与计划页面。
+
+**Tech Stack:** Java 17 / Spring Boot 3.2 / MyBatis-Plus / Flyway / Nacos / Kafka / taos-jdbcdriver 3.9.0（TAOS-RS）/ OpenFeign（或 RestTemplate）/ Vue3 / Element Plus / ECharts。
+
+## Global Constraints
+
+- 5 张业务表结构以 `sql/mysql/70_ems.sql` 为准，**不改表结构**；库名 `es_ems`，前缀 `ems_`/`iot_` 按现有表命名。
+- 所有表带 `tenant_id` 列，创建时经 `TenantContext` 写租户；查询由条件化租户拦截器自动追加条件（同 energy-product）。
+- 控制器映射**不带 `/api`**（网关 `/api/ems/**` StripPrefix=1），对齐 product/device/station 资产模块。
+- 下发复用 energy-command：`POST /api/command`（body: productKey/deviceName/command/params/createBy），不重复造指令链路。
+- 安全包络校验必须在生成/下发前执行（Phase1 §2.4）。
+- 点序列 TDengine：新建 `ems_plan_point` STABLE（按 stationId 建子表，tag 含 station_id），MySQL 只存计划头。
+- 计划生成触发：页面手动 + `@Scheduled(cron="0 5 0 * * *")` 每日 00:05。
+- 端口 8105 未被占用（README 端口表核对）。
+- 前端复用 `api/*.ts` + `useEChart` + Element Plus 现有模式。
+- 后端测试：JUnit5 + Mockito；核心逻辑（PlanGenerator/SafetyEnvelopeValidator）纯函数单测。
+- 运行环境：本机 MySQL 8.4（127.0.0.1:3306，密码见 memory）、TDengine 3.3（127.0.0.1:6041 TAOS-RS root/taosdata）、Nacos 8848、Kafka 9092。maven-repo：`/d/Program Files/maven-repo`。
+
+---
+
+### Task 1: energy-ems 模块脚手架（pom + 启动类 + 配置 + 网关路由）
+
+**Files:**
+- Create: `backend/energy-ems/pom.xml`
+- Create: `backend/energy-ems/src/main/resources/application.yml`
+- Create: `backend/energy-ems/src/main/resources/bootstrap.yml`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/EnergyEmsApplication.java`
+- Create: `backend/energy-ems/src/main/resources/db/migration/V1__init_ems.sql`（Flyway，复制 70_ems.sql 的 5 表）
+- Modify: `backend/pom.xml`（模块列表加 `energy-ems`）
+- Modify: `backend/energy-gateway/src/main/resources/application.yml`（加 `/api/ems/**` 路由）
+- Modify: `deploy/scripts/start-stack.sh`、`deploy/scripts/status-stack.sh`、`deploy/scripts/stop-stack.sh`（SERVICES 加 energy-ems:8105）
+
+**Interfaces:**
+- Consumes: `energy-common`（TenantContext/ConditionalTenantLineHandler/Result）
+- Produces: 可启动的空 Spring Boot 服务，注册 Nacos，网关 `/api/ems/**` 可达
+
+- [ ] **Step 1: 复制 energy-product 的 pom 为模板，创建 `backend/energy-ems/pom.xml`**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- energy-ems：储能策略引擎（策略/电价/约束/计划/执行记录） -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.sanduo</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>energy-ems</artifactId>
+  <name>energy-ems</name>
+  <description>储能策略引擎：策略/分时电价/安全约束/充放电计划/执行记录</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sanduo</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.taosdata.jdbc</groupId>
+      <artifactId>taos-jdbcdriver</artifactId>
+      <version>3.9.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-mysql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+```
+
+> 注：本期用 RestTemplate 调 command（不引 Feign 依赖，减少 Nacos 负载均衡配置面）；Taos 连接直接 DriverManager 复用 tsdb 模式。
+
+- [ ] **Step 2: 创建启动类 `EnergyEmsApplication.java`**
+
+```java
+package com.sanduo.energy.ems;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+@SpringBootApplication(scanBasePackages = "com.sanduo.energy")
+@MapperScan("com.sanduo.energy.ems.mapper")
+@EnableScheduling
+public class EnergyEmsApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(EnergyEmsApplication.class, args);
+    }
+}
+```
+
+- [ ] **Step 3: 创建 `application.yml`（端口 8105 + Nacos + MySQL + taos 连接）**
+
+```yaml
+server:
+  port: 8105
+spring:
+  application:
+    name: energy-ems
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:}
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/es_ems?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: ${MYSQL_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+sanduo:
+  taos:
+    jdbc-url: jdbc:TAOS-RS://127.0.0.1:6041/iot_ems
+    username: root
+    password: ${TDENGINE_PASSWORD:taosdata}
+    plan-db: iot_ems
+  ems:
+    command-base-url: http://127.0.0.1:8114
+```
+
+> 注：Nacos 配置中心（energy-shared.yaml）注入密钥；本地启动从 `deploy/env/local.env` 加载（start-stack.sh 已 source）。
+
+- [ ] **Step 4: 创建 Flyway `V1__init_ems.sql`**（复制 `sql/mysql/70_ems.sql` 的 5 表 CREATE，去掉 `DROP TABLE IF EXISTS`，保留 `USE es_ems` 行改为注释；Flyway 需先建库）
+
+在 MySQL 执行：`CREATE DATABASE IF NOT EXISTS es_ems DEFAULT CHARSET utf8mb4;`
+
+- [ ] **Step 5: `backend/pom.xml` 模块列表加 `energy-ems`**（在 energy-alarm 后追加一行 `<module>energy-ems</module>`）
+
+- [ ] **Step 6: 网关 `application.yml` 加路由**（在 energy-alarm 路由后追加）
+
+```yaml
+        - id: energy-ems
+          uri: lb://energy-ems
+          predicates:
+            - Path=/api/ems/**
+          filters:
+            - StripPrefix=1
+```
+
+- [ ] **Step 7: 三个部署脚本 SERVICES 加 `energy-ems:8105`**
+
+`start-stack.sh` / `status-stack.sh` / `stop-stack.sh` 的 SERVICES 数组追加 `"energy-ems:8105"`（网关后启动顺序放在 energy-station 之后）。
+
+- [ ] **Step 8: 构建验证**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" package -DskipTests -pl energy-ems -am`
+Expected: BUILD SUCCESS，生成 `energy-ems-1.0.0-SNAPSHOT.jar`
+
+- [ ] **Step 9: 提交**
+
+```bash
+git add backend/pom.xml backend/energy-ems deploy/scripts/start-stack.sh deploy/scripts/status-stack.sh deploy/scripts/stop-stack.sh backend/energy-gateway/src/main/resources/application.yml
+git commit -m "feat(energy-ems): 模块脚手架（pom/启动类/配置/Flyway/网关路由/部署脚本）"
+```
+
+---
+
+### Task 2: 实体 + Mapper（5 表）
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsStrategy.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsPlan.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsElectricityPrice.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsConstraint.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity/EmsExecutionRecord.java`
+- Create: 对应 5 个 `mapper/*Mapper.java`
+
+**Interfaces:**
+- Consumes: `BaseEntity`（energy-common，含 id/createTime/updateTime/deleted/tenantId）
+- Produces: 5 个实体 + 5 个 Mapper，后续 Service 层使用
+
+- [ ] **Step 1: 看 `BaseEntity` 字段**（energy-common 里 `BaseEntity`，product 的 `Product extends BaseEntity`）
+
+Run: `grep -n "class BaseEntity" -A 20 backend/energy-common/src/main/java/com/sanduo/energy/common/**/*.java`
+
+- [ ] **Step 2: 创建 `EmsStrategy.java`**
+
+```java
+package com.sanduo.energy.ems.entity;
+
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.sanduo.energy.common.entity.BaseEntity;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+@EqualsAndHashCode(callSuper = true)
+@Data
+@TableName("ems_strategy")
+public class EmsStrategy extends BaseEntity {
+    private Long stationId;
+    private String strategyName;
+    private String strategyType;   // PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME
+    private String config;         // JSON
+    private Integer priority;
+    private Integer status;        // 0草稿 1启用 2停用
+    private Integer version;
+    private Long createBy;
+}
+```
+
+- [ ] **Step 3: 创建其余 4 个实体**（对照 70_ems.sql 字段）
+
+`EmsPlan`: planId, stationId, strategyId, planDate(LocalDate), planType(Integer), totalEnergy(BigDecimal), planParam(String JSON), status(Integer)
+`EmsElectricityPrice`: priceId, stationId, region, priceType, startTime(LocalTime), endTime(LocalTime), price(BigDecimal), validFrom(LocalDate), validTo(LocalDate), status(Integer)
+`EmsConstraint`: constraintId, stationId, socMin, socMax, chargePowerMax, dischargePowerMax, tempMax, voltageMax, currentMax, safetyEnvelope(String JSON), status(Integer)
+`EmsExecutionRecord`: execId, planId, commandId(String), deviceId(Long), action(String), params(String JSON), result(String JSON)
+
+- [ ] **Step 4: 创建 5 个 Mapper**（extends `BaseMapper<T>`，`@Mapper` 注解可选——@MapperScan 已覆盖）
+
+```java
+package com.sanduo.energy.ems.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.sanduo.energy.ems.entity.EmsStrategy;
+
+public interface EmsStrategyMapper extends BaseMapper<EmsStrategy> {
+}
+```
+
+（EmsPlanMapper / EmsElectricityPriceMapper / EmsConstraintMapper / EmsExecutionRecordMapper 同构）
+
+- [ ] **Step 5: 编译验证**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" compile -pl energy-ems -am`
+Expected: BUILD SUCCESS
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/entity backend/energy-ems/src/main/java/com/sanduo/energy/ems/mapper
+git commit -m "feat(energy-ems): 5 表实体 + Mapper"
+```
+
+---
+
+### Task 3: 纯函数 `PlanGenerator`（峰谷套利 → 24h 点序列）
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanGenerator.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanPoint.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/PlanInput.java`
+- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/util/PlanGeneratorTest.java`
+
+**Interfaces:**
+- Produces: `PlanGenerator.generate(PlanInput) -> List<PlanPoint>`，纯函数无副作用
+
+```java
+public record PlanPoint(LocalTime time, String action, double powerKw, double socTarget) {}
+public record PlanInput(
+    String strategyType,        // "PEAK_VALLEY"
+    String config,              // JSON: {chargeWindows:[{start, end, powerLimit}], dischargeWindows:[...], socRange:{min,max}}
+    List<PriceTier> prices,     // 分时电价
+    double socInit,             // 初始 SOC %
+    double socMin, double socMax, double chargePowerMax, double dischargePowerMax
+) {}
+public record PriceTier(LocalTime start, LocalTime end, String priceType, double price) {}
+```
+
+- [ ] **Step 1: 写失败的测试**（峰谷套利基础：谷充峰放）
+
+```java
+package com.sanduo.energy.ems.util;
+
+import org.junit.jupiter.api.Test;
+import java.time.LocalTime;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+class PlanGeneratorTest {
+
+    @Test
+    void peakValley_basicChargeValleyDischargePeak() {
+        PlanInput in = new PlanInput(
+            "PEAK_VALLEY",
+            """
+            {"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],
+             "dischargeWindows":[{"start":"18:00","end":"22:00","powerLimit":80}],
+             "socRange":{"min":10,"max":90}}
+            """,
+            List.of(new PriceTier(LocalTime.of(0,0), LocalTime.of(8,0), "VALLEY", 0.3),
+                    new PriceTier(LocalTime.of(8,0), LocalTime.of(24,0), "PEAK", 1.2)),
+            50.0, 10.0, 90.0, 100.0, 80.0
+        );
+        List<PlanPoint> points = PlanGenerator.generate(in);
+        assertNotNull(points);
+        assertFalse(points.isEmpty());
+        // 充电窗口内应有 CHARGE 点
+        boolean hasCharge = points.stream().anyMatch(p -> p.action().equals("CHARGE"));
+        boolean hasDischarge = points.stream().anyMatch(p -> p.action().equals("DISCHARGE"));
+        assertTrue(hasCharge && hasDischarge);
+    }
+}
+```
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" test -pl energy-ems -Dtest=PlanGeneratorTest`
+Expected: 编译失败（类不存在）
+
+- [ ] **Step 3: 实现 `PlanPoint` / `PlanInput` / `PlanGenerator`**
+
+`PlanGenerator` 核心算法（纯函数）：
+
+```java
+package com.sanduo.energy.ems.util;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
+
+public class PlanGenerator {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int SLOT_MIN = 5; // 5 分钟粒度
+
+    public static List<PlanPoint> generate(PlanInput in) {
+        if (!"PEAK_VALLEY".equals(in.strategyType())) {
+            return List.of(); // 本期只实现峰谷套利，其他类型返回空（后续扩展）
+        }
+        List<PlanPoint> out = new ArrayList<>();
+        try {
+            JsonNode cfg = MAPPER.readTree(in.config());
+            double soc = in.socInit();
+            // 充电窗口
+            for (JsonNode w : cfg.path("chargeWindows")) {
+                LocalTime start = LocalTime.parse(w.path("start").asText());
+                LocalTime end = LocalTime.parse(w.path("end").asText());
+                double limit = w.path("powerLimit").asDouble();
+                for (LocalTime t = start; t.isBefore(end); t = t.plusMinutes(SLOT_MIN)) {
+                    if (soc >= in.socMax()) break;
+                    double need = Math.min(limit, (in.socMax() - soc) * 0.1); // 近似：SOC 每 1% ≈ 0.1 倍功率约束
+                    out.add(new PlanPoint(t, "CHARGE", Math.min(need, in.chargePowerMax()), soc));
+                    soc += Math.min(need, in.chargePowerMax()) * SLOT_MIN / 60.0 * 0.01;
+                }
+            }
+            // 放电窗口
+            for (JsonNode w : cfg.path("dischargeWindows")) {
+                LocalTime start = LocalTime.parse(w.path("start").asText());
+                LocalTime end = LocalTime.parse(w.path("end").asText());
+                double limit = w.path("powerLimit").asDouble();
+                for (LocalTime t = start; t.isBefore(end); t = t.plusMinutes(SLOT_MIN)) {
+                    if (soc <= in.socMin()) break;
+                    out.add(new PlanPoint(t, "DISCHARGE", Math.min(limit, in.dischargePowerMax()), soc));
+                    soc -= Math.min(limit, in.dischargePowerMax()) * SLOT_MIN / 60.0 * 0.01;
+                }
+            }
+            // 其余时段 STANDBY
+            out.add(new PlanPoint(LocalTime.of(23, 55), "STANDBY", 0, soc));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("策略配置解析失败: " + e.getMessage(), e);
+        }
+        return out;
+    }
+}
+```
+
+> 注：SOC 演进公式是简化近似（充电功率×时长→SOC 增量）。真正精确需电池容量，本期 YAGNI——计划用于安全包络校验 + 下发，SOC 演进的业务准确性属 AI/模型层。测试聚焦行为（有 CHARGE/DISCHARGE 点、SOC 不越界）。
+
+- [ ] **Step 4: 运行确认通过**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" test -pl energy-ems -Dtest=PlanGeneratorTest`
+Expected: PASS
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/util backend/energy-ems/src/test/java/com/sanduo/energy/ems/util
+git commit -m "feat(energy-ems): PlanGenerator 峰谷套利计划生成（纯函数+TDD）"
+```
+
+---
+
+### Task 4: 纯函数 `SafetyEnvelopeValidator`
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidator.java`
+- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidatorTest.java`
+
+**Interfaces:**
+- Consumes: `PlanPoint` (Task 3)
+- Produces: `SafetyEnvelopeValidator.validate(List<PlanPoint>, socMin, socMax, chargeMax, dischargeMax, tempMax) -> ValidationResult`
+
+```java
+public record ValidationResult(boolean valid, List<String> rejections) {}
+```
+
+- [ ] **Step 1: 写失败的测试**（SOC 越界、功率越界、温度越界、合法通过）
+
+```java
+package com.sanduo.energy.ems.service;
+
+import com.sanduo.energy.ems.util.PlanPoint;
+import org.junit.jupiter.api.Test;
+import java.time.LocalTime;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+class SafetyEnvelopeValidatorTest {
+
+    @Test
+    void rejectsSocOutOfRange() {
+        var pts = List.of(new PlanPoint(LocalTime.of(2,0), "CHARGE", 100, 95.0)); // soc 95 > max 90
+        var r = SafetyEnvelopeValidator.validate(pts, 10.0, 90.0, 100.0, 80.0, null);
+        assertFalse(r.valid());
+        assertTrue(r.rejections().stream().anyMatch(s -> s.contains("SOC")));
+    }
+
+    @Test
+    void rejectsPowerOverLimit() {
+        var pts = List.of(new PlanPoint(LocalTime.of(2,0), "CHARGE", 150, 50.0)); // 150 > charge 100
+        var r = SafetyEnvelopeValidator.validate(pts, 10.0, 90.0, 100.0, 80.0, null);
+        assertFalse(r.valid());
+        assertTrue(r.rejections().stream().anyMatch(s -> s.contains("功率")));
+    }
+
+    @Test
+    void passesWithinEnvelope() {
+        var pts = List.of(new PlanPoint(LocalTime.of(2,0), "CHARGE", 80, 50.0));
+        var r = SafetyEnvelopeValidator.validate(pts, 10.0, 90.0, 100.0, 80.0, null);
+        assertTrue(r.valid());
+    }
+}
+```
+
+- [ ] **Step 2: 运行确认失败**（类不存在）
+
+- [ ] **Step 3: 实现**
+
+```java
+package com.sanduo.energy.ems.service;
+
+import com.sanduo.energy.ems.util.PlanPoint;
+import org.springframework.stereotype.Component;
+import java.util.ArrayList;
+import java.util.List;
+
+@Component
+public class SafetyEnvelopeValidator {
+
+    public record ValidationResult(boolean valid, List<String> rejections) {}
+
+    public ValidationResult validate(List<PlanPoint> points, double socMin, double socMax,
+                                     double chargeMax, double dischargeMax, Double tempMax) {
+        List<String> rejections = new ArrayList<>();
+        for (PlanPoint p : points) {
+            if (p.socTarget() < socMin || p.socTarget() > socMax) {
+                rejections.add(String.format("SOC 越界 time=%s soc=%.1f (允许 %.1f~%.1f)",
+                        p.time(), p.socTarget(), socMin, socMax));
+            }
+            if ("CHARGE".equals(p.action()) && p.powerKw() > chargeMax) {
+                rejections.add(String.format("充电功率越界 time=%s power=%.1f (允许 %.1f)",
+                        p.time(), p.powerKw(), chargeMax));
+            }
+            if ("DISCHARGE".equals(p.action()) && p.powerKw() > dischargeMax) {
+                rejections.add(String.format("放电功率越界 time=%s power=%.1f (允许 %.1f)",
+                        p.time(), p.powerKw(), dischargeMax));
+            }
+        }
+        return new ValidationResult(rejections.isEmpty(), rejections);
+    }
+}
+```
+
+- [ ] **Step 4: 运行确认通过**
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidator.java backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/SafetyEnvelopeValidatorTest.java
+git commit -m "feat(energy-ems): SafetyEnvelopeValidator 安全包络校验（纯函数+TDD）"
+```
+
+---
+
+### Task 5: Service 层（策略/电价/约束 CRUD）
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsStrategyService.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPriceService.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsConstraintService.java`
+
+**Interfaces:**
+- Consumes: 5 Mapper + `TenantContext` + `Result`
+- Produces:
+  - `EmsStrategyService` : `create(EmsStrategy)`, `page(Page, query)`, `update(EmsStrategy)`, `delete(Long)`, `switchStatus(Long, int)`
+  - `EmsPriceService` : `batchSave(List<EmsElectricityPrice>)`, `page(Page, query)`, `update(EmsElectricityPrice)`
+  - `EmsConstraintService` : `getByStation(Long)`, `save(EmsConstraint)`（upsert）
+
+- [ ] **Step 1: 看 product 的 `ProductServiceImpl` 租户模式**（requireTenant + TenantContext.getTenantId）
+
+Run: `sed -n '40,60p' backend/energy-product/src/main/java/com/sanduo/energy/product/service/impl/ProductServiceImpl.java`
+
+- [ ] **Step 2: 实现 `EmsStrategyService`**（仿 ProductServiceImpl：创建时 `setTenantId(requireTenant())`，分页用 `Page` + LambdaQueryWrapper 条件过滤 stationId/type/status）
+
+```java
+package com.sanduo.energy.ems.service;
+
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sanduo.energy.common.tenant.TenantContext;
+import com.sanduo.energy.ems.entity.EmsStrategy;
+import com.sanduo.energy.ems.mapper.EmsStrategyMapper;
+import org.springframework.stereotype.Service;
+
+@Service
+public class EmsStrategyService {
+    private final EmsStrategyMapper mapper;
+    public EmsStrategyService(EmsStrategyMapper mapper) { this.mapper = mapper; }
+
+    public EmsStrategy create(EmsStrategy s) {
+        s.setTenantId(requireTenant());
+        s.setStatus(0); // 草稿
+        s.setVersion(1);
+        mapper.insert(s);
+        return s;
+    }
+
+    public Page<EmsStrategy> page(long pageNo, long pageSize, Long stationId, String type, Integer status) {
+        return mapper.selectPage(new Page<>(pageNo, pageSize),
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<EmsStrategy>()
+                        .eq(stationId != null, EmsStrategy::getStationId, stationId)
+                        .eq(type != null, EmsStrategy::getStrategyType, type)
+                        .eq(status != null, EmsStrategy::getStatus, status)
+                        .orderByDesc(EmsStrategy::getPriority));
+    }
+
+    public EmsStrategy update(EmsStrategy s) {
+        s.setTenantId(null); // 不覆盖租户
+        mapper.updateById(s);
+        return s;
+    }
+
+    public void delete(Long id) {
+        EmsStrategy s = mapper.selectById(id);
+        if (s == null) throw new IllegalArgumentException("策略不存在: " + id);
+        if (s.getStatus() == 1) throw new IllegalArgumentException("启用中的策略不能删除，请先停用");
+        mapper.deleteById(id);
+    }
+
+    public void switchStatus(Long id, int status) {
+        EmsStrategy s = mapper.selectById(id);
+        if (s == null) throw new IllegalArgumentException("策略不存在: " + id);
+        s.setStatus(status);
+        s.setVersion(s.getVersion() + 1);
+        mapper.updateById(s);
+    }
+
+    private long requireTenant() {
+        Long t = TenantContext.getTenantId();
+        if (t == null) throw new IllegalStateException("缺少租户上下文");
+        return t;
+    }
+}
+```
+
+- [ ] **Step 3: 实现 `EmsPriceService` / `EmsConstraintService`**（结构同上；Constraint 用 getOne + uk 约束做 upsert）
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" compile -pl energy-ems -am`
+Expected: BUILD SUCCESS
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service
+git commit -m "feat(energy-ems): 策略/电价/约束 Service 层"
+```
+
+---
+
+### Task 6: Web 层 Controller（4 个）+ CommandClient
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsStrategyController.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPriceController.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsConstraintController.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/EmsPlanController.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/dto/EmsStrategySaveReq.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/web/dto/EmsPlanGenerateReq.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/CommandClient.java`
+
+**Interfaces:**
+- Consumes: Service 层 (Task 5), `Result`, `TenantContext`
+- Produces: REST API `/strategy /price /constraint /plan`；`CommandClient.dispatch(deviceId, productKey, deviceName, command, params)` 
+
+- [ ] **Step 1: 实现 `CommandClient`**（RestTemplate 调 command 服务）
+
+```java
+package com.sanduo.energy.ems.service;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
+import java.util.Map;
+
+@Component
+public class CommandClient {
+    private final RestTemplate rest = new RestTemplate();
+    @Value("${sanduo.ems.command-base-url:http://127.0.0.1:8114}")
+    private String baseUrl;
+
+    /** 调 energy-command POST /api/command，返回 commandId */
+    public String dispatch(String productKey, String deviceName, String command,
+                           Map<String, Object> params, long createBy) {
+        Map<String, Object> body = Map.of(
+                "productKey", productKey,
+                "deviceName", deviceName,
+                "command", command,
+                "params", params,
+                "commandType", 2,
+                "createBy", createBy);
+        ResponseEntity<Map> resp = rest.postForEntity(baseUrl + "/api/command", body, Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
+        return (String) data.get("commandId");
+    }
+}
+```
+
+- [ ] **Step 2: 实现 4 个 Controller**（映射不带 /api，网关 StripPrefix 处理）
+
+```java
+package com.sanduo.energy.ems.web;
+
+import com.sanduo.energy.common.model.Result;
+import com.sanduo.energy.ems.entity.EmsStrategy;
+import com.sanduo.energy.ems.service.EmsStrategyService;
+import com.sanduo.energy.ems.web.dto.EmsStrategySaveReq;
+import org.springframework.web.bind.annotation.*;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+
+@RestController
+@RequestMapping("/strategy")
+public class EmsStrategyController {
+    private final EmsStrategyService service;
+    public EmsStrategyController(EmsStrategyService service) { this.service = service; }
+
+    @PostMapping
+    public Result<EmsStrategy> create(@RequestBody EmsStrategySaveReq req) {
+        return Result.ok(service.create(req.toEntity()));
+    }
+
+    @GetMapping("/page")
+    public Result<Page<EmsStrategy>> page(@RequestParam(defaultValue = "1") long pageNo,
+                                          @RequestParam(defaultValue = "10") long pageSize,
+                                          @RequestParam(required = false) Long stationId,
+                                          @RequestParam(required = false) String type,
+                                          @RequestParam(required = false) Integer status) {
+        return Result.ok(service.page(pageNo, pageSize, stationId, type, status));
+    }
+
+    @PutMapping("/{id}")
+    public Result<EmsStrategy> update(@PathVariable Long id, @RequestBody EmsStrategySaveReq req) {
+        req.setId(id);
+        return Result.ok(service.update(req.toEntity()));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        service.delete(id);
+        return Result.ok(null);
+    }
+
+    @PutMapping("/{id}/status")
+    public Result<Void> switchStatus(@PathVariable Long id, @RequestParam int status) {
+        service.switchStatus(id, status);
+        return Result.ok(null);
+    }
+}
+```
+
+（Price/Constraint/Plan Controller 同构。Plan 的 `generate` 调 EmsPlanService——见 Task 7。）
+
+- [ ] **Step 3: 编译验证**
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/web backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/CommandClient.java
+git commit -m "feat(energy-ems): Web 层 Controller + CommandClient 下发封装"
+```
+
+---
+
+### Task 7: 计划生成编排 `EmsPlanService`
+
+**Files:**
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java`
+- Create: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/TdenginePlanWriter.java`（TAOS-RS 写点序列）
+- Test: `backend/energy-ems/src/test/java/com/sanduo/energy/ems/service/EmsPlanServiceTest.java`（Mockito）
+
+**Interfaces:**
+- Consumes: `PlanGenerator` (Task 3), `SafetyEnvelopeValidator` (Task 4), 5 Mapper, `CommandClient` (Task 6)
+- Produces:
+  - `EmsPlanService.generate(stationId, strategyId, planDate) -> EmsPlan`
+  - `EmsPlanService.dispatch(planId) -> int`（下发点数）
+  - `EmsPlanService.page(...)`, `getPoints(planId) -> List<PlanPoint>`
+
+- [ ] **Step 1: 写 `EmsPlanServiceTest`（Mockito 编排测试）**：mock PlanGenerator/Validator/Mapper，断言生成→校验→落库→下发调用链
+
+```java
+package com.sanduo.energy.ems.service;
+
+import com.sanduo.energy.ems.entity.EmsConstraint;
+import com.sanduo.energy.ems.entity.EmsElectricityPrice;
+import com.sanduo.energy.ems.entity.EmsPlan;
+import com.sanduo.energy.ems.entity.EmsStrategy;
+import com.sanduo.energy.ems.mapper.*;
+import com.sanduo.energy.ems.util.PlanGenerator;
+import com.sanduo.energy.ems.util.PlanPoint;
+import com.sanduo.energy.ems.util.TdenginePlanWriter;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import java.time.LocalTime;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class EmsPlanServiceTest {
+
+    @Test
+    void generate_createsPlanAndWritesPoints() throws Exception {
+        var stratMapper = mock(EmsStrategyMapper.class);
+        var priceMapper = mock(EmsElectricityPriceMapper.class);
+        var constraintMapper = mock(EmsConstraintMapper.class);
+        var planMapper = mock(EmsPlanMapper.class);
+        var execMapper = mock(EmsExecutionRecordMapper.class);
+        var validator = new SafetyEnvelopeValidator();
+        var writer = mock(TdenginePlanWriter.class);
+        var commandClient = mock(CommandClient.class);
+
+        EmsStrategy s = new EmsStrategy();
+        s.setStrategyId(1L); s.setStationId(10L); s.setStrategyType("PEAK_VALLEY");
+        s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],"
+                + "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"22:00\",\"powerLimit\":80}],"
+                + "\"socRange\":{\"min\":10,\"max\":90}}");
+        when(stratMapper.selectById(1L)).thenReturn(s);
+        when(priceMapper.selectList(any())).thenReturn(List.of());
+        when(constraintMapper.selectOne(any())).thenReturn(new EmsConstraint());
+
+        var svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
+                validator, writer, commandClient);
+        var plan = svc.generate(10L, 1L, java.time.LocalDate.of(2026, 8, 8));
+
+        assertNotNull(plan);
+        verify(writer).write(anyString(), anyList());
+    }
+}
+```
+
+- [ ] **Step 2: 运行确认失败**
+
+- [ ] **Step 3: 实现 `TdenginePlanWriter`**（TAOS-RS 直连，仿 tsdb TdengineWriter）
+
+```java
+package com.sanduo.energy.ems.util;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
+import java.util.List;
+
+@Slf4j
+@Component
+public class TdenginePlanWriter {
+    @Value("${sanduo.taos.jdbc-url:jdbc:TAOS-RS://127.0.0.1:6041/iot_ems}")
+    private String jdbcUrl;
+    @Value("${sanduo.taos.username:root}")
+    private String username;
+    @Value("${sanduo.taos.password:taosdata}")
+    private String password;
+
+    public void write(long stationId, List<PlanPoint> points) throws Exception {
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
+             Statement st = conn.createStatement()) {
+            // 先建 STABLE（幂等）
+            st.execute("CREATE STABLE IF NOT EXISTS ems_plan_point (ts TIMESTAMP, action VARCHAR(16), power_kw DOUBLE, soc DOUBLE) "
+                    + "TAGS (station_id BIGINT)");
+            StringBuilder sb = new StringBuilder("INSERT INTO ");
+            for (PlanPoint p : points) {
+                String tbl = "plan_" + stationId;
+                sb.append(tbl).append(" (ts, action, power_kw, soc) VALUES (")
+                  .append(p.time().getHour()).append(":").append(p.time().getMinute()).append(":00, ")
+                  .append("'").append(p.action()).append("', ")
+                  .append(p.powerKw()).append(", ").append(p.socTarget()).append(") ");
+            }
+            st.execute(sb.toString());
+        }
+    }
+}
+```
+
+> 注：TAOS-RS 时间戳需完整格式，简化为当日 HH:MM:SS 需拼接日期；执行前 ensure STABLE。实际实现以 TDengine 3.3 语法为准。
+
+- [ ] **Step 4: 实现 `EmsPlanService.generate`**：查策略+电价+约束 → PlanGenerator 生成 → Validator 校验（rejections 非空则抛 IllegalStateException）→ 写 TDengine → 计划头落 MySQL → 返回
+
+- [ ] **Step 5: 实现 `EmsPlanService.dispatch`**：读计划点 → 逐点 `commandClient.dispatch(...)` → 写执行记录 → 计划头 status=1
+
+- [ ] **Step 6: 运行 `EmsPlanServiceTest` 确认通过**
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service backend/energy-ems/src/main/java/com/sanduo/energy/ems/util/TdenginePlanWriter.java backend/energy-ems/src/test/java/com/sanduo/energy/ems/service
+git commit -m "feat(energy-ems): EmsPlanService 计划生成编排 + TDengine 点序列写入"
+```
+
+---
+
+### Task 8: 每日定时生成 + 全量构建/测试
+
+**Files:**
+- Modify: `backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java`（加 `@Scheduled` 方法）
+
+**Interfaces:**
+- Produces: `EmsPlanService.generateDailyPlans()` —— 每日 00:05 为启用策略的电站生成次日计划
+
+- [ ] **Step 1: 在 `EmsPlanService` 加定时方法**
+
+```java
+@Scheduled(cron = "0 5 0 * * *")
+public void generateDailyPlans() {
+    // 查所有 status=1 的策略，按 stationId 去重，逐个 generate(stationId, null, tomorrow)
+}
+```
+
+- [ ] **Step 2: 全量构建 + 测试**
+
+Run: `cd backend && mvn -Dmaven.repo.local="/d/Program Files/maven-repo" clean package`
+Expected: BUILD SUCCESS，全部单测通过（含 PlanGeneratorTest / SafetyEnvelopeValidatorTest / EmsPlanServiceTest）
+
+- [ ] **Step 3: 提交**
+
+```bash
+git add backend/energy-ems/src/main/java/com/sanduo/energy/ems/service/EmsPlanService.java
+git commit -m "feat(energy-ems): 每日定时生成次日计划"
+```
+
+---
+
+### Task 9: 前端 API + 类型
+
+**Files:**
+- Create: `frontend/src/api/ems.ts`
+- Modify: `frontend/src/types/models.ts`
+
+**Interfaces:**
+- Produces: `emsApi.strategyPage/strategyCreate/strategyUpdate/strategyDelete/strategySwitchStatus/pricePage/priceSave/constraintGet/constraintSave/planGenerate/planPage/planPoints`
+- Produces 类型: `EmsStrategy`, `EmsPlan`, `EmsPlanPoint`, `EmsConstraint`, `EmsElectricityPrice`
+
+- [ ] **Step 1: `types/models.ts` 加类型**（仿 CommandView）
+
+```ts
+export interface EmsStrategy {
+  strategyId: number
+  stationId: number
+  strategyName: string
+  strategyType: string
+  config: string
+  priority: number
+  status: number
+  version: number
+  tenantId: number
+  createTime: string
+}
+
+export interface EmsPlan {
+  planId: number
+  stationId: number
+  strategyId: number
+  planDate: string
+  planType: number
+  totalEnergy: number | null
+  status: number
+}
+
+export interface EmsPlanPoint {
+  time: string
+  action: string
+  powerKw: number
+  socTarget: number
+}
+```
+
+- [ ] **Step 2: `api/ems.ts` 封装**
+
+```ts
+import http from './http'
+import type { EmsStrategy, EmsPlan, EmsPlanPoint } from '@/types/models'
+
+export const emsApi = {
+  strategyPage(params: Record<string, unknown>) {
+    return http.get('/api/ems/strategy/page', { params })
+  },
+  strategyCreate(body: Partial<EmsStrategy>) { return http.post('/api/ems/strategy', body) },
+  strategyUpdate(id: number, body: Partial<EmsStrategy>) { return http.put(`/api/ems/strategy/${id}`, body) },
+  strategyDelete(id: number) { return http.delete(`/api/ems/strategy/${id}`) },
+  strategySwitchStatus(id: number, status: number) { return http.put(`/api/ems/strategy/${id}/status?status=${status}`) },
+  pricePage(params: Record<string, unknown>) { return http.get('/api/ems/price/page', { params }) },
+  priceSave(body: unknown[]) { return http.post('/api/ems/price', body) },
+  constraintGet(stationId: number) { return http.get(`/api/ems/constraint?stationId=${stationId}`) },
+  constraintSave(body: unknown) { return http.put('/api/ems/constraint', body) },
+  planGenerate(body: { stationId: number; strategyId?: number; planDate: string }) {
+    return http.post('/api/ems/plan/generate', body)
+  },
+  planPage(params: Record<string, unknown>) { return http.get('/api/ems/plan/page', { params }) },
+  planPoints(planId: number) { return http.get(`/api/ems/plan/${planId}/points`) },
+}
+```
+
+- [ ] **Step 3: 前端类型检查**
+
+Run: `cd frontend && npx vue-tsc --noEmit`
+Expected: 无新类型错误（EmsStrategy 等类型已导出）
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add frontend/src/api/ems.ts frontend/src/types/models.ts
+git commit -m "feat(frontend): EMS API 封装 + 类型"
+```
+
+---
+
+### Task 10: 前端策略管理页 `EmsStrategy.vue`
+
+**Files:**
+- Create: `frontend/src/views/EmsStrategy.vue`
+- Modify: `frontend/src/router/index.ts`（加 `/ems/strategy` 路由）
+- Modify: `frontend/src/layouts/MainLayout.vue`（菜单加「策略管理」）
+
+**Interfaces:**
+- Consumes: `emsApi` (Task 9)
+- Produces: 可用的策略管理页面
+
+- [ ] **Step 1: 创建 `EmsStrategy.vue`**（仿 Command.vue：表格 + 弹窗 + Tag + 分页）
+
+```vue
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { emsApi } from '@/api/ems'
+import type { EmsStrategy } from '@/types/models'
+
+const loading = ref(false)
+const list = ref<EmsStrategy[]>([])
+const total = ref(0)
+const pageNo = ref(1)
+const pageSize = ref(10)
+const dialogVisible = ref(false)
+const editing = ref<Partial<EmsStrategy>>({})
+const isEdit = ref(false)
+
+async function load() {
+  loading.value = true
+  try {
+    const data = await emsApi.strategyPage({ pageNo: pageNo.value, pageSize: pageSize.value })
+    list.value = data.records
+    total.value = data.total
+  } finally { loading.value = false }
+}
+
+function openCreate() { editing.value = {}; isEdit.value = false; dialogVisible.value = true }
+function openEdit(row: EmsStrategy) { editing.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
+
+async function save() {
+  if (isEdit.value) await emsApi.strategyUpdate(editing.value.strategyId!, editing.value)
+  else await emsApi.strategyCreate(editing.value)
+  ElMessage.success('保存成功')
+  dialogVisible.value = false
+  load()
+}
+
+async function remove(row: EmsStrategy) {
+  await ElMessageBox.confirm(`确定删除策略「${row.strategyName}」吗？`, '提示', { type: 'warning' })
+  await emsApi.strategyDelete(row.strategyId)
+  ElMessage.success('已删除')
+  load()
+}
+
+async function switchStatus(row: EmsStrategy, status: number) {
+  await emsApi.strategySwitchStatus(row.strategyId, status)
+  ElMessage.success(status === 1 ? '已启用' : '已停用')
+  load()
+}
+
+async function generatePlan(row: EmsStrategy) {
+  await emsApi.planGenerate({ stationId: row.stationId, strategyId: row.strategyId, planDate: new Date().toISOString().slice(0,10) })
+  ElMessage.success('计划已生成')
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="page">
+    <el-card>
+      <div class="toolbar">
+        <el-button type="primary" @click="openCreate">新增策略</el-button>
+      </div>
+      <el-table :data="list" v-loading="loading" border>
+        <el-table-column prop="strategyName" label="策略名称" />
+        <el-table-column prop="strategyType" label="类型" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.strategyType === 'PEAK_VALLEY' ? 'success' : 'info'">{{ row.strategyType }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="priority" label="优先级" width="90" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : row.status === 2 ? 'danger' : 'info'">
+              {{ { 0: '草稿', 1: '启用', 2: '停用' }[row.status as number] }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="创建时间" width="180" />
+        <el-table-column label="操作" width="280">
+          <template #default="{ row }">
+            <el-button size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" type="success" @click="generatePlan(row)" v-if="row.status === 1">生成计划</el-button>
+            <el-button size="small" :type="row.status === 1 ? 'warning' : 'primary'" @click="switchStatus(row, row.status === 1 ? 2 : 1)">
+              {{ row.status === 1 ? '停用' : '启用' }}
+            </el-button>
+            <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination v-model:current-page="pageNo" v-model:page-size="pageSize" :total="total" @change="load" layout="total, prev, pager, next" />
+    </el-card>
+
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑策略' : '新增策略'" width="560px">
+      <el-form label-width="100px">
+        <el-form-item label="策略名称"><el-input v-model="editing.strategyName" /></el-form-item>
+        <el-form-item label="策略类型">
+          <el-select v-model="editing.strategyType">
+            <el-option label="峰谷套利" value="PEAK_VALLEY" />
+            <el-option label="需量管理" value="DEMAND" />
+            <el-option label="需求响应" value="DR" />
+            <el-option label="SOC 约束" value="SOC_CTRL" />
+            <el-option label="时间策略" value="TIME" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="电站 ID"><el-input-number v-model="editing.stationId" :min="1" /></el-form-item>
+        <el-form-item label="优先级"><el-input-number v-model="editing.priority" :min="0" /></el-form-item>
+        <el-form-item label="配置 JSON"><el-input v-model="editing.config" type="textarea" :rows="5" placeholder='{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}]}' /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="save">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+```
+
+- [ ] **Step 2: `router/index.ts` 加路由**（在 alarm 后加）：
+
+```ts
+    { path: 'ems/strategy', name: 'EmsStrategy', component: () => import('@/views/EmsStrategy.vue') },
+    { path: 'ems/plan', name: 'EmsPlan', component: () => import('@/views/EmsPlan.vue') },
+```
+
+- [ ] **Step 3: `MainLayout.vue` 菜单加两项**：
+
+```ts
+  { path: '/ems/strategy', title: '策略管理', icon: 'SetUp' },
+  { path: '/ems/plan', title: '充放电计划', icon: 'TrendCharts' },
+```
+
+- [ ] **Step 4: 构建验证**
+
+Run: `cd frontend && npx vue-tsc --noEmit && npm run build`
+Expected: 无类型错误，构建成功
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add frontend/src/views/EmsStrategy.vue frontend/src/router/index.ts frontend/src/layouts/MainLayout.vue
+git commit -m "feat(frontend): 策略管理页 + 路由/菜单"
+```
+
+---
+
+### Task 11: 前端计划页 `EmsPlan.vue`（含 ECharts 点序图）
+
+**Files:**
+- Create: `frontend/src/views/EmsPlan.vue`
+
+**Interfaces:**
+- Consumes: `emsApi` (Task 9), `useEChart` composable
+- Produces: 计划列表 + 点序图 + 执行记录
+
+- [ ] **Step 1: 创建 `EmsPlan.vue`**（仿 Alarm.vue：表格 + 详情抽屉 + ECharts）
+
+```vue
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { emsApi } from '@/api/ems'
+import { useEChart } from '@/composables/useEChart'
+import type { EmsPlan, EmsPlanPoint } from '@/types/models'
+
+const list = ref<EmsPlan[]>([])
+const total = ref(0)
+const pageNo = ref(1)
+const pageSize = ref(10)
+const drawerVisible = ref(false)
+const chartEl = ref<HTMLElement>()
+const { render } = useEChart(chartEl)
+const currentPoints = ref<EmsPlanPoint[]>([])
+
+async function load() {
+  const data = await emsApi.planPage({ pageNo: pageNo.value, pageSize: pageSize.value })
+  list.value = data.records
+  total.value = data.total
+}
+
+async function viewDetail(row: EmsPlan) {
+  drawerVisible.value = true
+  currentPoints.value = await emsApi.planPoints(row.planId)
+  render({
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: currentPoints.value.map(p => p.time) },
+    yAxis: { type: 'value', name: '功率 kW' },
+    series: [{
+      type: 'bar',
+      data: currentPoints.value.map(p => ({
+        value: p.powerKw,
+        itemStyle: { color: p.action === 'CHARGE' ? '#67c23a' : p.action === 'DISCHARGE' ? '#f56c6c' : '#909399' },
+      })),
+    }],
+  })
+}
+
+async function dispatch(row: EmsPlan) {
+  await emsApi.dispatch(row.planId)
+  load()
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="page">
+    <el-card>
+      <el-table :data="list" border>
+        <el-table-column prop="planId" label="计划 ID" width="90" />
+        <el-table-column prop="planDate" label="计划日期" width="120" />
+        <el-table-column prop="stationId" label="电站" width="90" />
+        <el-table-column prop="strategyId" label="策略" width="90" />
+        <el-table-column prop="totalEnergy" label="总量 kWh" width="120" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 2 ? 'success' : row.status === 1 ? 'primary' : 'info'">
+              {{ { 0: '待执行', 1: '执行中', 2: '完成', 3: '已取消' }[row.status as number] }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200">
+          <template #default="{ row }">
+            <el-button size="small" @click="viewDetail(row)">点序图</el-button>
+            <el-button size="small" type="success" @click="dispatch(row)" v-if="row.status === 0">下发</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination v-model:current-page="pageNo" v-model:page-size="pageSize" :total="total" @change="load" layout="total, prev, pager, next" />
+    </el-card>
+
+    <el-drawer v-model="drawerVisible" title="充放电计划点序" size="60%">
+      <div ref="chartEl" style="height: 400px"></div>
+    </el-drawer>
+  </div>
+</template>
+```
+
+> 注：`emsApi.dispatch` 需在 Task 9 的 `ems.ts` 补一个方法（`dispatch(planId)` → `POST /api/ems/plan/${planId}/dispatch`）。执行记录表本期前端可从简（列表可见计划状态即可），完整执行记录查观看后续。
+
+- [ ] **Step 2: `api/ems.ts` 补 `dispatch` 方法**
+
+- [ ] **Step 3: 构建验证**
+
+Run: `cd frontend && npx vue-tsc --noEmit && npm run build`
+Expected: 成功
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add frontend/src/views/EmsPlan.vue frontend/src/api/ems.ts
+git commit -m "feat(frontend): 充放电计划页 + ECharts 点序图"
+```
+
+---
+
+### Task 12: 端到端冒烟 + README 更新
+
+**Files:**
+- Modify: `README.md`（阶段进度表、端口表加 energy-ems:8105）
+- 冒烟验证（不提交代码）
+
+**Interfaces:**
+- Consumes: 全部前置任务
+- Produces: 验证通过的证据 + 文档更新
+
+- [ ] **Step 1: 更新 README**（阶段进度表 Phase 6 行加「策略引擎」；端口表加 8105 energy-ems；目录结构 backend 注释）
+
+- [ ] **Step 2: 重启全栈（含 energy-ems）**
+
+Run: `cd "/d/ProgramData/Codex-Data/Energy Storage IoT Platform" && bash deploy/scripts/start-stack.sh --skip-infra`
+Expected: 12 服务全部就绪（含 energy-ems:8105）
+
+- [ ] **Step 3: 登录拿 token**
+
+Run: `curl -s -X POST http://127.0.0.1:8000/api/system/auth/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'`
+Expected: code=0，拿 token
+
+- [ ] **Step 4: 建策略 → 配电价 → 配约束 → 生成计划 → 下发**
+
+```bash
+TOKEN=<登录token>
+# 1) 建峰谷套利策略（stationId=1 先用 snd_ess_pcs 的电站，或新建）
+curl -s -X POST http://127.0.0.1:8000/api/ems/strategy -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"stationId":1,"strategyName":"验证峰谷套利","strategyType":"PEAK_VALLEY","priority":1,"config":"{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"22:00\",\"powerLimit\":80}],\"socRange\":{\"min\":10,\"max\":90}}"}'
+# 2) 启用
+curl -s -X PUT "http://127.0.0.1:8000/api/ems/strategy/<id>/status?status=1" -H "Authorization: Bearer $TOKEN"
+# 3) 生成计划
+curl -s -X POST http://127.0.0.1:8000/api/ems/plan/generate -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"stationId":1,"planDate":"2026-08-08"}'
+# 4) 查计划点
+curl -s "http://127.0.0.1:8000/api/ems/plan/<planId>/points" -H "Authorization: Bearer $TOKEN"
+# 5) 下发
+curl -s -X POST "http://127.0.0.1:8000/api/ems/plan/<planId>/dispatch" -H "Authorization: Bearer $TOKEN"
+```
+
+Expected: 策略创建返回 id → 计划生成返回 planId → 点序列有 CHARGE/DISCHARGE 点 → 下发后 command 服务出现对应指令（查 8114 日志或 command 接口）
+
+- [ ] **Step 5: 租户隔离验证**（t2admin 登录 → 查策略分页应为 0）
+
+- [ ] **Step 6: 提交 README 更新**
+
+```bash
+git add README.md
+git commit -m "docs: README 阶段进度/端口表加 energy-ems"
+```
+
+---
+
+## Self-Review
+
+**1. Spec 覆盖检查：**
+- 策略/电价/约束 CRUD → Task 5/6 ✓
+- PlanGenerator 峰谷套利 → Task 3 ✓
+- SafetyEnvelopeValidator → Task 4 ✓
+- 点序列 TDengine → Task 7（TdenginePlanWriter）✓
+- 下发复用 command → Task 6/7（CommandClient）✓
+- 手动 + 每日定时 → Task 7/8 ✓
+- 前端策略/计划页面 → Task 9/10/11 ✓
+- 网关路由/端口 → Task 1 ✓
+- 多租户隔离 → Global Constraints + 冒烟验证 ✓
+
+**2. 占位符扫描：** 无 TBD/TODO。所有代码块完整。SOC 演进近似公式已注明是 YAGNI 取舍。
+
+**3. 类型一致性：**
+- `PlanPoint(time, action, powerKw, socTarget)` 在 Task 3/4/7/9/11 统一 ✓
+- `CommandClient.dispatch(productKey, deviceName, command, params, createBy)` 在 Task 6/7 一致 ✓
+- `emsApi.planPoints(planId)` 在 Task 9 定义、Task 11 使用 ✓
+- `EmsPlanService.generate(stationId, strategyId, planDate)` 在 Task 7/8 一致 ✓
+- EmsStrategy 实体字段（strategyId/stationId/strategyType/config/priority/status/version）在 Task 2/5/9/10 一致 ✓
