@@ -2053,10 +2053,58 @@ git commit -m "feat(frontend): 策略管理页 + 路由/菜单"
 
 **Files:**
 - Create: `frontend/src/views/EmsPlan.vue`
+- Modify: `frontend/src/composables/useEChart.ts`（点序图在懒渲染抽屉内，需支持晚挂载容器——见下注）
 
 **Interfaces:**
 - Consumes: `emsApi` (Task 9), `useEChart` composable
 - Produces: 计划列表 + 点序图 + 执行记录
+
+> 注（plan 修正 2026-08-07）：点序图容器在 `el-drawer` 内，Element Plus drawer 内容**懒渲染**（首次打开才挂载，`use-dialog.mjs` 的 `rendered=false` → 打开置 true）；而 `useEChart` 只在 `onMounted` 初始化，`elRef.value` 此时仍为 undefined 会提前返回，元素稍后出现也无人 init → 图空白。修复：`useEChart` 改 `watch(elRef, initIfNeeded, { immediate: true })`，元素出现即初始化（`chart.value` 非空守卫防重复 init），同时覆盖 Dashboard 等挂载即存在、以及 drawer 晚挂载两种时序；`render` 在元素未出现前调用缓存 `pending`，元素出现后立即应用。Step 1 代码逐字照抄不变，`useEChart.ts` 改后逐字如下：
+
+```ts
+import { onBeforeUnmount, shallowRef, watch, type Ref } from 'vue'
+import * as echarts from 'echarts'
+
+/**
+ * ECharts 生命周期组合式：容器元素出现后 init（watch 覆盖挂载即存在 / el-drawer 懒渲染晚挂载两种时序）、
+ * ResizeObserver 自适应、卸载时 dispose。数据就绪后调用 render(option)；元素未出现前调用会缓存，出现后立即渲染。
+ */
+export function useEChart(elRef: Ref<HTMLElement | undefined>) {
+  const chart = shallowRef<echarts.ECharts | null>(null)
+  let pending: echarts.EChartsOption | null = null
+  let observer: ResizeObserver | null = null
+
+  function initIfNeeded(el: HTMLElement | undefined): void {
+    if (!el || chart.value) return
+    chart.value = echarts.init(el)
+    if (pending) {
+      chart.value.setOption(pending, { notMerge: true })
+      pending = null
+    }
+    observer = new ResizeObserver(() => chart.value?.resize())
+    observer.observe(el)
+  }
+
+  watch(elRef, initIfNeeded, { immediate: true })
+
+  function render(option: echarts.EChartsOption): void {
+    if (chart.value) {
+      chart.value.setOption(option, { notMerge: true })
+    } else {
+      pending = option
+    }
+  }
+
+  onBeforeUnmount(() => {
+    observer?.disconnect()
+    observer = null
+    chart.value?.dispose()
+    chart.value = null
+  })
+
+  return { chart, render }
+}
+```
 
 - [ ] **Step 1: 创建 `EmsPlan.vue`**（仿 Alarm.vue：表格 + 详情抽屉 + ECharts）
 
