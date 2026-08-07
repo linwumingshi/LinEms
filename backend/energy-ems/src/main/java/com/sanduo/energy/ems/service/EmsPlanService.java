@@ -138,7 +138,8 @@ public class EmsPlanService {
             }
             try {
                 generate(s.getStationId(), s.getStrategyId(), tomorrow);
-            } catch (BusinessException e) {
+            } catch (Exception e) {
+                // 任一异常（业务失败/脏数据 NPE/DB 异常）都不能中止整日运行——单电站失败不影响其余
                 log.warn("定时生成失败 stationId={} strategyId={}: {}",
                         s.getStationId(), s.getStrategyId(), e.getMessage());
             }
