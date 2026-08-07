@@ -38,9 +38,11 @@ public class TdenginePlanWriter {
             st.execute("CREATE STABLE IF NOT EXISTS ems_plan_point "
                     + "(ts TIMESTAMP, action VARCHAR(16), power_kw DOUBLE, soc DOUBLE) "
                     + "TAGS (station_id BIGINT)");
+            // INSERT ... USING 自动建子表并写 station_id tag（对齐 tsdb TdengineSqlBuilder 模式）
             String table = "plan_" + stationId;
             StringBuilder sb = new StringBuilder("INSERT INTO ").append(table)
-                    .append(" (ts, action, power_kw, soc) VALUES ");
+                    .append(" USING ems_plan_point TAGS (").append(stationId).append(") ")
+                    .append("(ts, action, power_kw, soc) VALUES ");
             for (PlanPoint p : points) {
                 sb.append("('").append(planDate).append(" ").append(p.time()).append("', '")
                   .append(p.action()).append("', ")

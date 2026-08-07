@@ -2,6 +2,8 @@ package com.sanduo.energy.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanduo.energy.common.exception.BusinessException;
 import com.sanduo.energy.common.exception.ErrorCode;
 import com.sanduo.energy.ems.entity.EmsConstraint;
@@ -51,6 +53,9 @@ public class EmsPlanService {
 
     @Value("${sanduo.ems.device-name:}")
     private String deviceName;
+
+    /** 执行记录 params 列为 MySQL JSON，必须真实 JSON 序列化（不能 Map.toString）。 */
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     public EmsPlanService(EmsStrategyMapper strategyMapper,
                           EmsElectricityPriceMapper priceMapper,
@@ -116,7 +121,8 @@ public class EmsPlanService {
         return plan;
     }
 
-    /** 下发计划：逐点调 energy-command 建指令 → 写执行记录 → 计划头置为执行中。 */
+    /** 下发计划：先置计划为执行中（防重试重复下发）→ 重跑安全包络校验（全局约束：生成/下发前）
+     *  → 逐点调 energy-command 建指令写执行记录；单点业务失败仅记日志跳过，不中止整日计划。 */
     public int dispatch(Long planId) {
         EmsPlan plan = planMapper.selectById(planId);
         if (plan == null) {
@@ -134,6 +140,24 @@ public class EmsPlanService {
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "读取点序列失败: " + e.getMessage());
         }
+        EmsConstraint constraint = constraintMapper.selectOne(new LambdaQueryWrapper<EmsConstraint>()
+                .eq(EmsConstraint::getTenantId, plan.getTenantId())
+                .eq(EmsConstraint::getStationId, plan.getStationId()));
+        if (constraint == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未配置安全约束: stationId=" + plan.getStationId());
+        }
+        SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points,
+                constraint.getSocMin().doubleValue(),
+                constraint.getSocMax().doubleValue(),
+                constraint.getChargePowerMax().doubleValue(),
+                constraint.getDischargePowerMax().doubleValue(),
+                constraint.getTempMax() == null ? null : constraint.getTempMax().doubleValue());
+        if (!vr.valid()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "安全包络校验未通过: " + String.join("; ", vr.rejections()));
+        }
+        plan.setStatus(1); // 执行中（先置位：下发途中失败后重试命中 CONFLICT，杜绝重复下发）
+        planMapper.updateById(plan);
         int sent = 0;
         for (PlanPoint p : points) {
             if ("STANDBY".equals(p.action())) {
@@ -143,19 +167,24 @@ public class EmsPlanService {
             params.put("action", p.action());
             params.put("power", p.powerKw());
             params.put("socTarget", p.socTarget());
-            String commandId = commandClient.dispatch(productKey, deviceName, p.action(), params, 0L);
-            EmsExecutionRecord rec = new EmsExecutionRecord();
-            rec.setTenantId(plan.getTenantId());
-            rec.setPlanId(planId);
-            rec.setCommandId(commandId);
-            rec.setDeviceId(0L);
-            rec.setAction(p.action());
-            rec.setParams(params.toString());
-            execMapper.insert(rec);
-            sent++;
+            try {
+                String paramsJson = JSON.writeValueAsString(params); // 列类型 JSON，必须真实 JSON
+                String commandId = commandClient.dispatch(productKey, deviceName, p.action(), params, 0L);
+                EmsExecutionRecord rec = new EmsExecutionRecord();
+                rec.setTenantId(plan.getTenantId());
+                rec.setPlanId(planId);
+                rec.setCommandId(commandId);
+                rec.setDeviceId(0L);
+                rec.setAction(p.action());
+                rec.setParams(paramsJson);
+                execMapper.insert(rec);
+                sent++;
+            } catch (BusinessException e) {
+                log.warn("下发点失败 time={} action={} msg={}", p.time(), p.action(), e.getMessage());
+            } catch (JsonProcessingException e) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "下发参数序列化失败: " + e.getMessage());
+            }
         }
-        plan.setStatus(1); // 执行中
-        planMapper.updateById(plan);
         return sent;
     }
 
