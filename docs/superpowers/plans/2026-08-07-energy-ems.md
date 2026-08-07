@@ -587,6 +587,11 @@ class PlanGeneratorTest {
         boolean hasCharge = points.stream().anyMatch(p -> p.action().equals("CHARGE"));
         boolean hasDischarge = points.stream().anyMatch(p -> p.action().equals("DISCHARGE"));
         assertTrue(hasCharge && hasDischarge);
+        // SOC 不越界（brief 声明的测试聚焦点）
+        assertTrue(points.stream().allMatch(p -> p.socTarget() >= 10 && p.socTarget() <= 90));
+        // 尾点 STANDBY@23:55（升序排序后自然最后）
+        assertEquals(LocalTime.of(23, 55), points.get(points.size() - 1).time());
+        assertEquals("STANDBY", points.get(points.size() - 1).action());
     }
 }
 ```
@@ -608,6 +613,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -665,6 +671,8 @@ public final class PlanGenerator {
         } catch (Exception e) {
             throw new IllegalArgumentException("策略配置解析失败: " + e.getMessage(), e);
         }
+        // 按时间升序（窗口在 config 中可能非时序排列；STANDBY@23:55 自然排最后）
+        points.sort(Comparator.comparing(PlanPoint::time));
         return points;
     }
 
