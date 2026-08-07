@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# 三多平台全栈停止脚本
+# EnergyX 平台全栈停止脚本
 # 用法：./stop-stack.sh [--infra]
 #   --infra  连带停止 Docker 基础环境（Nacos/Kafka/Redis/ES/TDengine）
 # =====================================================================
@@ -11,7 +11,7 @@ source "${ROOT}/test/drill/lib.sh"
 STOP_INFRA=false
 [ "${1:-}" = "--infra" ] && STOP_INFRA=true
 
-log "========== 三多平台全栈停止 =========="
+log "========== EnergyX 平台全栈停止 =========="
 
 # 停止后端服务（网关最后启动、最先停；顺序无强依赖，逐个停）
 for name in energy-gateway energy-alarm energy-ems energy-command energy-shadow \

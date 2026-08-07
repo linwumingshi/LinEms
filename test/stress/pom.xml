@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>sanduo-stress</name>
-    <description>三多平台压测与演练工具：造数 / 连接压测 / 吞吐压测 / 控制链路 P99</description>
+    <description>EnergyX 平台压测与演练工具：造数 / 连接压测 / 吞吐压测 / 控制链路 P99</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

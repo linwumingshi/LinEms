@@ -281,14 +281,14 @@ class SysUserServiceImplTest {
 
         SysEnterprise ent = new SysEnterprise();
         ent.setEnterpriseId(1L);
-        ent.setEnterpriseName("三多能源集团本部");
+        ent.setEnterpriseName("EnergyX 集团本部");
         when(enterpriseMapper.selectBatchIds(any())).thenReturn(List.of(ent));
 
         PageResult<SysUserVO> result = service.pageQuery(new SysUserQuery());
 
         assertEquals(1, result.getTotal());
         SysUserVO vo = result.getRecords().get(0);
-        assertEquals("三多能源集团本部", vo.getEnterpriseName());
+        assertEquals("EnergyX 集团本部", vo.getEnterpriseName());
         assertEquals(List.of(10L), vo.getRoleIds());
         assertEquals(List.of("操作员"), vo.getRoleNames());
     }

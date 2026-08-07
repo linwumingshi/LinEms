@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · system 域（energy-system 服务）
+-- EnergyX 储能管理平台 · system 域（energy-system 服务）
 -- 10_sys.sql —— 租户 / 企业组织树 / RBAC / 操作审计
 -- 版本：v1.0    日期：2026-08-06
 -- 路由键：tenant_id（行级隔离，单逻辑库）
@@ -162,10 +162,10 @@ PARTITION BY RANGE COLUMNS(`create_time`) (
 -- 种子数据
 -- =====================================================================
 INSERT INTO `sys_tenant` (`tenant_id`, `tenant_code`, `tenant_name`, `status`) VALUES
-(1, 'SND', '深圳三多能源', 1);
+(1, 'ENX', 'EnergyX', 1);
 
 INSERT INTO `sys_enterprise` (`enterprise_id`, `tenant_id`, `parent_id`, `path`, `level`, `enterprise_code`, `enterprise_name`) VALUES
-(1, 1, 0, '/1/', 1, 'SND-HQ', '三多能源集团本部');
+(1, 1, 0, '/1/', 1, 'ENX-HQ', 'EnergyX 集团本部');
 
 -- 超级管理员 / 初始角色（BCrypt，明文 admin123；与 energy-system Flyway V2 一致，生产部署后须改密）
 INSERT INTO `sys_user` (`user_id`, `tenant_id`, `username`, `password`, `real_name`, `status`) VALUES

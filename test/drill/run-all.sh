@@ -23,7 +23,7 @@ done
 DRILLS=("01-kafka-rebalance" "02-broker-restart" "03-redis-degrade"
         "04-mysql-failover" "05-command-p99")
 
-log "========== 三多平台故障演练套件 =========="
+log "========== EnergyX 平台故障演练套件 =========="
 info "[run-all] 演练目录: $DRILL_DIR"
 info "[run-all] 日志目录: $LOG_DIR"
 if [ -n "$MODE" ]; then

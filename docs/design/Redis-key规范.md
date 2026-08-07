@@ -1,4 +1,4 @@
-# 深圳三多能源储能管理平台 — Redis Key 规范
+# EnergyX 储能管理平台 — Redis Key 规范
 
 > 版本：v1.1（+§2 用户会话令牌、§3.6）  日期：2026-08-06
 > 设计依据：ADR-005（Redis 承担加速 + 过程态，MySQL/TDengine 为权威源）；Phase1 §4.4（Broker 会话共享）

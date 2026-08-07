@@ -1,4 +1,4 @@
-# 深圳三多能源储能管理平台 — Phase 2 数据库设计
+# EnergyX 储能管理平台 — Phase 2 数据库设计
 
 > 阶段目标：完成 MySQL / TDengine / Elasticsearch / Redis / Kafka 五套存储的详细设计，输出 DDL 脚本。
 > 本阶段不写 Java 代码，产出设计文档 + DDL 脚本，作为 Phase 3 后端工程初始化（Flyway）的权威依据。

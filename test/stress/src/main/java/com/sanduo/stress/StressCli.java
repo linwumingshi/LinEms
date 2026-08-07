@@ -188,7 +188,7 @@ public final class StressCli {
 
     private static void printUsage() {
         System.out.println("""
-                三多平台压测工具 (sanduo-stress)
+                EnergyX 平台压测工具 (sanduo-stress)
                 用法: java -jar stress.jar <子命令> [--key value ...]
 
                   seed        设备造数注册（写入 es_device 库）

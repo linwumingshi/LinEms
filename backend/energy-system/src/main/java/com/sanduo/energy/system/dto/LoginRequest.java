@@ -6,7 +6,7 @@ import lombok.Setter;
 
 /**
  * 登录请求。
- * tenantId 可选：默认租户 1（深圳三多能源）。多租户场景前端显式传入。
+ * tenantId 可选：默认租户 1（EnergyX）。多租户场景前端显式传入。
  */
 @Getter
 @Setter

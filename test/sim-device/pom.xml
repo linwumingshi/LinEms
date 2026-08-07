@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>sanduo-sim-device</name>
-    <description>三多平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
+    <description>EnergyX 平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

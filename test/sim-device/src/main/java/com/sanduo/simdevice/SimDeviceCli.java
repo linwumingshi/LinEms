@@ -37,7 +37,7 @@ public final class SimDeviceCli {
         connector.setOnError(repl::notifyError);
         connector.setAutoAck(cli.autoAck());
 
-        System.out.println("三多平台交互式模拟器");
+        System.out.println("EnergyX 平台交互式模拟器");
         System.out.println("  clientId: " + identity.clientId());
         System.out.println("  broker:   " + cli.host() + ":" + cli.port());
         System.out.println("  autoack:  " + (cli.autoAck() ? "on" : "off"));

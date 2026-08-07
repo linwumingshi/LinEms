@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · system 域（energy-system 服务）
+-- EnergyX 储能管理平台 · system 域（energy-system 服务）
 -- Flyway V1：租户 / 企业组织树 / RBAC / 操作审计
 -- 注意：本地库已由 sql/mysql/10_sys.sql 手工初始化，
 --       V1 全部语句幂等（IF NOT EXISTS / INSERT IGNORE），
@@ -132,10 +132,10 @@ PARTITION BY RANGE COLUMNS(`create_time`) (
 -- 种子数据（幂等）
 -- =====================================================================
 INSERT IGNORE INTO `sys_tenant` (`tenant_id`, `tenant_code`, `tenant_name`, `status`) VALUES
-(1, 'SND', '深圳三多能源', 1);
+(1, 'ENX', 'EnergyX', 1);
 
 INSERT IGNORE INTO `sys_enterprise` (`enterprise_id`, `tenant_id`, `parent_id`, `path`, `level`, `enterprise_code`, `enterprise_name`) VALUES
-(1, 1, 0, '/1/', 1, 'SND-HQ', '三多能源集团本部');
+(1, 1, 0, '/1/', 1, 'ENX-HQ', 'EnergyX 集团本部');
 
 INSERT IGNORE INTO `sys_user` (`user_id`, `tenant_id`, `username`, `password`, `real_name`, `status`) VALUES
 (1, 1, 'admin', '{noop}admin123', '系统管理员', 1);

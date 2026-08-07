@@ -46,7 +46,7 @@ async function handleLogin(): Promise<void> {
   <div class="login-page">
     <el-card class="login-card">
       <div class="brand">
-        <h1>三多能源 EMS 管理平台</h1>
+        <h1>EnergyX</h1>
         <p>储能物联网监控与能量管理</p>
       </div>
       <el-form ref="formRef" :model="model" :rules="rules" size="large" @keyup.enter="handleLogin">

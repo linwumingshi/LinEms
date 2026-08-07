@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>sanduo-device-sdk</name>
-    <description>三多能源设备端 MQTT SDK（独立工程，不依赖 backend；作为 Phase 8 压测/演练的模拟设备基础库）</description>
+    <description>EnergyX设备端 MQTT SDK（独立工程，不依赖 backend；作为 Phase 8 压测/演练的模拟设备基础库）</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

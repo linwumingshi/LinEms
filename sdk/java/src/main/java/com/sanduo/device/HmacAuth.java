@@ -9,7 +9,7 @@ import java.security.SecureRandom;
 import java.util.HexFormat;
 
 /**
- * 三多平台设备接入认证工具（与 Broker DeviceAuthService 同一套公式）。
+ * EnergyX 平台设备接入认证工具（与 Broker DeviceAuthService 同一套公式）。
  *
  * <p>认证契约（对端由 energy-mqtt-broker 校验）：</p>
  * <ul>

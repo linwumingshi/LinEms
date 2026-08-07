@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · command 域（energy-command 服务）
+-- EnergyX 储能管理平台 · command 域（energy-command 服务）
 -- 50_command.sql —— Command Center：指令状态机 / ACK 留存
 -- 版本：v1.0    日期：2026-08-06
 -- 设计依据：ADR-009（QoS1 + commandId 业务幂等）；Phase1 §6.2 指令链路

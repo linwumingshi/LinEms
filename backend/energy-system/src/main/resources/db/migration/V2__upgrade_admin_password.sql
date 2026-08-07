@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · system 域（energy-system 服务）
+-- EnergyX 储能管理平台 · system 域（energy-system 服务）
 -- Flyway V2：P0-1 网关鉴权 —— 种子管理员密码升级为 BCrypt
 -- 说明：V1 种子的 {noop}admin123 仅限本地开发；本迁移替换为 BCrypt 哈希
 --       （明文 admin123，DelegatingPasswordEncoder 可校验）。

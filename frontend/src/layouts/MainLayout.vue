@@ -49,7 +49,7 @@ async function handleLogout(): Promise<void> {
   <el-container class="layout">
     <el-aside width="220px" class="aside">
       <div class="logo">
-        <span class="logo-text">三多能源 EMS</span>
+        <span class="logo-text">EnergyX</span>
       </div>
       <el-menu :default-active="route.path" router class="menu" background-color="#001529" text-color="#a6adb4" active-text-color="#fff">
         <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
@@ -76,7 +76,7 @@ async function handleLogout(): Promise<void> {
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item disabled>深圳三多能源</el-dropdown-item>
+                <el-dropdown-item disabled>EnergyX</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

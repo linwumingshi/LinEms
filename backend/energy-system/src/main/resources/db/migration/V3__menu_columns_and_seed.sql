@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · system 域（energy-system 服务）
+-- EnergyX 储能管理平台 · system 域（energy-system 服务）
 -- Flyway V3：sys_permission 升级为菜单资源表（对齐若依 sys_menu 语义）+ 系统菜单种子
 -- 说明：加列幂等（INFORMATION_SCHEMA 判断，列已存在则跳过），
 --      既有种子库（10_sys.sql 旧结构）、全新空库（Flyway 全建）、

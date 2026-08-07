@@ -55,7 +55,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 三多设备端 MQTT 客户端（Netty 实现，零第三方 MQTT 依赖，与自研 Broker 同族 codec）。
+ * EnergyX 设备端 MQTT 客户端（Netty 实现，零第三方 MQTT 依赖，与自研 Broker 同族 codec）。
  *
  * <p>职责：</p>
  * <ul>

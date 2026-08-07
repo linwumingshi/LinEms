@@ -1,4 +1,4 @@
-# 三多能源 EMS 前端
+# EnergyX 前端
 
 Vue3 + TypeScript + Vite + Pinia + Element Plus + ECharts 驾驶舱。详见 `docs/design/Phase7-前端开发.md`。
 

@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · device 域（energy-device 服务）
+-- EnergyX 储能管理平台 · device 域（energy-device 服务）
 -- Flyway V1：设备主表 / 凭据 / 证书 / 在线记录 / 分组标签
 -- 分片说明：es_device 按 tenant_id 分库；iot_device* 按 device_id hash 分 16 表
 --          （生产模板见 sql/mysql/sharding/；V1 为逻辑基表）

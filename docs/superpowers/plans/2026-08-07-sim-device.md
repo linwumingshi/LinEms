@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 交付 `test/sim-device` 独立 Maven 模块：交互式 CLI REPL 模拟单台设备接入三多平台（HMAC 接入 Broker、上报属性/事件/生命周期、手动/自动回 ACK 下行命令）。
+**Goal:** 交付 `test/sim-device` 独立 Maven 模块：交互式 CLI REPL 模拟单台设备接入EnergyX 平台（HMAC 接入 Broker、上报属性/事件/生命周期、手动/自动回 ACK 下行命令）。
 
 **Architecture:** 复用 `sanduo-device-sdk-1.0.0`（HMAC 认证、订阅、发布全在 SDK）。四个主类按职责拆分：`CliArgs`（纯参数解析）、`PendingCommands`（线程安全待处理队列）、`Connector`（MqttDevice 生命周期薄封装 + 可运行时切换的自动 ACK）、`Repl`（stdin 命令循环，解析抽为静态方法可单测）。构建用 maven-shade fat jar + `sim-device.sh`，完全复刻 `test/stress` 模式。
 
@@ -64,7 +64,7 @@ Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能
     <packaging>jar</packaging>
 
     <name>sanduo-sim-device</name>
-    <description>三多平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
+    <description>EnergyX 平台交互式单设备模拟器：HMAC 接入 / 上报 / 手动 ACK 下行命令</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -154,7 +154,7 @@ Expected: 出现 jar 文件（SDK 已 install，后续 `mvn test/package` 才能
 
 ```bash
 #!/usr/bin/env bash
-# 三多平台交互式单设备模拟器启动脚本
+# EnergyX 平台交互式单设备模拟器启动脚本
 # 依赖：target/sim-device.jar（构建：cd test/sim-device && mvn package）
 # 用法：./sim-device.sh [--product pk] [--device dn] [--secret-base s | --secret hex] [--broker host:port] [--autoack]
 exec java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -jar "$(dirname "$0")/target/sim-device.jar" "$@"
@@ -1490,7 +1490,7 @@ public final class SimDeviceCli {
         connector.setOnError(repl::notifyError);
         connector.setAutoAck(cli.autoAck());
 
-        System.out.println("三多平台交互式模拟器");
+        System.out.println("EnergyX 平台交互式模拟器");
         System.out.println("  clientId: " + identity.clientId());
         System.out.println("  broker:   " + cli.host() + ":" + cli.port());
         System.out.println("  autoack:  " + (cli.autoAck() ? "on" : "off"));

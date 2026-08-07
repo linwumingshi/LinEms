@@ -1,5 +1,5 @@
 -- =====================================================================
--- 深圳三多能源储能管理平台 · shadow 域（energy-shadow 服务）
+-- EnergyX 储能管理平台 · shadow 域（energy-shadow 服务）
 -- 40_shadow.sql —— 设备影子（reported/desired + version 乐观锁）
 -- 版本：v1.0    日期：2026-08-06
 -- 设计依据：ADR-005/007（影子双文档 + 版本乐观锁；MySQL 权威源、Redis 热缓存）
