@@ -49,6 +49,36 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/EmsPlan.vue'),
         meta: { title: '充放电计划', icon: 'TrendCharts' },
       },
+      {
+        path: 'product',
+        name: 'Product',
+        component: () => import('@/views/Product.vue'),
+        meta: { title: '产品管理', icon: 'Box' },
+      },
+      {
+        path: 'device',
+        name: 'Device',
+        component: () => import('@/views/Device.vue'),
+        meta: { title: '设备管理', icon: 'Cpu' },
+      },
+      {
+        path: 'system/user',
+        name: 'SystemUser',
+        component: () => import('@/views/SystemUser.vue'),
+        meta: { title: '用户管理', icon: 'User' },
+      },
+      {
+        path: 'system/role',
+        name: 'SystemRole',
+        component: () => import('@/views/SystemRole.vue'),
+        meta: { title: '角色管理', icon: 'UserFilled' },
+      },
+      {
+        path: 'system/perm',
+        name: 'SystemPerm',
+        component: () => import('@/views/SystemPerm.vue'),
+        meta: { title: '菜单权限', icon: 'Lock' },
+      },
     ],
   },
   {

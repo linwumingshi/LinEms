@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { ElMessageBox } from 'element-plus'
 import { useAlarmStore } from '@/stores/alarm'
 import { useAuthStore } from '@/stores/auth'
+import { hasPermi } from '@/utils/permission'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,14 +20,42 @@ const displayName = computed(
 /** 头像首字 */
 const avatarText = computed(() => displayName.value.slice(0, 1))
 
-const menus = [
-  { path: '/dashboard', title: '设备监控', icon: 'Odometer' },
-  { path: '/shadow', title: '影子', icon: 'Files' },
-  { path: '/command', title: '指令中心', icon: 'Promotion' },
-  { path: '/alarm', title: '告警中心', icon: 'Bell' },
-  { path: '/ems/strategy', title: '策略管理', icon: 'SetUp' },
-  { path: '/ems/plan', title: '充放电计划', icon: 'TrendCharts' },
+interface MenuItem {
+  path?: string
+  title: string
+  perms?: string[]
+  group?: string
+  children?: MenuItem[]
+}
+
+const menus: MenuItem[] = [
+  { path: '/dashboard', title: '设备监控' },
+  { path: '/shadow', title: '影子' },
+  { path: '/command', title: '指令中心' },
+  { path: '/alarm', title: '告警中心' },
+  { path: '/product', title: '产品管理' },
+  { path: '/device', title: '设备管理' },
+  { path: '/ems/strategy', title: '策略管理' },
+  { path: '/ems/plan', title: '充放电计划' },
+  {
+    group: '/system',
+    title: '系统管理',
+    children: [
+      { path: '/system/user', title: '用户管理', perms: ['system:user:list'] },
+      { path: '/system/role', title: '角色管理', perms: ['system:role:list'] },
+      { path: '/system/perm', title: '菜单权限', perms: ['system:perm:list'] },
+    ],
+  },
 ]
+
+/** 按当前用户权限过滤后的可见菜单：先过滤各组子项，再剔除空组与无权限的普通项 */
+const visibleMenus = computed(() =>
+  menus
+    .map((m) => (m.children
+      ? { ...m, children: m.children.filter((c) => hasPermi(authStore.permissions, c.perms ?? [])) }
+      : m))
+    .filter((m) => (m.children ? m.children.length > 0 : hasPermi(authStore.permissions, m.perms ?? []))),
+)
 
 /** 登出：关 WS → 吊销会话（后端失败也清本地）→ 回登录页 */
 async function handleLogout(): Promise<void> {
@@ -57,10 +86,18 @@ async function handleLogout(): Promise<void> {
         </svg>
         <span class="logo-text">EnergyX</span>
       </div>
-      <el-menu :default-active="route.path" router class="menu">
-        <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
-          <span>{{ m.title }}</span>
-        </el-menu-item>
+      <el-menu :default-active="route.path" router class="menu" :default-openeds="['/system']">
+        <template v-for="m in visibleMenus" :key="m.path ?? m.group">
+          <el-sub-menu v-if="m.children && m.children.length" :index="m.group ?? m.title">
+            <template #title><span>{{ m.title }}</span></template>
+            <el-menu-item v-for="c in m.children" :key="c.path" :index="c.path!">
+              <span>{{ c.title }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-menu-item v-else :index="m.path!">
+            <span>{{ m.title }}</span>
+          </el-menu-item>
+        </template>
       </el-menu>
       <div class="aside-foot">
         <span class="foot-dot" :class="{ on: connected }"></span>
@@ -165,6 +202,14 @@ async function handleLogout(): Promise<void> {
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: var(--ex-charge);
+}
+.menu :deep(.el-sub-menu__title) {
+  margin: 2px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  height: 40px;
+  line-height: 40px;
+  color: var(--ex-ink-2);
 }
 .aside-foot {
   padding: 14px 20px;
