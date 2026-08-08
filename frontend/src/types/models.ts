@@ -237,3 +237,188 @@ export interface EmsElectricityPrice {
   status: number
   createTime: string
 }
+
+// ---------------- 产品 Product ----------------
+
+export interface Product {
+  productId: number
+  tenantId: number
+  categoryId: number | null
+  productKey: string
+  productName: string
+  deviceType: string
+  authType: string
+  protocol: string
+  modelVersion: string | null
+  description: string | null
+  status: number
+  createTime: string
+  updateTime: string
+  deleted: number
+}
+
+/** 产品保存请求（PUT 全量覆盖；modelVersion 由后端物模型发布维护，前端可不传） */
+export type ProductSaveReq = Partial<Omit<Product, 'productId' | 'tenantId' | 'createTime' | 'updateTime' | 'deleted'>>
+
+export interface ThingModelView {
+  modelId: number
+  productId: number
+  version: string
+  schemaJson: string
+  status: number
+  isCurrent: number
+}
+
+// ---------------- 设备 Device ----------------
+
+export interface Device {
+  deviceId: number
+  tenantId: number
+  enterpriseId: number | null
+  stationId: number | null
+  productKey: string
+  deviceName: string
+  deviceType: string
+  parentId: number
+  path: string
+  level: number
+  sort: number
+  status: number
+  firmwareVersion: string | null
+  protocol: string
+  brokerNode: string | null
+  lastOnlineTime: string | null
+  lastOfflineTime: string | null
+  onlineSeconds: number
+  mac: string | null
+  ip: string | null
+  children?: Device[]
+  createTime: string
+  updateTime: string
+  deleted: number
+}
+
+export interface DeviceCreateReq {
+  deviceName: string
+  deviceType: string
+  productKey: string
+  parentId?: number
+  stationId?: number
+  enterpriseId?: number
+  firmwareVersion?: string
+  mac?: string
+  ip?: string
+  sort?: number
+  status?: number
+  protocol?: string
+}
+
+/** 更新仅改非空字段；productKey/deviceType/parentId/enterpriseId 不可改 */
+export type DeviceUpdateReq = Partial<Pick<Device,
+  'deviceName' | 'deviceType' | 'stationId' | 'status' | 'firmwareVersion' | 'mac' | 'ip' | 'sort'>>
+
+export interface CredentialView {
+  deviceId: number
+  deviceName: string
+  deviceSecret: string
+  authStatus: number
+}
+
+// ---------------- RBAC 系统管理 ----------------
+
+export interface SysUserVO {
+  userId: number
+  tenantId: number
+  enterpriseId: number | null
+  enterpriseName: string | null
+  username: string
+  realName: string
+  phone: string | null
+  email: string | null
+  status: number
+  lastLoginTime: string | null
+  createTime: string
+  roleIds: number[]
+  roleNames: string[]
+}
+
+export interface SysUserSaveReq {
+  username?: string
+  realName?: string
+  phone?: string
+  email?: string
+  enterpriseId?: number
+  status?: number
+  /** 创建必填(6~64)；更新留空=不改 */
+  password?: string
+  /** null=不改；数组=全量覆盖 */
+  roleIds?: number[] | null
+}
+
+export interface SysRole {
+  roleId: number
+  tenantId: number
+  roleCode: string
+  roleName: string
+  dataScope: number
+  status: number
+  createTime: string
+  updateTime: string
+}
+
+export interface SysRoleSaveReq {
+  roleCode?: string
+  roleName?: string
+  dataScope?: number
+  status?: number
+}
+
+export interface SysPermission {
+  permId: number
+  parentId: number
+  permCode: string
+  permName: string
+  permType: number
+  resourceType: string | null
+  path: string | null
+  sort: number
+  icon: string | null
+  component: string | null
+  visible: number
+  status: number
+  remark: string | null
+  createTime: string
+  updateTime: string
+  children?: SysPermission[]
+}
+
+export interface SysPermissionSaveReq {
+  parentId?: number
+  permCode?: string
+  permName?: string
+  permType?: number
+  resourceType?: string
+  path?: string
+  sort?: number
+  icon?: string
+  component?: string
+  visible?: number
+  status?: number
+  remark?: string
+}
+
+export interface SysEnterprise {
+  enterpriseId: number
+  tenantId: number
+  parentId: number
+  path: string
+  level: number
+  enterpriseCode: string
+  enterpriseName: string
+  sort: number
+  status: number
+  children?: SysEnterprise[]
+  createTime: string
+  updateTime: string
+  deleted: number
+}
