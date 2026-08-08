@@ -16,12 +16,14 @@ const query = ref({ deviceType: '', status: undefined as number | undefined, key
 // 读数带（pageSize=1 轻量计数）
 const readout = ref({ total: 0, enabled: 0, disabled: 0 })
 async function loadReadout() {
-  const [t, on, off] = await Promise.all([
-    productApi.page({ pageNum: 1, pageSize: 1 }),
-    productApi.page({ pageNum: 1, pageSize: 1, status: 1 }),
-    productApi.page({ pageNum: 1, pageSize: 1, status: 0 }),
-  ])
-  readout.value = { total: t.total, enabled: on.total, disabled: off.total }
+  try {
+    const [t, on, off] = await Promise.all([
+      productApi.page({ pageNum: 1, pageSize: 1 }),
+      productApi.page({ pageNum: 1, pageSize: 1, status: 1 }),
+      productApi.page({ pageNum: 1, pageSize: 1, status: 0 }),
+    ])
+    readout.value = { total: t.total, enabled: on.total, disabled: off.total }
+  } catch (e) { console.warn('产品统计加载失败', e) }
 }
 
 async function load() {

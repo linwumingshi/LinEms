@@ -103,6 +103,9 @@ async function savePwd() {
 }
 
 async function switchStatus(row: SysUserVO, status: number) {
+  if (status === 0) {
+    try { await ElMessageBox.confirm(`确定禁用用户「${row.username}」吗？禁用后该用户将无法登录。`, '提示', { type: 'warning' }) } catch { return }
+  }
   try {
     await userApi.switchStatus(row.userId, status)
     ElMessage.success(status === 1 ? '已启用' : '已禁用')

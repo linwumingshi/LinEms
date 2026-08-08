@@ -20,8 +20,10 @@ async function countByStatus(status?: number) {
   return (await deviceApi.page({ pageNum: 1, pageSize: 1, status })).total
 }
 async function loadReadout() {
-  const [t, on, off, dis] = await Promise.all([countByStatus(), countByStatus(3), countByStatus(2), countByStatus(4)])
-  readout.value = { total: t, online: on, offline: off, disabled: dis }
+  try {
+    const [t, on, off, dis] = await Promise.all([countByStatus(), countByStatus(3), countByStatus(2), countByStatus(4)])
+    readout.value = { total: t, online: on, offline: off, disabled: dis }
+  } catch (e) { console.warn('设备统计加载失败', e) }
 }
 
 async function load() {
@@ -126,10 +128,18 @@ async function regenerateSecret() {
     ElMessage.success('新密钥已生成（仅本次明文展示）')
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
-function copySecret() {
+async function copySecret() {
   if (!plainSecret.value) return
-  void navigator.clipboard?.writeText(plainSecret.value)
-  ElMessage.success('已复制')
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(plainSecret.value)
+      ElMessage.success('已复制')
+    } catch {
+      ElMessage.error('复制失败，请手动选择复制')
+    }
+  } else {
+    ElMessage.warning('当前浏览器不支持剪贴板，请手动选择复制')
+  }
 }
 function onlineSeconds(sec?: number | null): string {
   if (!sec || sec <= 0) return '-'
@@ -244,7 +254,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
           </el-select>
         </el-form-item>
         <el-form-item label="所属企业">
-          <el-select v-model="form.enterpriseId" clearable filterable placeholder="无" style="width: 100%">
+          <el-select v-model="form.enterpriseId" clearable filterable placeholder="无" style="width: 100%" :disabled="isEdit">
             <el-option v-for="e in enterprises" :key="e.enterpriseId" :label="e.enterpriseName" :value="e.enterpriseId" />
           </el-select>
         </el-form-item>
