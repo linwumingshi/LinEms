@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import type { EmsStrategy } from '@/types/models'
+import { isStrategyGeneratable } from '@/utils/dicts'
 
 const loading = ref(false)
 const list = ref<EmsStrategy[]>([])
@@ -28,6 +29,14 @@ const TYPE_TEXT: Record<string, string> = {
   SOC_CTRL: 'SOC 约束',
   TIME: '时间策略',
 }
+
+/** 类型下拉：未实现生成的类型追加标注 */
+const strategyTypeOptions = computed(() =>
+  Object.entries(TYPE_TEXT).map(([value, label]) => ({
+    value,
+    label: isStrategyGeneratable(value) ? label : `${label}（暂不支持生成）`,
+  })),
+)
 const STATUS_TEXT: Record<number, string> = { 0: '草稿', 1: '启用', 2: '停用' }
 const STATUS_TAG: Record<number, 'info' | 'success' | 'danger'> = { 0: 'info', 1: 'success', 2: 'danger' }
 
@@ -46,6 +55,9 @@ function openCreate() { editing.value = {}; isEdit.value = false; dialogVisible.
 function openEdit(row: EmsStrategy) { editing.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 
 async function save() {
+  if (editing.value.strategyType && !isStrategyGeneratable(editing.value.strategyType)) {
+    ElMessage.warning('当前仅峰谷套利可生成计划，其余类型可保存但不可生成')
+  }
   try {
     if (isEdit.value) await emsApi.strategyUpdate(editing.value.strategyId!, editing.value)
     else await emsApi.strategyCreate(editing.value)
@@ -83,6 +95,10 @@ async function switchStatus(row: EmsStrategy, status: number) {
 }
 
 async function generatePlan(row: EmsStrategy) {
+  if (!isStrategyGeneratable(row.strategyType)) {
+    ElMessage.warning('该策略类型暂不支持生成计划（后端仅实现峰谷套利）')
+    return
+  }
   const d = new Date()
   const planDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   try {
@@ -132,7 +148,11 @@ onMounted(load)
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status === 1" link type="success" @click="generatePlan(row)">生成计划</el-button>
+            <el-tooltip :disabled="isStrategyGeneratable(row.strategyType)" content="该策略类型暂不支持生成计划（后端仅实现峰谷套利）">
+              <span>
+                <el-button v-if="row.status === 1" link type="success" :disabled="!isStrategyGeneratable(row.strategyType)" @click="generatePlan(row)">生成计划</el-button>
+              </span>
+            </el-tooltip>
             <el-button link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 2 : 1)">
               {{ row.status === 1 ? '停用' : '启用' }}
             </el-button>
@@ -162,11 +182,7 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="策略类型">
           <el-select v-model="editing.strategyType" style="width: 100%">
-            <el-option label="峰谷套利" value="PEAK_VALLEY" />
-            <el-option label="需量管理" value="DEMAND" />
-            <el-option label="需求响应" value="DR" />
-            <el-option label="SOC 约束" value="SOC_CTRL" />
-            <el-option label="时间策略" value="TIME" />
+            <el-option v-for="opt in strategyTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="电站 ID">
