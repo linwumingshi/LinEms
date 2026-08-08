@@ -5,7 +5,10 @@ import { permApi, roleApi } from '@/api/system'
 import type { SysPermission, SysRole } from '@/types/models'
 import { dataScopeText, roleStatusTag, roleStatusText } from '@/utils/dicts'
 import { toLocal } from '@/utils/alarmFormat'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermi } from '@/utils/permission'
 
+const authStore = useAuthStore()
 const loading = ref(false)
 const list = ref<SysRole[]>([])
 const total = ref(0)
@@ -63,8 +66,8 @@ async function openPerms(row: SysRole) {
 async function savePerms() {
   if (!permRole.value) return
   try {
-    const checked = permRef.value?.getCheckedKeys(false) as number[] ?? []
-    const half = permRef.value?.getHalfCheckedKeys() as number[] ?? []
+    const checked = permRef.value?.getCheckedKeys(false) as string[] ?? []
+    const half = permRef.value?.getHalfCheckedKeys() as string[] ?? []
     await roleApi.assignPerms(permRole.value.roleId, [...checked, ...half])
     ElMessage.success('权限已更新')
     permDialog.value = false
@@ -97,7 +100,7 @@ onMounted(load)
         <h1 class="ex-title">角色管理</h1>
         <p class="ex-sub">角色承载权限集合 · dataScope 决定数据可见范围</p>
       </div>
-      <el-button type="primary" @click="openCreate">新增角色</el-button>
+      <el-button v-if="hasPermi(authStore.permissions, 'system:role:add')" type="primary" @click="openCreate">新增角色</el-button>
     </header>
 
     <section class="ex-card filter-card">
@@ -134,12 +137,12 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.roleId !== 1" link type="primary" @click="openPerms(row)">授权权限</el-button>
-            <el-button v-if="row.roleId !== 1" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
+            <el-button v-if="hasPermi(authStore.permissions, 'system:role:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:role:perm') && Number(row.roleId) !== 1" link type="primary" @click="openPerms(row)">授权权限</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:role:edit') && Number(row.roleId) !== 1" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
               {{ row.status === 1 ? '停用' : '启用' }}
             </el-button>
-            <el-button v-if="row.roleId !== 1" link type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:role:remove') && Number(row.roleId) !== 1" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

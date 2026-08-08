@@ -4,7 +4,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { permApi } from '@/api/system'
 import type { SysPermission, SysPermissionSaveReq } from '@/types/models'
 import { permTypeText } from '@/utils/dicts'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermi } from '@/utils/permission'
 
+const authStore = useAuthStore()
 const loading = ref(false)
 const tree = ref<SysPermission[]>([])
 
@@ -21,7 +24,7 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<SysPermission>>({})
 function openCreate(parent?: SysPermission) {
-  form.value = { parentId: parent?.permId ?? 0, permType: 1, status: 0, visible: 0, sort: 0 }
+  form.value = { parentId: parent?.permId ?? '0', permType: 1, status: 0, visible: 0, sort: 0 }
   isEdit.value = false
   dialogVisible.value = true
 }
@@ -64,7 +67,7 @@ onMounted(load)
         <h1 class="ex-title">菜单权限</h1>
         <p class="ex-sub">菜单 / 按钮 / 数据权限树 · 决定侧边栏可见性与操作按钮</p>
       </div>
-      <el-button type="primary" @click="openCreate()">新增权限</el-button>
+      <el-button v-if="hasPermi(authStore.permissions, 'system:perm:add')" type="primary" @click="openCreate()">新增权限</el-button>
     </header>
 
     <section class="ex-card table-card">
@@ -98,12 +101,12 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openCreate(row)">新增子</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link :type="row.status === 0 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 0 ? 1 : 0)">
+            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:add')" link type="primary" @click="openCreate(row)">新增子</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:edit')" link :type="row.status === 0 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 0 ? 1 : 0)">
               {{ row.status === 0 ? '停用' : '启用' }}
             </el-button>
-            <el-button link type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:remove')" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

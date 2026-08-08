@@ -6,6 +6,7 @@ import type { SysEnterprise, SysRole, SysUserVO } from '@/types/models'
 import { userStatusTag, userStatusText } from '@/utils/dicts'
 import { toLocal } from '@/utils/alarmFormat'
 import { useAuthStore } from '@/stores/auth'
+import { hasPermi } from '@/utils/permission'
 
 const authStore = useAuthStore()
 const loading = ref(false)
@@ -36,13 +37,13 @@ function resetQuery() { query.value = { keyword: '', status: undefined, enterpri
 
 /** 超管或当前登录账号：禁用删除/启停 */
 function isProtected(row: SysUserVO): boolean {
-  return row.userId === 1 || row.userId === authStore.user?.userId
+  return Number(row.userId) === 1 || row.userId === authStore.user?.userId
 }
 
 // 新增/编辑
 const dialogVisible = ref(false)
 const isEdit = ref(false)
-const form = ref<Partial<SysUserVO> & { password?: string; roleIds?: number[] }>({})
+const form = ref<Partial<SysUserVO> & { password?: string; roleIds?: string[] }>({})
 function openCreate() { form.value = { status: 1, roleIds: [] }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: SysUserVO) { form.value = { ...row, password: '', roleIds: [...row.roleIds] }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
@@ -69,7 +70,7 @@ async function save() {
 // 分配角色
 const roleDialog = ref(false)
 const target = ref<SysUserVO | null>(null)
-const checkedRoles = ref<number[]>([])
+const checkedRoles = ref<string[]>([])
 async function openRoles(row: SysUserVO) {
   target.value = row
   roleDialog.value = true
@@ -138,7 +139,7 @@ onMounted(async () => {
         <h1 class="ex-title">用户管理</h1>
         <p class="ex-sub">RBAC 用户 · 分配角色决定可见菜单与操作权限</p>
       </div>
-      <el-button type="primary" @click="openCreate">新增用户</el-button>
+      <el-button v-if="hasPermi(authStore.permissions, 'system:user:add')" type="primary" @click="openCreate">新增用户</el-button>
     </header>
 
     <section class="ex-card filter-card">
@@ -190,13 +191,13 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="openRoles(row)">分配角色</el-button>
-            <el-button link type="warning" @click="openPwd(row)">重置密码</el-button>
-            <el-button v-if="!isProtected(row)" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:role')" link type="primary" @click="openRoles(row)">分配角色</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:resetPwd')" link type="warning" @click="openPwd(row)">重置密码</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:edit') && !isProtected(row)" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
               {{ row.status === 1 ? '禁用' : '启用' }}
             </el-button>
-            <el-button v-if="!isProtected(row)" link type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:remove') && !isProtected(row)" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
