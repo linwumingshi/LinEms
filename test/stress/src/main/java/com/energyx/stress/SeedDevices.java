@@ -17,7 +17,9 @@ import java.sql.Statement;
  * 压测工具才能用同一批 productKey/deviceName/secret 通过 HMAC 认证真实接入。</p>
  *
  * <ul>
- *   <li>INSERT IGNORE 幂等：重复执行只补缺，不报错；</li>
+ *   <li>INSERT ... ON DUPLICATE KEY UPDATE 幂等且自愈：重复执行只补缺，不报错；
+ *       已逻辑删除的设备行会复活（deleted=0/status=2）、被吊销凭据重新激活（auth_status=1），
+ *       避免「删 A 设备后重加 A」残留吊销凭据导致连不上（uk_cred_device 无 deleted 列）；</li>
  *   <li>device_secret 由 {@link Secrets#deriveSecret} 确定性派生，压测工具可复现；</li>
  *   <li>device.status=2（已激活离线）满足 Broker「仅 2/3 允许接入」的状态校验；</li>
  *   <li>分批 executeBatch（500 行/批），10 万级造数秒级完成。</li>
@@ -39,12 +41,15 @@ public final class SeedDevices {
             checkProductExists(conn, args.productKey);
             int inserted = 0;
             try (PreparedStatement dev = conn.prepareStatement(
-                    "INSERT IGNORE INTO iot_device (device_id, tenant_id, enterprise_id, station_id, "
+                    "INSERT INTO iot_device (device_id, tenant_id, enterprise_id, station_id, "
                             + "product_key, device_name, device_type, parent_id, path, level, sort, status, "
-                            + "protocol, deleted) VALUES (?,?,?,?,?,?,?,0,'/',1,0,2,'MQTT',0)");
+                            + "protocol, deleted) VALUES (?,?,?,?,?,?,?,0,'/',1,0,2,'MQTT',0) "
+                            + "ON DUPLICATE KEY UPDATE deleted = 0, status = 2");
                  PreparedStatement cred = conn.prepareStatement(
-                         "INSERT IGNORE INTO iot_device_credential (device_id, tenant_id, device_secret, "
-                                 + "auth_status, fail_count) VALUES (?,?,?,1,0)")) {
+                         "INSERT INTO iot_device_credential (device_id, tenant_id, device_secret, "
+                                 + "auth_status, fail_count) VALUES (?,?,?,1,0) "
+                                 + "ON DUPLICATE KEY UPDATE device_secret = VALUES(device_secret), "
+                                 + "auth_status = 1, fail_count = 0")) {
 
                 long baseId = args.deviceIdBase;
                 for (int i = 1; i <= args.count; i++) {

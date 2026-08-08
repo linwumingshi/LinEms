@@ -2,6 +2,8 @@
 
 见 [sim-device 设计文档](../../docs/superpowers/specs/2026-08-07-sim-device-design.md)。
 
+接入与消息验证完整操作指南见 [sim-device 使用验证指南](../../docs/sim-device-使用验证指南.md)。
+
 构建（需先 `cd sdk/java && mvn install`）：
     cd test/sim-device && mvn package
 
