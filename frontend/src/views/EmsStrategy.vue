@@ -68,12 +68,15 @@ function openEdit(row: EmsStrategy) {
   void loadEnvelope()
 }
 async function loadEnvelope() {
+  const stationId = editing.value.stationId
   envelope.value = null
-  if (!editing.value.stationId) return
+  if (!stationId) return
   try {
-    envelope.value = await emsApi.constraintGet(editing.value.stationId)
+    const constraint = await emsApi.constraintGet(stationId)
+    if (editing.value.stationId !== stationId) return // 弹窗复用竞态：已切到另一电站，丢弃过期包络
+    envelope.value = constraint
   } catch {
-    envelope.value = null // 包络缺失/未配置：软警告静默跳过
+    if (editing.value.stationId === stationId) envelope.value = null
   }
 }
 

@@ -133,6 +133,7 @@ function switchMode(m: Mode) {
     }
     form.value = structured.config
     rest.value = structured.rest
+    forceJson.value = false
     mode.value = 'form'
   }
 }
