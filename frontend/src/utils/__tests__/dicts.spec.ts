@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   authStatusText, dataScopeText, deviceStatusTag, deviceStatusText,
-  deviceTypeOptions, permTypeText, productStatusText, roleStatusTag,
-  roleStatusText, thingModelStatusText, userStatusTag, userStatusText,
+  deviceTypeOptions, isStrategyGeneratable, permTypeText, productStatusText,
+  roleStatusTag, roleStatusText, thingModelStatusText, userStatusTag,
+  userStatusText,
 } from '@/utils/dicts'
 
 describe('dicts', () => {
@@ -39,5 +40,15 @@ describe('dicts', () => {
   it('设备类型枚举', () => {
     expect(deviceTypeOptions).toContain('PCS')
     expect(deviceTypeOptions).toContain('BATTERY_CLUSTER')
+  })
+
+  it('策略可生成性判定（与后端 PlanGenerator.java 支持集合对齐）', () => {
+    expect(isStrategyGeneratable('PEAK_VALLEY')).toBe(true)
+    expect(isStrategyGeneratable('DEMAND')).toBe(false)
+    expect(isStrategyGeneratable('DR')).toBe(false)
+    expect(isStrategyGeneratable('SOC_CTRL')).toBe(false)
+    expect(isStrategyGeneratable('TIME')).toBe(false)
+    expect(isStrategyGeneratable(undefined)).toBe(false)
+    expect(isStrategyGeneratable('')).toBe(false)
   })
 })

@@ -36,3 +36,9 @@ export function thingModelStatusText(s: number): string {
 export function authStatusText(s: number): string { return s === 1 ? '正常' : s === 2 ? '吊销' : `未知(${s})` }
 
 export const deviceTypeOptions = ['ENERGY_CABINET', 'BATTERY_CLUSTER', 'PCS', 'BMS', 'EMS', 'EDGE_GW']
+
+/** 可生成调度计划的策略类型（与后端 PlanGenerator.java 支持集合对齐；后端新增支持时同步此数组） */
+export const STRATEGY_GENERATABLE_TYPES: string[] = ['PEAK_VALLEY']
+export function isStrategyGeneratable(type?: string): boolean {
+  return !!type && STRATEGY_GENERATABLE_TYPES.includes(type)
+}
