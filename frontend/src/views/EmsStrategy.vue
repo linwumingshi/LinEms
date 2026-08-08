@@ -98,9 +98,22 @@ async function save() {
   if (editing.value.strategyType && !isStrategyGeneratable(editing.value.strategyType)) {
     ElMessage.warning('当前仅峰谷套利可生成计划，其余类型可保存但不可生成')
   }
+  // 只提交后端 DTO 字段：整行 row 含 tenantId/status/createTime 等未知字段，
+  // 后端 ObjectMapper 未关 FAIL_ON_UNKNOWN_PROPERTIES → 400 请求体格式错误（冒烟 4.2/5.2 发现）
+  const payload: Partial<EmsStrategy> = {
+    stationId: editing.value.stationId,
+    strategyName: editing.value.strategyName,
+    strategyType: editing.value.strategyType,
+    config: raw,
+    priority: editing.value.priority,
+  }
   try {
-    if (isEdit.value) await emsApi.strategyUpdate(editing.value.strategyId!, editing.value)
-    else await emsApi.strategyCreate(editing.value)
+    if (isEdit.value) {
+      payload.strategyId = editing.value.strategyId
+      await emsApi.strategyUpdate(editing.value.strategyId!, payload)
+    } else {
+      await emsApi.strategyCreate(payload)
+    }
     ElMessage.success('保存成功')
     dialogVisible.value = false
     load()
