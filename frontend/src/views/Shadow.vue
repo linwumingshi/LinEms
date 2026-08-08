@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { shadowApi } from '@/api/shadow'
 import type { DesiredResult, ShadowView } from '@/types/models'
 
-const deviceId = ref<number | undefined>(undefined)
+const deviceId = ref('')
 const loading = ref(false)
 const view = ref<ShadowView | null>(null)
 const lastDelta = ref<DesiredResult | null>(null)
@@ -20,12 +20,13 @@ const hasView = computed(() => view.value !== null)
 const reportedKeys = computed(() => (view.value ? Object.keys(view.value.reported) : []))
 const desiredKeys = computed(() => (view.value ? Object.keys(view.value.desired) : []))
 
-function parseDeviceId(): number | null {
-  if (deviceId.value === undefined || deviceId.value <= 0) {
+function parseDeviceId(): string | null {
+  const v = deviceId.value.trim()
+  if (!v || !/^\d+$/.test(v)) {
     ElMessage.warning('请输入合法的设备 ID')
     return null
   }
-  return Math.trunc(deviceId.value)
+  return v
 }
 
 async function query(): Promise<void> {
@@ -120,12 +121,11 @@ function display(v: unknown): string {
       </div>
       <el-form inline class="query-bar" @submit.prevent>
         <el-form-item label="设备 ID" class="qi">
-          <el-input-number
+          <el-input
             v-model="deviceId"
-            :min="1"
-            :controls="false"
             placeholder="请输入设备ID"
-            style="width: 200px"
+            clearable
+            style="width: 220px"
           />
         </el-form-item>
         <el-button type="primary" :loading="loading" @click="query">查询影子</el-button>

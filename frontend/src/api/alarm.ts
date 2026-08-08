@@ -2,9 +2,9 @@ import http from './http'
 import type { AlarmRecord, AlarmRule, PageResult } from '@/types/models'
 
 export interface AlarmRecordsParams {
-  tenantId?: number
-  ruleId?: number
-  deviceId?: number
+  tenantId?: string
+  ruleId?: string
+  deviceId?: string
   level?: number
   status?: number
   startTime?: string
@@ -26,7 +26,7 @@ export const alarmApi = {
   },
 
   /** GET /api/alarm/rules 启用规则列表 */
-  rules(tenantId?: number): Promise<AlarmRule[]> {
+  rules(tenantId?: string): Promise<AlarmRule[]> {
     return http.get('/api/alarm/rules', { params: tenantId ? { tenantId } : {} })
   },
 }

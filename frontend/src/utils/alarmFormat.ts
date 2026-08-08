@@ -106,7 +106,7 @@ export interface AlarmSummary {
 /** 由告警记录样本聚合出驾驶舱统计（样本窗口内统计，标题需注明口径） */
 export function summarizeRecords(records: AlarmRecord[], days = 7): AlarmSummary {
   const levelCount: Record<number, number> = {}
-  const deviceIds = new Set<number>()
+  const deviceIds = new Set<string>()
   let active = 0
   let recovered = 0
   let acked = 0

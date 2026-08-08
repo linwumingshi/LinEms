@@ -15,7 +15,7 @@ const { liveEvents, connected } = storeToRefs(alarmStore)
 const filters = reactive<{
   level: number | undefined
   status: number | undefined
-  deviceId: number | undefined
+  deviceId: string | undefined
   timeRange: [string, string] | null
 }>({
   level: undefined,
@@ -200,7 +200,7 @@ onMounted(() => void load())
           </el-select>
         </el-form-item>
         <el-form-item label="设备ID">
-          <el-input-number v-model="filters.deviceId" :min="1" :controls="false" placeholder="全部" style="width: 130px" />
+          <el-input v-model="filters.deviceId" placeholder="全部" clearable style="width: 160px" />
         </el-form-item>
         <el-form-item label="触发时间">
           <el-date-picker

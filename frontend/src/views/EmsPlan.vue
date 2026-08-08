@@ -83,7 +83,7 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
 }
 
 /** 电价时段：拉取该站全量分时电价，过滤在计划日期有效期的档位 */
-async function fetchBands(stationId: number, planDate: string): Promise<EmsElectricityPrice[]> {
+async function fetchBands(stationId: string, planDate: string): Promise<EmsElectricityPrice[]> {
   try {
     const page = await emsApi.pricePage({ pageNo: 1, pageSize: 100, stationId })
     const day = planDate.slice(0, 10)

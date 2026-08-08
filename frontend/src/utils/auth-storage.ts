@@ -10,11 +10,11 @@ export const USER_KEY = 'energyx_user'
 
 /** 持久化的用户子集（token 独立存 energyx_token） */
 export interface StoredUser {
-  userId: number
+  userId: string
   username: string
   realName: string | null
-  tenantId: number
-  enterpriseId: number | null
+  tenantId: string
+  enterpriseId: string | null
   permissions: string[]
   roles: string[]
 }

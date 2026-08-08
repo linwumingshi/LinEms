@@ -15,10 +15,10 @@ import type { AlarmRecord } from '@/types/models'
 function record(over: Partial<AlarmRecord>): AlarmRecord {
   return {
     alarmEventId: 'evt-1',
-    tenantId: 1,
-    deviceId: 100,
+    tenantId: '1',
+    deviceId: '100',
     productKey: 'pk',
-    ruleId: 1,
+    ruleId: '1',
     ruleCode: 'ALM_TEMP_HIGH',
     level: 3,
     type: 1,
@@ -94,10 +94,10 @@ describe('toLocal / tsToLocal', () => {
 describe('summarizeRecords', () => {
   it('汇总状态与级别计数、去重设备', () => {
     const records = [
-      record({ alarmEventId: 'a', deviceId: 100, status: 0, level: 3 }),
-      record({ alarmEventId: 'b', deviceId: 100, status: 0, level: 4 }),
-      record({ alarmEventId: 'c', deviceId: 200, status: 1, level: 3 }),
-      record({ alarmEventId: 'd', deviceId: 200, status: 2, level: 3 }),
+      record({ alarmEventId: 'a', deviceId: '100', status: 0, level: 3 }),
+      record({ alarmEventId: 'b', deviceId: '100', status: 0, level: 4 }),
+      record({ alarmEventId: 'c', deviceId: '200', status: 1, level: 3 }),
+      record({ alarmEventId: 'd', deviceId: '200', status: 2, level: 3 }),
     ]
     const s = summarizeRecords(records)
     expect(s.total).toBe(4)

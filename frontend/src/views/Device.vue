@@ -13,7 +13,7 @@ const list = ref<Device[]>([])
 const total = ref(0)
 const pageNo = ref(1)
 const pageSize = ref(20)
-const query = ref({ deviceType: '', status: undefined as number | undefined, keyword: '', stationId: undefined as number | undefined })
+const query = ref({ deviceType: '', status: undefined as number | undefined, keyword: '', stationId: undefined as string | undefined })
 
 const readout = ref({ total: 0, online: 0, offline: 0, disabled: 0 })
 async function countByStatus(status?: number) {
@@ -64,7 +64,7 @@ function onProductChange(pk?: string) {
   const p = products.value.find((x) => x.productKey === pk)
   if (p) form.value.deviceType = p.deviceType
 }
-function openCreate() { form.value = { status: 0, protocol: 'MQTT', parentId: 0 }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { status: 0, protocol: 'MQTT', parentId: undefined }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Device) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   if (!form.value.deviceName?.trim()) { ElMessage.warning('deviceName 为必填'); return }
@@ -86,7 +86,7 @@ async function save() {
         deviceName: form.value.deviceName!.trim(),
         deviceType: form.value.deviceType!,
         productKey: form.value.productKey!,
-        parentId: form.value.parentId ?? 0,
+        parentId: form.value.parentId ?? undefined,
         stationId: form.value.stationId ?? undefined,
         enterpriseId: form.value.enterpriseId ?? undefined,
         firmwareVersion: form.value.firmwareVersion || undefined,
@@ -141,9 +141,10 @@ async function copySecret() {
     ElMessage.warning('当前浏览器不支持剪贴板，请手动选择复制')
   }
 }
-function onlineSeconds(sec?: number | null): string {
-  if (!sec || sec <= 0) return '-'
-  const d = Math.floor(sec / 86400); const h = Math.floor((sec % 86400) / 3600); const m = Math.floor((sec % 3600) / 60)
+function onlineSeconds(sec?: string | number | null): string {
+  const n = sec == null || sec === '' ? 0 : Number(sec)
+  if (!n || n <= 0) return '-'
+  const d = Math.floor(n / 86400); const h = Math.floor((n % 86400) / 3600); const m = Math.floor((n % 3600) / 60)
   return `${d}天${h}时${m}分`
 }
 
@@ -189,7 +190,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
           </el-select>
         </el-form-item>
         <el-form-item label="电站 ID">
-          <el-input-number v-model="query.stationId" :min="1" :controls="false" placeholder="全部" style="width: 120px" />
+          <el-input v-model="query.stationId" placeholder="全部" clearable style="width: 150px" />
         </el-form-item>
         <el-form-item label="关键字">
           <el-input v-model="query.keyword" placeholder="设备名模糊" clearable style="width: 200px" @keyup.enter="search" />
@@ -259,7 +260,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
           </el-select>
         </el-form-item>
         <el-form-item label="电站 ID">
-          <el-input-number v-model="form.stationId" :min="1" :controls="false" style="width: 200px" />
+          <el-input v-model="form.stationId" placeholder="无" clearable style="width: 200px" />
         </el-form-item>
         <el-form-item label="固件版本">
           <el-input v-model="form.firmwareVersion" placeholder="如 v1.2.0" maxlength="64" />

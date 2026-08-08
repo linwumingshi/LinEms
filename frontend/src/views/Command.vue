@@ -13,7 +13,7 @@ const form = ref({
   commandType: 2,
   timeoutMs: 15000,
   maxRetry: 3,
-  createBy: 0,
+  createBy: '0',
 })
 const paramsRows = ref<Array<{ key: string; value: string }>>([{ key: 'power', value: '5000' }])
 const submitting = ref(false)

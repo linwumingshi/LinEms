@@ -11,7 +11,7 @@ import java.util.Map;
 @Data
 public class ShadowView {
 
-    private long deviceId;
+    private Long deviceId;
     private Map<String, Object> reported = new LinkedHashMap<>();
     private Map<String, Object> desired = new LinkedHashMap<>();
     /** 乐观锁版本；行不存在时为 null */

@@ -12,13 +12,13 @@ export const emsApi = {
   strategyCreate(body: Partial<EmsStrategy>): Promise<EmsStrategy> { return http.post('/api/ems/strategy', body) },
 
   /** PUT /api/ems/strategy/{id} 更新策略 */
-  strategyUpdate(id: number, body: Partial<EmsStrategy>): Promise<EmsStrategy> { return http.put(`/api/ems/strategy/${id}`, body) },
+  strategyUpdate(id: string, body: Partial<EmsStrategy>): Promise<EmsStrategy> { return http.put(`/api/ems/strategy/${id}`, body) },
 
   /** DELETE /api/ems/strategy/{id} 删除策略 */
-  strategyDelete(id: number): Promise<void> { return http.delete(`/api/ems/strategy/${id}`) },
+  strategyDelete(id: string): Promise<void> { return http.delete(`/api/ems/strategy/${id}`) },
 
   /** PUT /api/ems/strategy/{id}/status 启停策略 */
-  strategySwitchStatus(id: number, status: number): Promise<void> { return http.put(`/api/ems/strategy/${id}/status?status=${status}`) },
+  strategySwitchStatus(id: string, status: number): Promise<void> { return http.put(`/api/ems/strategy/${id}/status?status=${status}`) },
 
   /** GET /api/ems/price/page 电价分页查询 */
   pricePage(params: Record<string, unknown>): Promise<PageResult<EmsElectricityPrice>> { return http.get('/api/ems/price/page', { params }) },
@@ -27,13 +27,13 @@ export const emsApi = {
   priceSave(body: EmsElectricityPrice[]): Promise<void> { return http.post('/api/ems/price', body) },
 
   /** GET /api/ems/constraint 查询站点约束 */
-  constraintGet(stationId: number): Promise<EmsConstraint> { return http.get(`/api/ems/constraint?stationId=${stationId}`) },
+  constraintGet(stationId: string): Promise<EmsConstraint> { return http.get(`/api/ems/constraint?stationId=${stationId}`) },
 
   /** PUT /api/ems/constraint 保存站点约束 */
   constraintSave(body: EmsConstraint): Promise<EmsConstraint> { return http.put('/api/ems/constraint', body) },
 
   /** POST /api/ems/plan/generate 生成调度计划 */
-  planGenerate(body: { stationId: number; strategyId?: number; planDate: string }): Promise<EmsPlan> {
+  planGenerate(body: { stationId: string; strategyId?: string; planDate: string }): Promise<EmsPlan> {
     return http.post('/api/ems/plan/generate', body)
   },
 
@@ -41,8 +41,8 @@ export const emsApi = {
   planPage(params: Record<string, unknown>): Promise<PageResult<EmsPlan>> { return http.get('/api/ems/plan/page', { params }) },
 
   /** GET /api/ems/plan/{planId}/points 计划点位（充放电曲线） */
-  planPoints(planId: number): Promise<EmsPlanPoint[]> { return http.get(`/api/ems/plan/${planId}/points`) },
+  planPoints(planId: string): Promise<EmsPlanPoint[]> { return http.get(`/api/ems/plan/${planId}/points`) },
 
   /** POST /api/ems/plan/{planId}/dispatch 下发调度计划 */
-  dispatch(planId: number): Promise<number> { return http.post(`/api/ems/plan/${planId}/dispatch`) },
+  dispatch(planId: string): Promise<number> { return http.post(`/api/ems/plan/${planId}/dispatch`) },
 }

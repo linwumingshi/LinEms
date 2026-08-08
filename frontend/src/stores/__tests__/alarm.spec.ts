@@ -43,10 +43,10 @@ function push(over: Partial<AlarmPush> = {}): AlarmPush {
   seq += 1
   return {
     alarmEventId: `evt-${seq}`,
-    tenantId: 1,
-    deviceId: 100,
+    tenantId: '1',
+    deviceId: '100',
     productKey: 'pk',
-    ruleId: 1,
+    ruleId: '1',
     ruleCode: 'ALM_TEMP_HIGH',
     level: 3,
     type: 1,

@@ -170,7 +170,7 @@ onMounted(load)
           </el-select>
         </el-form-item>
         <el-form-item label="电站 ID">
-          <el-input-number v-model="editing.stationId" :min="1" style="width: 200px" />
+          <el-input v-model="editing.stationId" placeholder="电站 ID" clearable style="width: 200px" />
         </el-form-item>
         <el-form-item label="优先级">
           <el-input-number v-model="editing.priority" :min="0" style="width: 200px" />

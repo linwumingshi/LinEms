@@ -24,7 +24,7 @@ export interface PageResult<T> {
 // ---------------- 影子 Shadow ----------------
 
 export interface ShadowView {
-  deviceId: number
+  deviceId: string
   /** reported 属性快照（Map<属性标识, 值>） */
   reported: Record<string, unknown>
   /** desired 期望值快照 */
@@ -34,7 +34,7 @@ export interface ShadowView {
 }
 
 export interface DesiredResult {
-  deviceId: number
+  deviceId: string
   desired: Record<string, unknown>
   /** desired - reported 差异（将驱动设备同步） */
   delta: Record<string, unknown>
@@ -59,13 +59,13 @@ export interface CreateCommandPayload {
   /** 最大重试，默认 3 */
   maxRetry: number
   /** 发起人（人工），默认 0=系统 */
-  createBy: number
+  createBy: string
 }
 
 export interface CommandView {
   commandId: string
-  tenantId: number
-  deviceId: number
+  tenantId: string
+  deviceId: string
   productKey: string
   command: string
   commandType: number
@@ -84,7 +84,7 @@ export interface CommandView {
   result: Record<string, unknown>
   errorCode: string | null
   errorMsg: string | null
-  createBy: number
+  createBy: string
   createTime: string
 }
 
@@ -92,10 +92,10 @@ export interface CommandView {
 
 export interface AlarmRecord {
   alarmEventId: string
-  tenantId: number
-  deviceId: number
+  tenantId: string
+  deviceId: string
   productKey: string
-  ruleId: number
+  ruleId: string
   ruleCode: string
   /** 1 提示 2 一般 3 严重 4 危急 */
   level: number
@@ -114,12 +114,12 @@ export interface AlarmRecord {
 }
 
 export interface AlarmRule {
-  ruleId: number
-  tenantId: number
+  ruleId: string
+  tenantId: string
   ruleCode: string
   ruleName: string
-  productId: number | null
-  deviceId: number | null
+  productId: string | null
+  deviceId: string | null
   triggerType: number
   condition: string
   severity: number
@@ -127,7 +127,7 @@ export interface AlarmRule {
   recovery: string | null
   status: number
   description: string | null
-  createBy: number
+  createBy: string
   createTime: string
   updateTime: string
 }
@@ -135,10 +135,10 @@ export interface AlarmRule {
 /** /ws/alarm 实时推送的告警事件（与 AlarmMessage 对应） */
 export interface AlarmPush {
   alarmEventId: string
-  tenantId: number
-  deviceId: number
+  tenantId: string
+  deviceId: string
   productKey: string
-  ruleId: number
+  ruleId: string
   ruleCode: string
   level: number
   type: number
@@ -156,7 +156,7 @@ export interface AlarmPush {
 export interface LoginRequest {
   username: string
   password: string
-  tenantId?: number
+  tenantId?: string
 }
 
 /** 登录响应（与 LoginResponse 对齐）：JWT + 基本信息 + 权限/角色标识 */
@@ -164,11 +164,11 @@ export interface LoginResult {
   token: string
   tokenType: string
   expiresIn: number
-  userId: number
+  userId: string
   username: string
   realName: string | null
-  tenantId: number
-  enterpriseId: number | null
+  tenantId: string
+  enterpriseId: string | null
   permissions: string[]
   roles: string[]
 }
@@ -176,22 +176,22 @@ export interface LoginResult {
 // ---------------- 储能策略 EMS ----------------
 
 export interface EmsStrategy {
-  strategyId: number
-  stationId: number
+  strategyId: string
+  stationId: string
   strategyName: string
   strategyType: string
   config: string
   priority: number
   status: number
   version: number
-  tenantId: number
+  tenantId: string
   createTime: string
 }
 
 export interface EmsPlan {
-  planId: number
-  stationId: number
-  strategyId: number
+  planId: string
+  stationId: string
+  strategyId: string
   planDate: string
   planType: number
   totalEnergy: number | null
@@ -206,9 +206,9 @@ export interface EmsPlanPoint {
 }
 
 export interface EmsConstraint {
-  constraintId: number
-  tenantId: number
-  stationId: number
+  constraintId: string
+  tenantId: string
+  stationId: string
   socMin: number | null
   socMax: number | null
   chargePowerMax: number | null
@@ -223,9 +223,9 @@ export interface EmsConstraint {
 }
 
 export interface EmsElectricityPrice {
-  priceId: number
-  tenantId: number
-  stationId: number
+  priceId: string
+  tenantId: string
+  stationId: string
   region: string
   /** DEEP/PEEK/PEAK/FLAT/VALLEY */
   priceType: string
@@ -241,9 +241,9 @@ export interface EmsElectricityPrice {
 // ---------------- 产品 Product ----------------
 
 export interface Product {
-  productId: number
-  tenantId: number
-  categoryId: number | null
+  productId: string
+  tenantId: string
+  categoryId: string | null
   productKey: string
   productName: string
   deviceType: string
@@ -261,8 +261,8 @@ export interface Product {
 export type ProductSaveReq = Partial<Omit<Product, 'productId' | 'tenantId' | 'createTime' | 'updateTime' | 'deleted'>>
 
 export interface ThingModelView {
-  modelId: number
-  productId: number
+  modelId: string
+  productId: string
   version: string
   schemaJson: string
   status: number
@@ -272,14 +272,14 @@ export interface ThingModelView {
 // ---------------- 设备 Device ----------------
 
 export interface Device {
-  deviceId: number
-  tenantId: number
-  enterpriseId: number | null
-  stationId: number | null
+  deviceId: string
+  tenantId: string
+  enterpriseId: string | null
+  stationId: string | null
   productKey: string
   deviceName: string
   deviceType: string
-  parentId: number
+  parentId: string
   path: string
   level: number
   sort: number
@@ -289,7 +289,7 @@ export interface Device {
   brokerNode: string | null
   lastOnlineTime: string | null
   lastOfflineTime: string | null
-  onlineSeconds: number
+  onlineSeconds: string
   mac: string | null
   ip: string | null
   children?: Device[]
@@ -302,9 +302,9 @@ export interface DeviceCreateReq {
   deviceName: string
   deviceType: string
   productKey: string
-  parentId?: number
-  stationId?: number
-  enterpriseId?: number
+  parentId?: string
+  stationId?: string
+  enterpriseId?: string
   firmwareVersion?: string
   mac?: string
   ip?: string
@@ -318,7 +318,7 @@ export type DeviceUpdateReq = Partial<Pick<Device,
   'deviceName' | 'deviceType' | 'stationId' | 'status' | 'firmwareVersion' | 'mac' | 'ip' | 'sort'>>
 
 export interface CredentialView {
-  deviceId: number
+  deviceId: string
   deviceName: string
   deviceSecret: string
   authStatus: number
@@ -327,9 +327,9 @@ export interface CredentialView {
 // ---------------- RBAC 系统管理 ----------------
 
 export interface SysUserVO {
-  userId: number
-  tenantId: number
-  enterpriseId: number | null
+  userId: string
+  tenantId: string
+  enterpriseId: string | null
   enterpriseName: string | null
   username: string
   realName: string
@@ -338,7 +338,7 @@ export interface SysUserVO {
   status: number
   lastLoginTime: string | null
   createTime: string
-  roleIds: number[]
+  roleIds: string[]
   roleNames: string[]
 }
 
@@ -347,17 +347,17 @@ export interface SysUserSaveReq {
   realName?: string
   phone?: string
   email?: string
-  enterpriseId?: number
+  enterpriseId?: string
   status?: number
   /** 创建必填(6~64)；更新留空=不改 */
   password?: string
   /** null=不改；数组=全量覆盖 */
-  roleIds?: number[] | null
+  roleIds?: string[] | null
 }
 
 export interface SysRole {
-  roleId: number
-  tenantId: number
+  roleId: string
+  tenantId: string
   roleCode: string
   roleName: string
   dataScope: number
@@ -374,8 +374,8 @@ export interface SysRoleSaveReq {
 }
 
 export interface SysPermission {
-  permId: number
-  parentId: number
+  permId: string
+  parentId: string
   permCode: string
   permName: string
   permType: number
@@ -393,7 +393,7 @@ export interface SysPermission {
 }
 
 export interface SysPermissionSaveReq {
-  parentId?: number
+  parentId?: string
   permCode?: string
   permName?: string
   permType?: number
@@ -408,9 +408,9 @@ export interface SysPermissionSaveReq {
 }
 
 export interface SysEnterprise {
-  enterpriseId: number
-  tenantId: number
-  parentId: number
+  enterpriseId: string
+  tenantId: string
+  parentId: string
   path: string
   level: number
   enterpriseCode: string
