@@ -21,7 +21,7 @@
   <dependencies>
     <dependency>
       <groupId>org.springframework.cloud</groupId>
-      <artifactId>spring-cloud-starter-gateway</artifactId>
+      <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
     </dependency>
     <!-- JWT 验签核心（纯库，无 Servlet 依赖，与 WebFlux 兼容） -->
     <dependency>
