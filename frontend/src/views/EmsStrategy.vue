@@ -2,8 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { emsApi } from '@/api/ems'
-import type { EmsStrategy } from '@/types/models'
+import type { EmsConstraint, EmsStrategy } from '@/types/models'
 import { isStrategyGeneratable } from '@/utils/dicts'
+import StrategyConfigEditor from '@/components/StrategyConfigEditor.vue'
+import { parseJsonConfig, validatePeakValleyConfig } from '@/utils/strategyConfig'
 
 const loading = ref(false)
 const list = ref<EmsStrategy[]>([])
@@ -13,6 +15,8 @@ const pageSize = ref(10)
 const dialogVisible = ref(false)
 const editing = ref<Partial<EmsStrategy>>({})
 const isEdit = ref(false)
+/** 站点安全包络（供配置表单软警告）；缺失/拉取失败静默置 null */
+const envelope = ref<EmsConstraint | null>(null)
 
 /** 策略类型语义色（充电/放电/钢蓝/中性） */
 const TYPE_TAG: Record<string, 'success' | 'warning' | 'primary' | 'info'> = {
@@ -51,10 +55,43 @@ async function load() {
   } finally { loading.value = false }
 }
 
-function openCreate() { editing.value = {}; isEdit.value = false; dialogVisible.value = true }
-function openEdit(row: EmsStrategy) { editing.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
+function openCreate() {
+  editing.value = {}
+  isEdit.value = false
+  dialogVisible.value = true
+  void loadEnvelope()
+}
+function openEdit(row: EmsStrategy) {
+  editing.value = { ...row }
+  isEdit.value = true
+  dialogVisible.value = true
+  void loadEnvelope()
+}
+async function loadEnvelope() {
+  envelope.value = null
+  if (!editing.value.stationId) return
+  try {
+    envelope.value = await emsApi.constraintGet(editing.value.stationId)
+  } catch {
+    envelope.value = null // 包络缺失/未配置：软警告静默跳过
+  }
+}
 
 async function save() {
+  const raw = editing.value.config ?? ''
+  if (editing.value.strategyType === 'PEAK_VALLEY') {
+    const issues = validatePeakValleyConfig(raw)
+    if (issues.length) {
+      ElMessage.error(issues[0])
+      return
+    }
+  } else {
+    const r = parseJsonConfig(raw)
+    if (!r.ok) {
+      ElMessage.error(r.error)
+      return
+    }
+  }
   if (editing.value.strategyType && !isStrategyGeneratable(editing.value.strategyType)) {
     ElMessage.warning('当前仅峰谷套利可生成计划，其余类型可保存但不可生成')
   }
@@ -192,7 +229,7 @@ onMounted(load)
           <el-input-number v-model="editing.priority" :min="0" style="width: 200px" />
         </el-form-item>
         <el-form-item label="配置 JSON">
-          <el-input v-model="editing.config" type="textarea" :rows="5" placeholder='{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}]}' />
+          <StrategyConfigEditor v-model="editing.config" :strategy-type="editing.strategyType" :envelope="envelope" />
         </el-form-item>
       </el-form>
       <template #footer>
