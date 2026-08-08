@@ -24,6 +24,9 @@ test/stress/results/
 # SDD 计划工作区（subagent-driven 临时产物：ledger/briefs/reports）
 .superpowers/
 
+# Git worktree 隔离工作区（不入库，防止 git add -A 误提交整个 worktree）
+.worktrees/
+
 # IDE / 编辑器本地设置
 .idea/
 .claude/settings.local.json
