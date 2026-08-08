@@ -12,7 +12,7 @@ const pageSize = ref(10)
 const selected = ref<EmsPlan>()
 const points = ref<EmsPlanPoint[]>([])
 const chartEl = ref<HTMLElement>()
-const { render } = useEChart(chartEl)
+const { chart, render } = useEChart(chartEl)
 
 /** 语义色：充电/放电/待机。波形柱按动作分色，仪器读数带用同一套 token。 */
 const ACTION_COLOR: Record<string, string> = {
@@ -37,6 +37,8 @@ const statusText = computed(() => STATUS_TEXT[selected.value?.status ?? 0])
 const chargeKwh = computed(() => round1(sumPower('CHARGE') * 0.5))
 const dischargeKwh = computed(() => round1(sumPower('DISCHARGE') * 0.5))
 const pointCount = computed(() => points.value.length)
+/** 0 点计划：所选策略类型后端不支持生成 → 渲染空态而非空白波形 */
+const emptyPoints = computed(() => points.value.length === 0)
 const endSoc = computed(() => {
   const last = points.value.length ? points.value[points.value.length - 1] : undefined
   return last ? Math.round(last.socTarget) : 0
@@ -75,6 +77,10 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
   try {
     const pts = await emsApi.planPoints(plan.planId)
     points.value = pts
+    if (!pts.length) {
+      chart.value?.clear() // 清掉上一条计划的残留波形（若有）
+      return
+    }
     const bands = await fetchBands(plan.stationId, plan.planDate)
     renderChart(pts, bands)
   } catch (e) {
@@ -253,7 +259,8 @@ onMounted(load)
           <li><i class="sw sw-valley" aria-hidden="true"></i>谷</li>
         </ul>
       </div>
-      <div ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
+      <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
+      <el-empty v-else description="该计划无点序列——所选策略类型暂不支持生成" :image-size="96" class="wave-empty" />
       <p class="wave-note">底纹为分时电价时段（低谷充电、高峰放电的套利逻辑一眼可读）；SOC 线为计划目标荷电状态。</p>
     </section>
 
@@ -434,6 +441,13 @@ onMounted(load)
 .wave {
   height: 340px;
   width: 100%;
+}
+.wave-empty {
+  height: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 .wave-note {
   margin: 8px 0 0;

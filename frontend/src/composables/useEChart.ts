@@ -11,7 +11,15 @@ export function useEChart(elRef: Ref<HTMLElement | undefined>) {
   let observer: ResizeObserver | null = null
 
   function initIfNeeded(el: HTMLElement | undefined): void {
-    if (!el || chart.value) return
+    if (!el) {
+      // 容器被 v-if 移除：释放实例与观察器，避免重新挂载时被残留 chart.value 挡住
+      observer?.disconnect()
+      observer = null
+      chart.value?.dispose()
+      chart.value = null
+      return
+    }
+    if (chart.value) return
     chart.value = echarts.init(el)
     if (pending) {
       chart.value.setOption(pending, { notMerge: true })
