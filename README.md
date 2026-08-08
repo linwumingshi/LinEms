@@ -41,6 +41,7 @@
 - Redis Key 规范：`docs/design/Redis-key规范.md`
 - 模拟设备接入与消息验证指南：`docs/sim-device-使用验证指南.md`
 - 技术决策记录（ADR）：`docs/decisions/ADR-技术决策记录.md`
+- 管理后台页面设计：`docs/superpowers/specs/2026-08-08-admin-pages-design.md`
 - MySQL DDL：`sql/mysql/`（分域 00~80 + `sharding/` 分表模板）
 - TDengine DDL：`sql/tdengine/`
 - Elasticsearch：`sql/elasticsearch/`
