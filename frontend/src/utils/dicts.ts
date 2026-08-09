@@ -69,3 +69,14 @@ export const STRATEGY_GENERATABLE_TYPES: string[] = ['PEAK_VALLEY']
 export function isStrategyGeneratable(type?: string): boolean {
   return !!type && STRATEGY_GENERATABLE_TYPES.includes(type)
 }
+
+/** 电站电网类型下拉（后端 Station.gridType 备注：工商业/园区/电网侧） */
+export const GRID_TYPE_OPTIONS = ['工商业', '园区', '电网侧']
+
+/** 电站状态：0 停运 1 运行 */
+export function stationStatusText(s: number): string {
+  return s === 1 ? '运行' : s === 0 ? '停运' : `未知(${s})`
+}
+export function stationStatusTag(s: number): 'success' | 'info' {
+  return s === 1 ? 'success' : 'info'
+}
