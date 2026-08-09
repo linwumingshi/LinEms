@@ -139,7 +139,7 @@ const lastReported = ref('')
 const timeRange = ref<[string, string] | null>(null)
 const selProp = ref('')
 const historyLoading = ref(false)
-const hasChartData = ref(false)
+const hasChartData = ref(true)
 const chartEl = ref<HTMLElement>()
 const { render } = useEChart(chartEl)
 const historyTable = ref<PropertyHistoryView>({ deviceId: '', productKey: '', total: 0, records: [] })
@@ -154,7 +154,7 @@ function resetRuntime() {
   historyPage.value = 1
   timeRange.value = null
   selProp.value = ''
-  hasChartData.value = false
+  hasChartData.value = true
   render({ xAxis: { type: 'time' }, yAxis: { type: 'value' }, series: [] })
 }
 
@@ -178,12 +178,14 @@ function rangeToEpoch(r: [string, string]): [number, number] {
 async function loadRuntime() {
   if (!detail.value || activeTab.value !== 'runtime') return
   if (shadow.value) return
+  const deviceId = String(detail.value.deviceId)
   runtimeLoading.value = true
   try {
     const [sh, tm] = await Promise.all([
-      shadowApi.getShadow(String(detail.value.deviceId)),
+      shadowApi.getShadow(deviceId),
       productApi.thingModelByKey(detail.value.productKey).catch(() => null),
     ])
+    if (String(detail.value?.deviceId) !== deviceId) return
     shadow.value = sh
     lastReported.value = sh.lastReportedTime ?? ''
     model.value = tm ? parseThingModel(tm.schemaJson) : { properties: [], services: [], events: [] }
@@ -200,19 +202,14 @@ async function queryHistory() {
   if (!detail.value || !selProp.value || !timeRange.value) return
   historyLoading.value = true
   const [start, end] = rangeToEpoch(timeRange.value)
+  const base = {
+    deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+    identifiers: [selProp.value], startTime: start, endTime: end,
+  }
   try {
-    const chartData = await tsdbApi.propertyHistory({
-      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
-      identifiers: [selProp.value], startTime: start, endTime: end,
-      order: 'asc', page: 1, size: 1000,
-    })
+    const chartData = await tsdbApi.propertyHistory({ ...base, order: 'asc', page: 1, size: 1000 })
     renderChart(chartData.records, selProp.value)
     historyPage.value = 1
-    historyTable.value = await tsdbApi.propertyHistory({
-      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
-      identifiers: [selProp.value], startTime: start, endTime: end,
-      order: 'desc', page: historyPage.value, size: historySize.value,
-    })
   } catch {
     ElMessage.error('历史数据查询失败')
     hasChartData.value = false
@@ -220,6 +217,13 @@ async function queryHistory() {
     if (detail.value) {
       historyTable.value = { deviceId: String(detail.value.deviceId), productKey: detail.value.productKey, total: 0, records: [] }
     }
+    historyLoading.value = false
+    return
+  }
+  try {
+    historyTable.value = await tsdbApi.propertyHistory({ ...base, order: 'desc', page: historyPage.value, size: historySize.value })
+  } catch {
+    ElMessage.error('历史数据查询失败')
   } finally {
     historyLoading.value = false
   }
@@ -492,7 +496,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
           </el-tab-pane>
           <el-tab-pane name="runtime" label="运行状态" lazy>
             <div v-loading="runtimeLoading" class="runtime-pane">
-              <template v-if="model">
+              <template v-if="model && model.properties.length">
                 <div class="runtime-head">
                   <span class="rt-label">最后上报：</span>
                   <span class="ex-num">{{ toLocal(lastReported) }}</span>
@@ -534,7 +538,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
                   </div>
                 </div>
               </template>
-              <el-empty v-else-if="!runtimeLoading" description="产品未发布物模型" />
+              <el-empty v-else-if="model && !runtimeLoading" description="产品未发布物模型" />
             </div>
           </el-tab-pane>
         </el-tabs>
