@@ -17,7 +17,7 @@ CREATE STABLE IF NOT EXISTS st_prop_snd_ess_pcs (
   current   FLOAT,
   power     FLOAT,
   temp      FLOAT,
-  run_mode  INT
+  `runMode` INT
 ) TAGS (
   device_id    NCHAR(64),
   station_id   NCHAR(32),
@@ -65,7 +65,7 @@ BEGIN
          max(power) AS power_max, min(power) AS power_min, avg(power) AS power_avg,
          max(temp) AS temp_max, min(temp) AS temp_min, avg(temp) AS temp_avg
   FROM st_prop_snd_ess_pcs
-  WHERE run_mode IS NOT NULL
+  WHERE `runMode` IS NOT NULL
   INTERVAL(1m)
   INTO iot_tsdb_agg.st_prop_1m_snd_ess_pcs
   GROUP BY device_id, station_id, enterprise_id, product_key

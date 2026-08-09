@@ -7,6 +7,7 @@
 --   * 子表名 = device_id（一设备一子表），TAGS 冗余 station/enterprise/product 便于跨产品查询
 --   * 属性列名 = 物模型 identifier（映射自 iot_thing_model_identifier 投影表）
 --   * 新增属性 → ALTER STABLE ADD COLUMN（随物模型版本演进，低频）
+--   * 属性列名 = TSL identifier 原样（snake/camel 都不转换），须与写路径 TdengineSqlBuilder 一致
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -22,7 +23,7 @@ CREATE STABLE IF NOT EXISTS st_prop_snd_ess_pcs (
   current   FLOAT,
   power     FLOAT,
   temp      FLOAT,
-  run_mode  INT
+  `runMode` INT
 ) TAGS (
   device_id    NCHAR(64),
   station_id   NCHAR(32),
