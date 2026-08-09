@@ -6,7 +6,8 @@ import type { EmsConstraint, EmsStrategy, Station } from '@/types/models'
 import { isStrategyGeneratable } from '@/utils/dicts'
 import { loadStations, stationName } from '@/utils/stationDict'
 import StrategyConfigEditor from '@/components/StrategyConfigEditor.vue'
-import { parseJsonConfig, validatePeakValleyConfig } from '@/utils/strategyConfig'
+import { parseJsonConfig, validatePeakValleySaveable } from '@/utils/strategyConfig'
+import { constraintReady } from '@/utils/planGate'
 
 const loading = ref(false)
 const list = ref<EmsStrategy[]>([])
@@ -16,6 +17,12 @@ const pageSize = ref(10)
 const dialogVisible = ref(false)
 const editing = ref<Partial<EmsStrategy>>({})
 const isEdit = ref(false)
+/** 保存前置校验错误（内联红字，11-b：校验不走系统 Toast） */
+const errs = ref<Record<string, string>>({})
+watch(
+  () => [editing.value.strategyName, editing.value.strategyType, editing.value.stationId, editing.value.config],
+  () => { errs.value = {} },
+)
 /** 站点安全包络（供配置表单软警告）；缺失/拉取失败静默置 null */
 const envelope = ref<EmsConstraint | null>(null)
 /** 电站下拉/列表名称数据源（loadStations 模块级缓存；失败回退裸 id） */
@@ -107,20 +114,25 @@ async function loadEnvelope() {
 watch(() => editing.value.stationId, () => void loadEnvelope())
 
 async function save() {
+  errs.value = {}
+  const e: Record<string, string> = {}
+  if (!editing.value.strategyName?.trim()) e.strategyName = '请填写策略名称'
+  if (!editing.value.strategyType) e.strategyType = '请选择策略类型'
+  if (!editing.value.stationId) e.stationId = '请选择电站'
   const raw = editing.value.config ?? ''
-  if (editing.value.strategyType === 'PEAK_VALLEY') {
-    const issues = validatePeakValleyConfig(raw)
-    if (issues.length) {
-      ElMessage.error(issues[0])
-      return
-    }
-  } else {
-    const r = parseJsonConfig(raw)
-    if (!r.ok) {
-      ElMessage.error(r.error)
-      return
+  if (!e.strategyType) {
+    if (editing.value.strategyType === 'PEAK_VALLEY') {
+      const issues = validatePeakValleySaveable(raw)
+      if (issues.length) e.config = issues[0]
+    } else if (!raw.trim()) {
+      e.config = '请填写配置 JSON' // 非峰谷空配置：非「非法 JSON」，明确提示
+    } else {
+      const r = parseJsonConfig(raw)
+      if (!r.ok) e.config = r.error
     }
   }
+  if (Object.keys(e).length) { errs.value = e; return }
+  // —— 以下保持不变：非可生成类型 warning、payload 构造、strategyCreate/Update、toast、load ——
   if (editing.value.strategyType && !isStrategyGeneratable(editing.value.strategyType)) {
     ElMessage.warning('当前仅峰谷套利可生成计划，其余类型可保存但不可生成')
   }
@@ -176,6 +188,10 @@ async function switchStatus(row: EmsStrategy, status: number) {
 async function generatePlan(row: EmsStrategy) {
   if (!isStrategyGeneratable(row.strategyType)) {
     ElMessage.warning('该策略类型暂不支持生成计划（后端仅实现峰谷套利）')
+    return
+  }
+  if (!(await constraintReady(row.stationId))) {
+    ElMessage.warning('该电站安全约束未就绪（未配置或 SOC/功率上下限缺失），无法生成计划')
     return
   }
   const d = new Date()
@@ -263,15 +279,15 @@ onMounted(() => {
     <!-- 策略编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑策略' : '新增策略'" width="560px">
       <el-form label-width="100px">
-        <el-form-item label="策略名称">
+        <el-form-item label="策略名称" required :error="errs.strategyName">
           <el-input v-model="editing.strategyName" placeholder="如：工作日峰谷套利" />
         </el-form-item>
-        <el-form-item label="策略类型">
+        <el-form-item label="策略类型" required :error="errs.strategyType">
           <el-select v-model="editing.strategyType" style="width: 100%">
             <el-option v-for="opt in strategyTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="电站">
+        <el-form-item label="电站" required :error="errs.stationId">
           <el-select v-model="editing.stationId" placeholder="请选择电站" filterable clearable style="width: 100%">
             <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
           </el-select>
@@ -279,7 +295,7 @@ onMounted(() => {
         <el-form-item label="优先级">
           <el-input-number v-model="editing.priority" :min="0" style="width: 200px" />
         </el-form-item>
-        <el-form-item label="配置 JSON">
+        <el-form-item label="配置 JSON" :error="errs.config">
           <StrategyConfigEditor v-model="editing.config" :strategy-type="editing.strategyType" :envelope="envelope" />
         </el-form-item>
       </el-form>
