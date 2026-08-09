@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { deviceApi } from '@/api/device'
 import { productApi } from '@/api/product'
 import { enterpriseApi } from '@/api/system'
-import type { CredentialView, Device, Product, SysEnterprise } from '@/types/models'
-import { deviceStatusTag, deviceStatusText, deviceTypeOptions } from '@/utils/dicts'
+import type { CredentialView, Device, Product, Station, SysEnterprise } from '@/types/models'
+import { deviceStatusTag, deviceStatusText, deviceTypeLabel, deviceTypeOptions, deviceTypeText } from '@/utils/dicts'
 import { toLocal } from '@/utils/alarmFormat'
+import { loadStations, stationName } from '@/utils/stationDict'
 
 const loading = ref(false)
 const list = ref<Device[]>([])
@@ -50,6 +51,19 @@ const isEdit = ref(false)
 const form = ref<Partial<Device>>({})
 const products = ref<Product[]>([])
 const enterprises = ref<SysEnterprise[]>([])
+const stations = ref<Station[]>([])
+const errs = ref<Record<string, string>>({})
+const narrowedTypes = computed(() => {
+  const p = products.value.find((x) => x.productKey === form.value.productKey)
+  return p?.deviceType ? [p.deviceType] : deviceTypeOptions
+})
+async function loadStationOptions() {
+  try { stations.value = await loadStations() } catch { /* 名称回退裸 id，不阻断 */ }
+}
+watch(
+  () => [form.value.deviceName, form.value.productKey, form.value.deviceType],
+  () => { errs.value = {} },
+)
 async function loadOptions() {
   try {
     const [p, e] = await Promise.all([
@@ -67,12 +81,13 @@ function onProductChange(pk?: string) {
 function openCreate() { form.value = { status: 0, protocol: 'MQTT', parentId: undefined }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Device) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
-  if (!form.value.deviceName?.trim()) { ElMessage.warning('deviceName 为必填'); return }
-  if (form.value.deviceName.includes('_') || form.value.deviceName.includes('&')) {
-    ElMessage.warning('deviceName 禁止包含 _ 或 &（接入契约）')
-    return
-  }
-  if (!form.value.productKey) { ElMessage.warning('请选择产品'); return }
+  errs.value = {}
+  const e: Record<string, string> = {}
+  if (!form.value.deviceName?.trim()) e.deviceName = '设备名必填'
+  else if (form.value.deviceName.includes('_') || form.value.deviceName.includes('&')) e.deviceName = 'deviceName 禁止包含 _ 或 &（接入契约）'
+  if (!form.value.productKey) e.productKey = '请选择产品'
+  if (!form.value.deviceType) e.deviceType = '请选择设备类型'
+  if (Object.keys(e).length) { errs.value = e; return }
   try {
     if (isEdit.value) {
       await deviceApi.update(form.value.deviceId!, {
@@ -157,7 +172,7 @@ async function remove(row: Device) {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 
-onMounted(() => { void load(); void loadReadout(); void loadOptions() })
+onMounted(() => { void load(); void loadReadout(); void loadOptions(); void loadStationOptions() })
 </script>
 
 <template>
@@ -181,7 +196,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
       <el-form inline @submit.prevent>
         <el-form-item label="设备类型">
           <el-select v-model="query.deviceType" clearable placeholder="全部" style="width: 170px">
-            <el-option v-for="t in deviceTypeOptions" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in deviceTypeOptions" :key="t" :label="deviceTypeLabel(t)" :value="t" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -189,8 +204,10 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
             <el-option v-for="i in [0, 1, 2, 3, 4, 5]" :key="i" :label="deviceStatusText(i)" :value="i" />
           </el-select>
         </el-form-item>
-        <el-form-item label="电站 ID">
-          <el-input v-model="query.stationId" placeholder="全部" clearable style="width: 150px" />
+        <el-form-item label="电站">
+          <el-select v-model="query.stationId" clearable filterable placeholder="全部" style="width: 170px">
+            <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+          </el-select>
         </el-form-item>
         <el-form-item label="关键字">
           <el-input v-model="query.keyword" placeholder="设备名模糊" clearable style="width: 200px" @keyup.enter="search" />
@@ -209,14 +226,14 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
         </el-table-column>
         <el-table-column prop="deviceName" label="设备名" min-width="140" show-overflow-tooltip />
         <el-table-column prop="productKey" label="productKey" width="130" show-overflow-tooltip />
-        <el-table-column prop="deviceType" label="类型" width="130" />
+        <el-table-column label="类型" width="130"><template #default="{ row }">{{ deviceTypeText(row.deviceType) }}</template></el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="deviceStatusTag(row.status)" size="small">{{ deviceStatusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="stationId" label="电站" width="80">
-          <template #default="{ row }"><span class="ex-num">{{ row.stationId ?? '—' }}</span></template>
+        <el-table-column label="电站" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
         </el-table-column>
         <el-table-column label="最近上线" width="150">
           <template #default="{ row }"><span class="ex-num">{{ toLocal(row.lastOnlineTime) }}</span></template>
@@ -241,17 +258,17 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑设备' : '新增设备'" width="600px">
       <el-form label-width="110px">
-        <el-form-item label="设备名" required>
+        <el-form-item label="设备名" required :error="errs.deviceName">
           <el-input v-model="form.deviceName" placeholder="如 sim-dev-000001（禁止 _ 与 &）" maxlength="128" :disabled="isEdit" />
         </el-form-item>
-        <el-form-item label="产品" required>
+        <el-form-item label="产品" required :error="errs.productKey">
           <el-select v-model="form.productKey" filterable style="width: 100%" :disabled="isEdit" @change="onProductChange">
             <el-option v-for="p in products" :key="p.productKey" :label="`${p.productName} (${p.productKey})`" :value="p.productKey" />
           </el-select>
         </el-form-item>
-        <el-form-item label="设备类型">
-          <el-select v-model="form.deviceType" style="width: 100%" :disabled="isEdit">
-            <el-option v-for="t in deviceTypeOptions" :key="t" :label="t" :value="t" />
+        <el-form-item label="设备类型" required :error="errs.deviceType">
+          <el-select v-model="form.deviceType" style="width: 100%" :disabled="isEdit || !!form.productKey">
+            <el-option v-for="t in narrowedTypes" :key="t" :label="deviceTypeLabel(t)" :value="t" />
           </el-select>
         </el-form-item>
         <el-form-item label="所属企业">
@@ -259,8 +276,10 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
             <el-option v-for="e in enterprises" :key="e.enterpriseId" :label="e.enterpriseName" :value="e.enterpriseId" />
           </el-select>
         </el-form-item>
-        <el-form-item label="电站 ID">
-          <el-input v-model="form.stationId" placeholder="无" clearable style="width: 200px" />
+        <el-form-item label="电站">
+          <el-select v-model="form.stationId" clearable filterable placeholder="无" style="width: 100%">
+            <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+          </el-select>
         </el-form-item>
         <el-form-item label="固件版本">
           <el-input v-model="form.firmwareVersion" placeholder="如 v1.2.0" maxlength="64" />
@@ -288,9 +307,9 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions() })
           <el-descriptions-item label="状态">
             <el-tag :type="deviceStatusTag(detail.status)" size="small">{{ deviceStatusText(detail.status) }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="类型">{{ detail.deviceType }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ deviceTypeText(detail.deviceType) }}</el-descriptions-item>
           <el-descriptions-item label="productKey" :span="2">{{ detail.productKey }}</el-descriptions-item>
-          <el-descriptions-item label="电站">{{ detail.stationId ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="电站">{{ stationName(detail.stationId, stations) || '—' }}</el-descriptions-item>
           <el-descriptions-item label="企业">{{ detail.enterpriseId ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="父设备" :span="2"><span class="ex-num">{{ detail.parentId }}</span></el-descriptions-item>
           <el-descriptions-item label="路径" :span="2">{{ detail.path }}</el-descriptions-item>
