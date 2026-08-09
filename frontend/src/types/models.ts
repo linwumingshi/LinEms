@@ -238,6 +238,19 @@ export interface EmsElectricityPrice {
   createTime: string
 }
 
+// ---------------- 电站 Station ----------------
+
+/** 电站资产（iot_station；stationId 为 Long，序列化为字符串，同雪花约定） */
+export interface Station {
+  stationId: string
+  enterpriseId?: string | null
+  stationCode?: string | null
+  stationName: string
+  address?: string | null
+  gridType?: string | null
+  status?: number
+}
+
 // ---------------- 产品 Product ----------------
 
 export interface Product {
