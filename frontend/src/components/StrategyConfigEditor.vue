@@ -65,6 +65,7 @@ const warnings = computed(() => {
 let lastEmitted: string | null = null
 
 function jsonErrorOf(config: string): string {
+  if (!config.trim()) return '' // 空配置不是错误（新增/非峰谷初始态）
   const r = parseJsonConfig(config)
   return r.ok ? '' : r.error
 }
@@ -213,10 +214,10 @@ initFromConfig()
         </div>
         <div v-if="form[group.key].length === 0" class="group-empty">暂无窗口</div>
         <div v-for="(w, i) in form[group.key]" :key="i" class="window-row">
-          <el-time-picker v-model="w.start" format="HH:mm" value-format="HH:mm" placeholder="开始" :clearable="false" style="width: 110px" />
+          <el-time-picker v-model="w.start" format="HH:mm" value-format="HH:mm" placeholder="开始" :clearable="false" style="width: 100px" />
           <span class="sep">至</span>
-          <el-time-picker v-model="w.end" format="HH:mm" value-format="HH:mm" placeholder="结束" :clearable="false" style="width: 110px" />
-          <el-input-number v-model="w.powerLimit" :min="0.1" :precision="1" :step="1" style="width: 130px" />
+          <el-time-picker v-model="w.end" format="HH:mm" value-format="HH:mm" placeholder="结束" :clearable="false" style="width: 100px" />
+          <el-input-number v-model="w.powerLimit" :min="0.1" :precision="1" :step="1" style="width: 120px" />
           <span class="unit">kW</span>
           <el-button link type="danger" size="small" @click="removeWindow(group.key, i)">删除</el-button>
         </div>
@@ -291,7 +292,8 @@ initFromConfig()
 .window-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 6px;
 }
 .sep {
