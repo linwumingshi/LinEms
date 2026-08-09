@@ -92,3 +92,14 @@ logging:
     com.energyx.broker: info
     org.apache.kafka: warn
     io.netty: warn
+
+# ---------------- 可观测性（Prometheus 指标端点） ----------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus,health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

@@ -23,6 +23,13 @@
   <name>energy-mqtt-broker</name>
   <description>自研 Netty MQTT Broker：连接接入/认证/会话/跨节点路由/生命周期</description>
 
+  <properties>
+    <!-- 本地仓库仅有 micrometer 1.13.4 全系列（含 registry-prometheus 1.13.4 ↔ prometheus-metrics-core 1.2.1），
+         覆盖 Boot 3.5.4 BOM 管理的 1.15.2 以保持离线可构建 -->
+    <micrometer.version>1.13.4</micrometer.version>
+    <prometheus-client.version>1.2.1</prometheus-client.version>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.energyx</groupId>
@@ -57,6 +64,16 @@
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>
       <version>3.6.2</version>
+    </dependency>
+
+    <!-- 可观测性：actuator + Prometheus 指标端点（/actuator/prometheus，管理端口 8082） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 
     <dependency>

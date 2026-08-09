@@ -17,8 +17,8 @@ import com.energyx.broker.session.MqttSubscription;
 import com.energyx.broker.session.Session;
 import com.energyx.broker.session.SessionRegistry;
 import com.energyx.broker.session.SessionStore;
+import com.energyx.broker.stats.BrokerMetrics;
 import com.energyx.broker.stats.BrokerStats;
-import com.energyx.broker.util.BrokerKeys;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.Channel;
@@ -93,6 +93,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private final KafkaEventProducer kafkaProducer;
     private final BrokerProperties properties;
     private final BrokerStats stats;
+    private final BrokerMetrics metrics;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
     private final AtomicInteger rawConnections = new AtomicInteger();
@@ -106,6 +107,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                                      KafkaEventProducer kafkaProducer,
                                      BrokerProperties properties,
                                      BrokerStats stats,
+                                     BrokerMetrics metrics,
                                      ObjectMapper objectMapper,
                                      @Qualifier("brokerExecutor") ExecutorService executor) {
         this.authService = authService;
@@ -117,6 +119,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         this.kafkaProducer = kafkaProducer;
         this.properties = properties;
         this.stats = stats;
+        this.metrics = metrics;
         this.objectMapper = objectMapper;
         this.executor = executor;
     }
@@ -443,19 +446,24 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         Channel channel = ctx.channel();
         switch (qos) {
             case 0 -> deliverer.deliver(topic, payload, 0, retain, null);
-            case 1 ->
+            case 1 -> {
                 // PUBACK 推迟到 Kafka 路由持久化确认之后；路由失败关连接，设备重连重传（at-least-once）
-                    deliverer.deliver(topic, payload, 1, retain, null,
-                            () -> channel.eventLoop().execute(() -> {
+                long publishStart = System.nanoTime();
+                deliverer.deliver(topic, payload, 1, retain, null,
+                        () -> {
+                            metrics.recordPubAckLatency(publishStart);
+                            channel.eventLoop().execute(() -> {
                                 if (channel.isActive()) {
                                     sendPubAck(channel, packetId);
                                 }
-                            }),
-                            () -> channel.eventLoop().execute(() -> {
-                                log.error("[Deliver] 路由失败关连接迫使重传 deviceKey={} topic={}",
-                                        session.getDeviceKey(), topic);
-                                channel.close();
-                            }));
+                            });
+                        },
+                        () -> channel.eventLoop().execute(() -> {
+                            log.error("[Deliver] 路由失败关连接迫使重传 deviceKey={} topic={}",
+                                    session.getDeviceKey(), topic);
+                            channel.close();
+                        }));
+            }
             case 2 -> {
                 // 收到 PUBREL 才路由（恰好一次入站）
                 session.getInboundQos2().put(packetId, new InboundPublish(topic, payload, qos));
