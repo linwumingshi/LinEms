@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { emsApi } from '@/api/ems'
-import type { EmsConstraint, EmsStrategy } from '@/types/models'
+import type { EmsConstraint, EmsStrategy, Station } from '@/types/models'
 import { isStrategyGeneratable } from '@/utils/dicts'
+import { loadStations, stationName } from '@/utils/stationDict'
 import StrategyConfigEditor from '@/components/StrategyConfigEditor.vue'
 import { parseJsonConfig, validatePeakValleyConfig } from '@/utils/strategyConfig'
 
@@ -17,6 +18,8 @@ const editing = ref<Partial<EmsStrategy>>({})
 const isEdit = ref(false)
 /** 站点安全包络（供配置表单软警告）；缺失/拉取失败静默置 null */
 const envelope = ref<EmsConstraint | null>(null)
+/** 电站下拉/列表名称数据源（loadStations 模块级缓存；失败回退裸 id） */
+const stations = ref<Station[]>([])
 
 /** 策略类型语义色（充电/放电/钢蓝/中性） */
 const TYPE_TAG: Record<string, 'success' | 'warning' | 'primary' | 'info'> = {
@@ -55,6 +58,14 @@ async function load() {
   } finally { loading.value = false }
 }
 
+async function loadStationOptions() {
+  try {
+    stations.value = await loadStations()
+  } catch {
+    ElMessage.error('电站列表加载失败，请稍后重试')
+  }
+}
+
 function openCreate() {
   editing.value = {}
   isEdit.value = false
@@ -64,6 +75,18 @@ function openCreate() {
 function openEdit(row: EmsStrategy) {
   editing.value = { ...row }
   isEdit.value = true
+  dialogVisible.value = true
+  void loadEnvelope()
+}
+function copyStrategy(row: EmsStrategy) {
+  editing.value = {
+    stationId: row.stationId,
+    strategyName: `${row.strategyName} 副本`,
+    strategyType: row.strategyType,
+    config: row.config,
+    priority: row.priority,
+  }
+  isEdit.value = false
   dialogVisible.value = true
   void loadEnvelope()
 }
@@ -79,6 +102,9 @@ async function loadEnvelope() {
     if (editing.value.stationId === stationId) envelope.value = null
   }
 }
+
+/** 下拉切换电站即重载包络（S1 竞态守卫已处理异步过期） */
+watch(() => editing.value.stationId, () => void loadEnvelope())
 
 async function save() {
   const raw = editing.value.config ?? ''
@@ -162,7 +188,10 @@ async function generatePlan(row: EmsStrategy) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadStationOptions()
+})
 </script>
 
 <template>
@@ -185,6 +214,9 @@ onMounted(load)
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="电站" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
+        </el-table-column>
         <el-table-column prop="priority" label="优先级" width="90">
           <template #default="{ row }"><span class="ex-num">{{ row.priority }}</span></template>
         </el-table-column>
@@ -198,9 +230,10 @@ onMounted(load)
         <el-table-column prop="createTime" label="创建时间" width="170">
           <template #default="{ row }"><span class="ex-num">{{ row.createTime }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="primary" @click="copyStrategy(row)">复制</el-button>
             <el-tooltip :disabled="isStrategyGeneratable(row.strategyType)" content="该策略类型暂不支持生成计划（后端仅实现峰谷套利）">
               <span>
                 <el-button v-if="row.status === 1" link type="success" :disabled="!isStrategyGeneratable(row.strategyType)" @click="generatePlan(row)">生成计划</el-button>
@@ -238,8 +271,10 @@ onMounted(load)
             <el-option v-for="opt in strategyTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="电站 ID">
-          <el-input v-model="editing.stationId" placeholder="电站 ID" clearable style="width: 200px" />
+        <el-form-item label="电站">
+          <el-select v-model="editing.stationId" placeholder="请选择电站" filterable clearable style="width: 100%">
+            <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+          </el-select>
         </el-form-item>
         <el-form-item label="优先级">
           <el-input-number v-model="editing.priority" :min="0" style="width: 200px" />
