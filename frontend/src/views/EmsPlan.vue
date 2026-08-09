@@ -3,7 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
-import type { EmsElectricityPrice, EmsPlan, EmsPlanPoint } from '@/types/models'
+import type { EmsElectricityPrice, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
+import { loadStations, stationName } from '@/utils/stationDict'
 
 const list = ref<EmsPlan[]>([])
 const total = ref(0)
@@ -13,6 +14,13 @@ const selected = ref<EmsPlan>()
 const points = ref<EmsPlanPoint[]>([])
 const chartEl = ref<HTMLElement>()
 const { chart, render } = useEChart(chartEl)
+
+/** 名称化：电站/策略 id → 名称映射（查不到回退裸 id，见 Global Constraints 3） */
+const stations = ref<Station[]>([])
+const strategies = ref<EmsStrategy[]>([])
+function strategyLabel(id: string | undefined): string {
+  return strategies.value.find((s) => String(s.strategyId) === String(id))?.strategyName ?? String(id ?? '')
+}
 
 /** 语义色：充电/放电/待机。波形柱按动作分色，仪器读数带用同一套 token。 */
 const ACTION_COLOR: Record<string, string> = {
@@ -69,6 +77,19 @@ async function load(): Promise<void> {
     }
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function loadMaps() {
+  try {
+    const [stationList, strategyPage] = await Promise.all([
+      loadStations(),
+      emsApi.strategyPage({ pageNo: 1, pageSize: 100 }),
+    ])
+    stations.value = stationList
+    strategies.value = strategyPage.records
+  } catch {
+    // 名称回退裸 id，不阻断页面
   }
 }
 
@@ -197,11 +218,61 @@ async function dispatch(row: EmsPlan): Promise<void> {
   }
 }
 
+// ---- 内联「生成计划」弹窗 ----
+const genDialogVisible = ref(false)
+const generating = ref(false)
+const genForm = ref<{ planDate: string; stationId?: string; strategyId?: string }>({ planDate: todayStr() })
+const genStrategies = ref<EmsStrategy[]>([])
+
+function todayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function openGenerate() {
+  genForm.value = { planDate: todayStr() }
+  genStrategies.value = []
+  genDialogVisible.value = true
+}
+
+/** 电站变化 → 拉该站启用策略候选（status=1），并清空已选策略 */
+async function onGenStationChange(stationId?: string) {
+  genForm.value.strategyId = undefined
+  genStrategies.value = []
+  if (!stationId) return
+  try {
+    const page = await emsApi.strategyPage({ pageNo: 1, pageSize: 50, stationId, status: 1 })
+    genStrategies.value = page.records
+  } catch {
+    genStrategies.value = [] // 候选拉取失败：策略留空走自动选择
+  }
+}
+
+async function generate() {
+  const { planDate, stationId, strategyId } = genForm.value
+  if (!planDate) { ElMessage.error('请选择计划日期'); return }
+  if (!stationId) { ElMessage.error('请选择电站'); return }
+  generating.value = true
+  try {
+    await emsApi.planGenerate({ stationId, strategyId: strategyId || undefined, planDate })
+    ElMessage.success('计划已生成')
+    genDialogVisible.value = false
+    await load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    generating.value = false
+  }
+}
+
 function onRowClick(row: EmsPlan): void {
   void selectPlan(row)
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadMaps()
+})
 </script>
 
 <template>
@@ -210,9 +281,10 @@ onMounted(load)
       <div class="head-title">
         <h1 class="page-title">充放电计划</h1>
         <p class="page-sub">
-          {{ selected ? `${selected.planDate} · 电站 ${selected.stationId} · 策略 ${selected.strategyId}` : '加载中…' }}
+          {{ selected ? `${selected.planDate} · 电站 ${stationName(selected.stationId, stations)} · 策略 ${strategyLabel(selected.strategyId)}` : '加载中…' }}
         </p>
       </div>
+      <el-button class="gen-btn" type="success" :disabled="generating" @click="openGenerate">生成计划</el-button>
       <el-button
         class="dispatch-btn"
         type="primary"
@@ -267,7 +339,12 @@ onMounted(load)
     <section class="list-card">
       <el-table :data="list" class="plan-table" highlight-current-row @row-click="onRowClick">
         <el-table-column prop="planDate" label="计划日期" min-width="110" />
-        <el-table-column prop="stationId" label="电站" width="80" />
+        <el-table-column label="电站" min-width="120">
+          <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
+        </el-table-column>
+        <el-table-column label="策略" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ strategyLabel(row.strategyId) }}</template>
+        </el-table-column>
         <el-table-column prop="totalEnergy" label="总量 kWh" width="110" align="right">
           <template #default="{ row }">{{ row.totalEnergy ?? '—' }}</template>
         </el-table-column>
@@ -291,6 +368,29 @@ onMounted(load)
         layout="total, prev, pager, next"
       />
     </section>
+
+    <!-- 生成调度计划弹窗 -->
+    <el-dialog v-model="genDialogVisible" title="生成调度计划" width="480px">
+      <el-form label-width="80px">
+        <el-form-item label="计划日期">
+          <el-date-picker v-model="genForm.planDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="电站">
+          <el-select v-model="genForm.stationId" placeholder="请选择电站" filterable clearable style="width: 100%" @change="onGenStationChange">
+            <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="策略">
+          <el-select v-model="genForm.strategyId" :placeholder="genForm.stationId ? '自动选择（启用中优先级最高）' : '请先选择电站'" clearable :disabled="!genForm.stationId" style="width: 100%">
+            <el-option v-for="s in genStrategies" :key="s.strategyId" :label="s.strategyName" :value="s.strategyId" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="genDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="generating" @click="generate">生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
