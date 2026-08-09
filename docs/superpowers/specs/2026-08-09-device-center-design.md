@@ -73,43 +73,27 @@ energy-gateway：/api/tsdb/** 路由（StripPrefix=1，controller 映射 /tsdb�
 ### 4.3 历史时序（TDengine 写路径现状）
 - `energy-tsdb`（端口 8112）`PropertyTsdbConsumer` 消费 `iot-thing-property` → `TdengineSqlBuilder.buildPropertyInsert` → `TdengineWriter.execute`（进程级单连接，TAOS-RS JDBC）。
 - **写路径列名 = 物模型 identifier 原样（反引号包裹）**，公共列 `ts/msg_id/data_type`；stable `st_prop_{productKey}`，子表 `dev_{deviceId}`；TAGS `device_id/station_id/enterprise_id/product_key`。
-- **关键不一致（须修正）**：`sql/tdengine/10_stable.sql`、`20_sample_stable.sql` 中属性列为 `run_mode`（snake_case），而写路径实际写 `runMode`。TDengine 从未真正运行过（稳定表从未建过），首次建表必须以**写路径为准（identifier 原样）**，并同步修正两份 sample DDL。
-- **本机现状**：TDengine 容器未运行（6041/6030 未监听，`deploy/docker/docker-compose-local.yml` 中 kafka/elasticsearch 容器在跑、tdengine 服务存在未起）；`energy-tsdb` 服务在线但写入失败重试；现有 DDL 建库用 `REPLICA 2`（要求 ≥3 节点），**单节点必须 `REPLICA 1`**。
+- **本机实测（2026-08-09）**：TDengine 容器 `ems-tdengine` **已在运行**（Up 21h，6030/6041 监听，REST `root/taosdata` 可查），`energy-tsdb` 与其建立 JDBC 连接（6041 上 ESTABLISHED）；`iot_tsdb_raw` 库与 `st_prop_snd_ess_pcs` stable 已存在（线上为单节点实例，建库参数已适配）。写路径真实在落：`dev_8000000000000000001` 有 2 行（2026-08-07/08，msg_id 形如 `snd_ess_pcs_sim-dev-000001_N`，经 sim-device 真实上报）。
+- **列名不一致 = 现存数据丢失根因（须修正）**：线上 stable 属性列是 `run_mode`（snake_case），而写路径写 `runMode`。凡上报含 `runMode` 的报告（如 2026-08-09 11:56 的 `{soc,temp,power,current,runMode,voltage}`）被 TDengine 以「列不存在」拒绝——**影子有当日数据、TDengine 无当日行**。须 `ALTER STABLE ... ADD COLUMN runMode INT` 与写路径对齐，并同步修正 `10/20_stable.sql`。
+- 历史目前极稀疏（每设备 2 行左右），读接口开发须造数。
 
 ### 4.4 网关路由约定
 - StripPrefix=1（controller 不写 `/api`）：`/api/system|product|device|station|ems/**`。
 - 不 StripPrefix（controller 自带 `/api`）：`/api/shadow|command|alarm/**`。
 - 新增 `/api/tsdb/**` 走 StripPrefix=1，controller `@RequestMapping("/tsdb")`。
 
-## 5. TDengine 本机可用化（前置，实施首个任务）
+## 5. TDengine 现状核对与修复（前置，实施首个任务）
 
-1. **起容器**：`docker compose -f deploy/docker/docker-compose-local.yml up -d tdengine`；验证 `6041`（REST）/`6030`（原生）监听。
-2. **密码对齐**：TDengine 默认 root 密码 `taosdata`；核对 Nacos `energy-shared.yaml` 的 `energyx.tsdb.jdbc-password` 与之一致，否则改 Nacos 或给容器设 `TAOSD_PASSWORD` 后重建。
-3. **建库建表**（单节点适配版，新文件 `sql/tdengine/00_database.single.sql`）：
+TDengine 容器 `ems-tdengine` **已在运行**（Up 21h，6030/6041 监听，`energy-tsdb` 已建连）。`iot_tsdb_raw` 库与 `st_prop_snd_ess_pcs` stable 已存在（单节点实例，建库参数已适配，`REPLICA` 非 2）。前置任务只剩**修复列名不一致 + 造数**：
 
-```sql
--- 单节点：REPLICA 1、VGROUPS 1（生产集群版见 00_database.sql，REPLICA 2）
-CREATE DATABASE IF NOT EXISTS iot_tsdb_raw  KEEP 365  DAYS 10 BUFFER 256 WAL_LEVEL 2 FSYNC 0 REPLICA 1 VGROUPS 1 PRECISION 'ms';
-CREATE DATABASE IF NOT EXISTS iot_tsdb_agg  KEEP 1825 DAYS 30 BUFFER 256 WAL_LEVEL 2 FSYNC 0 REPLICA 1 VGROUPS 1 PRECISION 'ms';
-CREATE DATABASE IF NOT EXISTS iot_tsdb_event KEEP 30  DAYS 10 BUFFER 256 WAL_LEVEL 2 FSYNC 0 REPLICA 1 VGROUPS 1 PRECISION 'ms';
-
--- 属性宽表：列 = 写路径 TSL identifier 原样（runMode 非 run_mode；与 10/20_stable.sql 修正后一致）
-CREATE STABLE IF NOT EXISTS iot_tsdb_raw.st_prop_snd_ess_pcs (
-  ts TIMESTAMP, msg_id NCHAR(64), data_type NCHAR(16),
-  soc FLOAT, voltage FLOAT, current FLOAT, power FLOAT, temp FLOAT, runMode INT
-) TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), product_key NCHAR(64));
-
--- 事件表（供 C 使用，B 只保证存在）
-CREATE STABLE IF NOT EXISTS iot_tsdb_event.st_event (
-  ts TIMESTAMP, event_id NCHAR(64), event_name NCHAR(64), severity INT, code NCHAR(32), payload JSON
-) TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), product_key NCHAR(64));
-```
-
-   执行方式：REST（最简单）`curl -s -u root:taosdata -d '<SQL>' http://127.0.0.1:6041/rest/sql`；或 `docker exec -i ems-tdengine taos -s '<SQL>'`。
-4. **修正文档 DDL**：`sql/tdengine/10_stable.sql`、`20_sample_stable.sql` 中 `run_mode` 改 `runMode`（与写路径一致），并加注释说明列名 = TSL identifier。
-5. **造数**（验证写路径 + 供读路径/冒烟）：
-   - 主路径（确定性）：直接对 `iot_tsdb_raw.st_prop_snd_ess_pcs` 插 `dev_8000000000000000001` 分钟级点（ts/msg_id/data_type/soc/voltage/current/power/temp/runMode），覆盖近 24h 至最近几分钟；随后 `sim-device` `report` 一两条走全链路核对。
-   - 验证：`SELECT count(*) FROM iot_tsdb_raw.st_prop_snd_ess_pcs WHERE device_id='8000000000000000001'` 递增；`energy-tsdb` 日志无写入失败（写路径会自动重建连接，无需重启服务）。
+1. **修复列名不一致（数据丢失根因）**：为线上 stable 补 `runMode` 列，与写路径对齐：
+   - `ALTER STABLE iot_tsdb_raw.st_prop_snd_ess_pcs ADD COLUMN runMode INT;`（REST：`curl -s -u root:taosdata -d 'ALTER STABLE ...' http://127.0.0.1:6041/rest/sql`）
+   - 同步修正 `sql/tdengine/10_stable.sql`、`20_sample_stable.sql`：`run_mode` 改 `runMode`，并加注释「属性列名 = TSL identifier 原样，须与写路径一致」；线上旧列 `run_mode` 保留不再写入。
+   - 注：`iot_tsdb_event`/`iot_tsdb_agg` 库未建——B 只读 raw 属性历史，不需要；事件库留待子项目 C 或需要时再建。
+2. **造数**（验证写路径 + 供读路径/冒烟）：
+   - 主路径（确定性）：对 `iot_tsdb_raw.st_prop_snd_ess_pcs` 插 `dev_8000000000000000001` 分钟级点（ts/msg_id/data_type/soc/voltage/current/power/temp/runMode），覆盖近 24h 至最近几分钟。
+   - 全链路核对：`sim-device` 发一条**含 runMode** 的 `report`（如 `report soc=86 temp=34 power=1031 current=18 runMode=1 voltage=204`）→ 确认新行带 runMode 值（修复后不再被拒）。
+   - 验证：`SELECT count(*) FROM iot_tsdb_raw.st_prop_snd_ess_pcs WHERE device_id='8000000000000000001'` 递增；`energy-tsdb` 日志无「列不存在」错误（写路径自动重建连接，无需重启服务）。
 
 ## 6. 后端设计
 
@@ -280,7 +264,7 @@ CREATE STABLE IF NOT EXISTS iot_tsdb_event.st_event (
 
 ## 12. 实施任务（供 writing-plans 拆解）
 
-1. TDengine 本机启用：起容器 → 密码对齐 → 单节点建库建表 → 修正 `10/20_stable.sql`（runMode）→ 造数验证写路径。
+1. TDengine 现状核对与修复：`ALTER` 补 `runMode` 列 → 修正 `10/20_stable.sql`（runMode）→ 造数（INSERT 分钟级点 + sim-device 含 runMode 全链路核对）。
 2. energy-product：TSL by-key 接口 + 单测。
 3. energy-tsdb：`TdengineQuerySqlBuilder`（纯函数+单测）→ `TdengineQueryService` → `TsdbController` → 网关路由。
 4. energy-shadow：`ShadowView.lastReportedTime`（additive）。
