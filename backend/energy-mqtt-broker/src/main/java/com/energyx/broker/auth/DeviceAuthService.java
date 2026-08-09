@@ -13,7 +13,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 设备认证服务：HMAC-SHA256 签名 + nonce 防重放 + 时间窗 + 设备/凭据状态 + 失败封禁。
@@ -39,8 +38,13 @@ public class DeviceAuthService {
     private final DeviceCredentialMapper credentialMapper;
     private final BrokerProperties properties;
 
-    /** 本节点认证失败计数（key=clientId → 计数），连续失败达阈值触发短期封禁；跨节点封禁为 Phase 6 增强 */
-    private final Map<String, AtomicInteger> failCounters = new ConcurrentHashMap<>();
+    /**
+     * 本地封禁快表（L1）：clientId → 封禁截止时间戳（毫秒）。
+     * 权威封禁状态在 Redis（mqtt:ban:*，跨节点共享，TTL=authFailureBanSeconds，自然过期解封）；
+     * 本地表只用于挡高频重复请求、减少 Redis RTT。容量封顶防止海量随机 clientId 打爆内存。
+     */
+    private final Map<String, Long> localBanUntil = new ConcurrentHashMap<>();
+    private static final int MAX_LOCAL_BAN_ENTRIES = 100_000;
 
     public DeviceAuthService(SessionStore sessionStore, ObjectMapper objectMapper,
                              DeviceMapper deviceMapper, DeviceCredentialMapper credentialMapper,
@@ -77,9 +81,8 @@ public class DeviceAuthService {
             return AuthResult.deny(4, false, "timestamp 非法");
         }
 
-        // 2. 失败封禁检查
-        AtomicInteger counter = failCounters.computeIfAbsent(clientId, k -> new AtomicInteger());
-        if (counter.get() >= properties.getAuthFailureBanThreshold()) {
+        // 2. 封禁检查：本地快表（L1）→ Redis（权威，跨节点共享，TTL 自然解封）
+        if (isBanned(clientId)) {
             return AuthResult.deny(5, true, "认证失败次数过多，短期封禁中");
         }
 
@@ -105,20 +108,55 @@ public class DeviceAuthService {
         // 6. 签名校验（常数时间比较）
         String expected = HmacSigner.sign(cred.getDeviceSecret(), clientId, timestampStr, nonce);
         if (!HmacSigner.constantTimeEquals(expected, password)) {
-            failCounters.get(clientId).incrementAndGet();
-            return AuthResult.deny(4, counter.get() >= properties.getAuthFailureBanThreshold(),
-                    "签名校验失败");
+            recordFailureAndMaybeBan(clientId);
+            return AuthResult.deny(4, isBanned(clientId), "签名校验失败");
         }
 
         // 7. 通过：清零失败计数
-        counter.set(0);
+        sessionStore.clearAuthFail(clientId);
+        localBanUntil.remove(clientId);
         return AuthResult.allow(cred);
+    }
+
+    /** 封禁判定：本地快表未过期直接命中；否则查 Redis 并回填本地 */
+    private boolean isBanned(String clientId) {
+        Long until = localBanUntil.get(clientId);
+        if (until != null) {
+            if (until > System.currentTimeMillis()) {
+                return true;
+            }
+            localBanUntil.remove(clientId);
+        }
+        if (sessionStore.isAuthBanned(clientId)) {
+            rememberBanLocally(clientId);
+            return true;
+        }
+        return false;
+    }
+
+    /** 认证失败计数 +1（Redis 跨节点共享窗口计数），达阈值则封禁（TTL 自然解封） */
+    private void recordFailureAndMaybeBan(String clientId) {
+        long fails = sessionStore.incrAuthFail(clientId);
+        if (fails >= properties.getAuthFailureBanThreshold()) {
+            sessionStore.banClient(clientId);
+            rememberBanLocally(clientId);
+            log.warn("[Auth] clientId={} 连续认证失败 {} 次，封禁 {}s",
+                    clientId, fails, properties.getAuthFailureBanSeconds());
+        }
+    }
+
+    private void rememberBanLocally(String clientId) {
+        if (localBanUntil.size() >= MAX_LOCAL_BAN_ENTRIES) {
+            localBanUntil.clear(); // 容量封顶：极端攻击下整体降级为只查 Redis，拒绝无界增长
+        }
+        localBanUntil.put(clientId,
+                System.currentTimeMillis() + properties.getAuthFailureBanSeconds() * 1000L);
     }
 
     /** 状态校验：设备主状态 + 凭据状态 + 过期 */
     private AuthResult checkStatus(DeviceCredential cred, String clientId) {
         if (cred == null) {
-            failCounters.get(clientId).incrementAndGet();
+            recordFailureAndMaybeBan(clientId);
             return AuthResult.deny(4, false, "设备不存在或凭据未配置");
         }
         // 设备主状态：仅 2 已激活 / 3 在线 允许接入

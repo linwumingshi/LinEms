@@ -68,6 +68,8 @@ energyx:
     offline-queue-capacity: 500
     offline-queue-ttl-seconds: 604800
     session-ttl-seconds: 604800
+    conn-lock-ttl-seconds: 60
+    max-pending-messages-per-session: 1000
     credential-cache-ttl-seconds: 1800
     auth-timestamp-window-minutes: 2
     online-ttl-seconds: 30

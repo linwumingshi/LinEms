@@ -53,10 +53,12 @@ public class LifecycleNotifier {
         publish(cred, "OFFLINE", reason, remoteIp);
     }
 
-    /** 心跳续期：刷新在线 TTL（只写 Redis，不重复发事件） */
+    /** 心跳续期：刷新在线 TTL + 连接锁 TTL（只写 Redis，不重复发事件） */
     public void renewOnline(DeviceCredential cred) {
         sessionStore.setString(BrokerKeys.online(cred.getDeviceId()), properties.getNodeId(),
                 properties.getOnlineTtlSeconds());
+        // 连接锁短租约随在线状态续期，长连接不会因锁过期被误判空闲
+        sessionStore.refreshConnLockIfOwner(cred.getDeviceKey(), properties.getNodeId());
     }
 
     private void publish(DeviceCredential cred, String eventType, String reason, String ip) {

@@ -20,6 +20,14 @@ public class BrokerStats {
     public final AtomicLong authFailures = new AtomicLong();
     public final AtomicLong acceptedConnections = new AtomicLong();
     public final AtomicLong rejectedConnections = new AtomicLong();
+    /** 路由（Kafka）持久化失败次数：QoS1/2 上行因此关连接迫使设备重传 */
+    public final AtomicLong routeFailures = new AtomicLong();
+    /** 背压挂起次数（channel 不可写，报文转入 pending 队列） */
+    public final AtomicLong backpressureParked = new AtomicLong();
+    /** 背压丢弃次数（pending 超限：QoS0 丢弃 / QoS1/2 依赖 inflight 重连续传） */
+    public final AtomicLong backpressureDropped = new AtomicLong();
+    /** inflight 超限次数（max-inflight-per-session 生效） */
+    public final AtomicLong inflightOverflow = new AtomicLong();
 
     private final SessionRegistry sessionRegistry;
     private final LocalSubscriberIndex subscriberIndex;
@@ -53,6 +61,22 @@ public class BrokerStats {
         rejectedConnections.incrementAndGet();
     }
 
+    public void recordRouteFailure() {
+        routeFailures.incrementAndGet();
+    }
+
+    public void recordBackpressureParked() {
+        backpressureParked.incrementAndGet();
+    }
+
+    public void recordBackpressureDrop() {
+        backpressureDropped.incrementAndGet();
+    }
+
+    public void recordInflightOverflow() {
+        inflightOverflow.incrementAndGet();
+    }
+
     public Map<String, Object> snapshot() {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("connections", sessionRegistry.connectionCount());
@@ -63,6 +87,10 @@ public class BrokerStats {
         map.put("authFailures", authFailures.get());
         map.put("acceptedConnections", acceptedConnections.get());
         map.put("rejectedConnections", rejectedConnections.get());
+        map.put("routeFailures", routeFailures.get());
+        map.put("backpressureParked", backpressureParked.get());
+        map.put("backpressureDropped", backpressureDropped.get());
+        map.put("inflightOverflow", inflightOverflow.get());
         return map;
     }
 }

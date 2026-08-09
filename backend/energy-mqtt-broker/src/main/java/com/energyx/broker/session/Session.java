@@ -1,11 +1,13 @@
 package com.energyx.broker.session;
 
 import io.netty.channel.Channel;
+import io.netty.handler.codec.mqtt.MqttMessage;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -45,6 +47,13 @@ public class Session {
 
     /** inbound QoS2 待 PUBREL 的 packetId → 报文（收到 PUBREL 才路由，保证恰好一次） */
     private final Map<Integer, InboundPublish> inboundQos2 = new ConcurrentHashMap<>();
+
+    /**
+     * 背压挂起队列：channel 不可写时暂存已构建的待发报文，channelWritabilityChanged 恢复可写后冲刷。
+     * 仅在该 channel 的 EventLoop 上读写（投递层已收敛到 eventLoop 执行）。
+     * QoS1/2 报文同时登记在 outboundInflight，连接断开时挂起报文随连接释放，可靠性由重连续传兜底。
+     */
+    private final ConcurrentLinkedDeque<MqttMessage> pendingWrites = new ConcurrentLinkedDeque<>();
 
     /** 业务载荷（认证结果、IP、设备ID等），避免 handler 到处塞字段 */
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();

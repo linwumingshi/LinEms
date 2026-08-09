@@ -40,6 +40,16 @@ public final class BrokerKeys {
         return "mqtt:nonce:" + nonce;
     }
 
+    /** 认证失败计数：INCR 计数（跨节点共享），窗口 10min */
+    public static String authFail(String clientId) {
+        return "mqtt:authfail:" + clientId;
+    }
+
+    /** 认证封禁：SET，TTL=auth-failure-ban-seconds，自然过期解封 */
+    public static String authBan(String clientId) {
+        return "mqtt:ban:" + clientId;
+    }
+
     /** 保留消息：String(JSON) */
     public static String retained(String topic) {
         return "mqtt:retained:" + topic;

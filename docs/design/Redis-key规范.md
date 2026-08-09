@@ -32,6 +32,8 @@
 | Broker 连接锁 | `mqtt:conn:{deviceKey}` | String(nodeId) | 会话时长 | — | Broker | 新连接踢旧连接 |
 | Broker 保留消息 | `mqtt:retained:{topic}` | String(JSON) | 无 | — | Broker | 新订阅投递，覆盖即删 |
 | 认证 nonce | `mqtt:nonce:{nonce}` | SETNX | 5min | — | 接入认证钩子 | 防重放，一次有效 |
+| 认证失败计数 | `mqtt:authfail:{clientId}` | INCR 计数 | 10min | — | Broker 认证 | 跨节点共享，窗口内累计 |
+| 认证封禁 | `mqtt:ban:{clientId}` | SET | auth-failure-ban-seconds(默认300s) | — | Broker 认证 | 自然过期解封 |
 | 限流 | `rl:{scope}:{tenant_id}:{key}` | 计数/滑动窗口 | 窗口期 | — | Gateway/认证钩子 | 自然过期 |
 | 分布式锁 | `lock:{resource}` | Redisson 锁 | 租约 | — | 影子/命令/告警 | 看门狗续期 |
 | 缓存-产品 | `cache:product:{product_key}` | String(JSON) | 10min | MySQL `iot_product` | product→所有读方 | 变更时删除/重建 |

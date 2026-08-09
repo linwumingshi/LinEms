@@ -58,6 +58,12 @@ public class BrokerProperties {
     /** 持久会话 TTL（秒），默认 7 天（Redis mqtt:session 过期时间） */
     private long sessionTtlSeconds = 604_800;
 
+    /** 连接锁 TTL（秒）：短租约 + 随在线续期，避免长连接锁过期被误判空闲；宕机节点最坏该时长后被接管 */
+    private long connLockTtlSeconds = 60;
+
+    /** 单连接下行挂起消息上限（背压）：超过后 QoS0 丢弃、QoS1/2 转离线队列 */
+    private int maxPendingMessagesPerSession = 1_000;
+
     /** 设备凭据缓存 TTL（秒），默认 30 分钟（Redis cache:cred） */
     private long credentialCacheTtlSeconds = 1_800;
 

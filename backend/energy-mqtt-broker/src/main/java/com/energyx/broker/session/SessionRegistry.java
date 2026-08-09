@@ -42,14 +42,19 @@ public class SessionRegistry {
         return removed;
     }
 
-    /** 按 channel 注销（channelInactive 场景） */
-    public Session unregisterByChannel(Channel channel) {
-        for (Map.Entry<String, Session> e : sessions.entrySet()) {
-            if (e.getValue().getChannel() == channel) {
-                sessions.remove(e.getKey());
-                connectionCount.decrementAndGet();
-                return e.getValue();
-            }
+    /**
+     * 按 deviceKey + channel 一致性校验注销（channelInactive 场景，O(1)）。
+     * 仅当注册表中的 session 持有的是同一个 channel 才移除——防止旧连接的 channelInactive
+     * 晚到时误删已被同 clientId 新连接注册的新 session。
+     *
+     * @return 被移除的 session；channel 不匹配或未注册返回 null
+     */
+    public Session unregisterIfChannelMatches(String deviceKey, Channel channel) {
+        Session current = sessions.get(deviceKey);
+        if (current != null && current.getChannel() == channel
+                && sessions.remove(deviceKey, current)) {
+            connectionCount.decrementAndGet();
+            return current;
         }
         return null;
     }

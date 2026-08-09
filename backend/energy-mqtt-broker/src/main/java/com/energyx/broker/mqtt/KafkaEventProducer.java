@@ -46,6 +46,11 @@ public class KafkaEventProducer implements AutoCloseable {
         props.put(ProducerConfig.BATCH_SIZE_CONFIG, 65_536);
         props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 64 * 1024 * 1024);
         props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+        // 关键防护：绝不允许 send() 在缓冲打满时长时间阻塞调用方（可能是 Netty IO 线程）。
+        // 缓冲满 200ms 内无法入队即失败走降级；整体投递 10s 上限（>= linger + request.timeout）。
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 200);
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5_000);
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 10_000);
         this.producer = new KafkaProducer<>(props);
         log.info("[Broker] Kafka 生产者初始化完成 bootstrap={}", properties.getKafkaBootstrapServers());
     }
@@ -56,15 +61,42 @@ public class KafkaEventProducer implements AutoCloseable {
 
     /** 异步发送（不阻塞 IO 线程），失败回调记错误日志并触发指标 */
     public void send(String topic, String key, String value) {
+        send(topic, key, value, null, null);
+    }
+
+    /**
+     * 异步发送（带结果回调）。
+     *
+     * @param onSuccess Broker 端持久化确认（acks=all 返回），在 producer sender 线程触发
+     * @param onFailure 最终失败（重试耗尽/超时/缓冲满快速失败），在 sender 线程或调用线程触发；
+     *                  需要写 Netty channel 的回调必须自行回投 eventLoop
+     */
+    public void send(String topic, String key, String value, Runnable onSuccess, Runnable onFailure) {
         if (!enabled || producer == null) {
             log.debug("[Broker] Kafka 停用，丢弃事件 topic={} key={}", topic, key);
+            if (onSuccess != null) {
+                onSuccess.run(); // 单机调试模式：无路由持久化语义，视为即时成功
+            }
             return;
         }
-        producer.send(new ProducerRecord<>(topic, key, value), (metadata, ex) -> {
-            if (ex != null) {
-                log.error("[Broker] Kafka 发送失败 topic={} key={}", topic, key, ex);
+        try {
+            producer.send(new ProducerRecord<>(topic, key, value), (metadata, ex) -> {
+                if (ex != null) {
+                    log.error("[Broker] Kafka 发送失败 topic={} key={}", topic, key, ex);
+                    if (onFailure != null) {
+                        onFailure.run();
+                    }
+                } else if (onSuccess != null) {
+                    onSuccess.run();
+                }
+            });
+        } catch (Exception e) {
+            // 缓冲打满 max.block.ms=200ms 后 send 同步抛异常（快速失败），走降级而非阻塞调用线程
+            log.error("[Broker] Kafka 发送快速失败（缓冲满/序列化异常）topic={} key={}", topic, key, e);
+            if (onFailure != null) {
+                onFailure.run();
             }
-        });
+        }
     }
 
     @Override

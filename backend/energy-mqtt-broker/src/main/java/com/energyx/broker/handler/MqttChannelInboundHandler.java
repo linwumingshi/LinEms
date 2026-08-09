@@ -33,7 +33,6 @@ import io.netty.handler.codec.mqtt.MqttFixedHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
 import io.netty.handler.codec.mqtt.MqttMessageType;
-import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttPubAckMessage;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
@@ -70,8 +69,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </pre>
  * 职责边界：协议握手、ACL、QoS 状态机、路由分发；业务无关（上行报文不落库，Phase 5 摄取）。
  *
- * <p>线程模型：本 handler 在 Netty IO 线程执行轻量分发；认证（Redis/DB）、会话恢复、
- * 持久化、在线续期等阻塞操作一律经 brokerExecutor 剥离。</p>
+ * <p>线程模型（P0 修复后严格执行）：EventLoop 上只做内存操作与 channel 写出；
+ * 认证（Redis/MySQL）、连接锁、会话恢复、持久化、在线续期等阻塞操作一律经 brokerExecutor 剥离；
+ * 连接锁抢占与 sessionPresent 判定在业务线程完成后再回投 eventLoop 注册会话。</p>
+ *
+ * <p>可靠性契约：QoS1/2 上行的 PUBACK/PUBCOMP 在 Kafka 路由持久化回调成功后才发送；
+ * 路由失败关闭连接，设备重连重传（at-least-once）。</p>
  */
 @Slf4j
 @Component
@@ -139,8 +142,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         if (session == null) {
             return; // 未认证连接直接断开
         }
+        session.getPendingWrites().clear();
         String deviceKey = session.getDeviceKey();
-        sessionRegistry.unregisterByChannel(ctx.channel());
+        // O(1) 注销：仅当注册表中仍是本 channel 的会话才移除（防旧连接晚到误删新会话）
+        sessionRegistry.unregisterIfChannelMatches(deviceKey, ctx.channel());
 
         if (session.isSuperseded()) {
             // 同 clientId 新连接已接管：本连接静默清理，不触发离线事件/持久化/锁释放
@@ -155,6 +160,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 sessionStore.deleteSession(deviceKey);
                 sessionStore.deleteSubscriptions(deviceKey);
                 sessionStore.deleteInflight(deviceKey);
+                sessionStore.releaseConnLockIfOwner(deviceKey, properties.getNodeId());
             });
         } else {
             // 持久会话：幽灵订阅保留（支撑离线队列），持久化会话元数据 + 订阅
@@ -166,16 +172,18 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 } catch (Exception e) {
                     log.error("[Broker] 持久会话保存失败 deviceKey={}", deviceKey, e);
                 }
+                sessionStore.releaseConnLockIfOwner(deviceKey, properties.getNodeId());
             });
         }
-
-        sessionStore.releaseConnLockIfOwner(deviceKey, properties.getNodeId());
 
         DeviceCredential cred = attrCredential(session);
         if (cred != null) {
             String reason = graceful ? "NORMAL" : "HEARTBEAT_TIMEOUT";
-            lifecycleNotifier.notifyOffline(cred, reason, session.getRemoteIp());
+            String remoteIp = session.getRemoteIp();
+            // 离线通知含 Redis 删除，剥离到业务线程
+            executor.execute(() -> lifecycleNotifier.notifyOffline(cred, reason, remoteIp));
             // 遗嘱投递（非优雅断开，delay=0 立即投递；延迟遗嘱为 Phase 6 增强）
+            // deliver 内部全内存操作 + Kafka 异步发送 + Redis 异步，可在 eventLoop 直接调用
             Session.MqttWill will = session.getWill();
             if (!graceful && will != null && will.getDelaySeconds() == 0) {
                 deliverer.deliver(will.getTopic(), will.getPayload(), will.getQos(), will.isRetain(), null);
@@ -194,6 +202,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         } else {
             super.userEventTriggered(ctx, evt);
         }
+    }
+
+    /** channel 恢复可写：冲刷该会话的背压挂起队列（在 eventLoop 上触发） */
+    @Override
+    public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+        Session session = ctx.channel().attr(SESSION_ATTR).get();
+        if (session != null && ctx.channel().isWritable()) {
+            deliverer.flushPending(session);
+        }
+        super.channelWritabilityChanged(ctx);
     }
 
     @Override
@@ -249,6 +267,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             channel.close();
             return;
         }
+        // 协议合规（MQTT-3.1.0-2）：同一连接上第二个 CONNECT 必须关断
+        if (channel.attr(SESSION_ATTR).get() != null) {
+            log.warn("[Broker] 重复 CONNECT，按规范关断 clientId={} remote={}",
+                    clientId, channel.remoteAddress());
+            channel.close();
+            return;
+        }
 
         String username = msg.payload().userName();
         String password = msg.payload().passwordInBytes() == null
@@ -270,7 +295,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 vh.keepAliveTimeSeconds(), vh.isCleanSession(),
                 username, password, will, remoteIp(channel));
 
-        // 认证是慢路径（Redis/MySQL）：剥离到业务线程池，结果回投 event loop
+        // 慢路径全部在业务线程：认证（Redis/MySQL）→ 连接锁（Redis）→ sessionPresent 判定（Redis），
+        // 仅最终会话注册与 CONNACK 回投 eventLoop（IO 线程零阻塞）
         executor.execute(() -> {
             AuthResult result;
             try {
@@ -281,23 +307,36 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             }
             if (!result.isAllowed()) {
                 stats.recordAuthFailure();
+                AuthResult denied = result;
+                channel.eventLoop().execute(() -> {
+                    sendConnAck(channel, returnCode(denied.getConnackCode()), false);
+                    channel.close();
+                });
+                return;
             }
-            AuthResult finalResult = result;
-            channel.eventLoop().execute(() -> completeConnect(ctx, params, finalResult));
+            DeviceCredential cred = result.getCredential();
+            String deviceKey = cred.getDeviceKey();
+
+            // 跨节点连接锁：被远端占用 → 通知远端踢线，本节点接管
+            if (!sessionStore.tryAcquireConnLock(deviceKey, properties.getNodeId())) {
+                String owner = sessionStore.getConnLockOwner(deviceKey);
+                if (owner != null && !owner.equals(properties.getNodeId())) {
+                    kickRemote(owner, deviceKey);
+                }
+                sessionStore.overwriteConnLock(deviceKey, properties.getNodeId());
+            }
+
+            boolean sessionPresent = !params.cleanSession && sessionStore.existsSession(deviceKey);
+            channel.eventLoop().execute(() -> completeConnect(ctx, params, cred, sessionPresent));
         });
     }
 
-    private void completeConnect(ChannelHandlerContext ctx, ConnectParams p, AuthResult result) {
+    private void completeConnect(ChannelHandlerContext ctx, ConnectParams p,
+                                 DeviceCredential cred, boolean sessionPresent) {
         Channel channel = ctx.channel();
         if (!channel.isActive()) {
             return;
         }
-        if (!result.isAllowed()) {
-            sendConnAck(channel, returnCode(result.getConnackCode()), false);
-            channel.close();
-            return;
-        }
-        DeviceCredential cred = result.getCredential();
         String deviceKey = cred.getDeviceKey();
 
         // 踢本节点旧连接（同 clientId）
@@ -306,16 +345,6 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             old.setSuperseded(true);
             old.getChannel().close();
             sessionRegistry.unregister(deviceKey);
-        }
-
-        // 跨节点连接锁：被远端占用 → 通知远端踢线，本节点接管
-        if (!sessionStore.tryAcquireConnLock(deviceKey, properties.getNodeId())) {
-            String owner = sessionStore.getConnLockOwner(deviceKey);
-            if (owner != null && !owner.equals(properties.getNodeId())) {
-                kickRemote(owner, deviceKey);
-            }
-            sessionStore.setString(BrokerKeys.connLock(deviceKey), properties.getNodeId(),
-                    properties.getSessionTtlSeconds());
         }
 
         Session session = new Session(deviceKey, channel, p.version, p.cleanSession);
@@ -330,9 +359,14 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         channel.attr(DEVICE_KEY_ATTR).set(deviceKey);
         sessionRegistry.register(session);
 
-        // keepalive 1.5×：按 CONNECT 实际 keepalive 重设 IdleStateHandler
+        // keepalive：>0 按 1.5× 重设 IdleStateHandler；=0 按协议不启用超时，移除预置 idle handler
         if (p.keepAliveSeconds > 0) {
             replaceIdleHandler(channel, p.keepAliveSeconds);
+        } else {
+            ChannelPipeline pipeline = channel.pipeline();
+            if (pipeline.get(NettyServerConfig.IDLE_HANDLER_NAME) != null) {
+                pipeline.remove(NettyServerConfig.IDLE_HANDLER_NAME);
+            }
         }
 
         // 干净会话重连：清除残留幽灵订阅（上一连接遗留）
@@ -340,12 +374,11 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             subscriberIndex.removeAll(deviceKey);
         }
 
-        boolean sessionPresent = !p.cleanSession && sessionStore.existsSession(deviceKey);
         sendConnAck(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
         stats.recordAccepted();
         log.info("[Broker] 设备上线 deviceKey={} version={} remote={}", deviceKey, p.version, p.remoteIp);
 
-        // 异步恢复：Redis 阻塞操作全部走业务线程池
+        // 异步恢复 + 上线通知：Redis/Kafka 阻塞操作全部走业务线程池
         executor.execute(() -> {
             try {
                 if (p.cleanSession) {
@@ -364,9 +397,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             } catch (Exception e) {
                 log.error("[Broker] 会话恢复失败 deviceKey={}", deviceKey, e);
             }
+            try {
+                lifecycleNotifier.notifyOnline(cred, p.remoteIp);
+            } catch (Exception e) {
+                log.error("[Broker] 上线通知失败 deviceKey={}", deviceKey, e);
+            }
         });
-
-        lifecycleNotifier.notifyOnline(cred, p.remoteIp);
     }
 
     private void kickRemote(String ownerNode, String deviceKey) {
@@ -404,16 +440,26 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
         session.touch();
         maybeRenewOnline(session, cred);
+        Channel channel = ctx.channel();
         switch (qos) {
             case 0 -> deliverer.deliver(topic, payload, 0, retain, null);
-            case 1 -> {
-                deliverer.deliver(topic, payload, 1, retain, null);
-                sendPubAck(ctx.channel(), packetId);
-            }
+            case 1 ->
+                // PUBACK 推迟到 Kafka 路由持久化确认之后；路由失败关连接，设备重连重传（at-least-once）
+                    deliverer.deliver(topic, payload, 1, retain, null,
+                            () -> channel.eventLoop().execute(() -> {
+                                if (channel.isActive()) {
+                                    sendPubAck(channel, packetId);
+                                }
+                            }),
+                            () -> channel.eventLoop().execute(() -> {
+                                log.error("[Deliver] 路由失败关连接迫使重传 deviceKey={} topic={}",
+                                        session.getDeviceKey(), topic);
+                                channel.close();
+                            }));
             case 2 -> {
                 // 收到 PUBREL 才路由（恰好一次入站）
                 session.getInboundQos2().put(packetId, new InboundPublish(topic, payload, qos));
-                sendPubRec(ctx.channel(), packetId);
+                sendPubRec(channel, packetId);
             }
             default -> log.warn("[Broker] 非法 QoS={} deviceKey={}", qos, session.getDeviceKey());
         }
@@ -439,10 +485,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
         int packetId = messageId(msg);
         InflightMessage inflight = session.getOutboundInflight().get(packetId);
-        if (inflight != null && inflight.getState() == InflightMessage.STATE_AWAITING_PUBREC) {
+        if (inflight == null) {
+            return;
+        }
+        if (inflight.getState() == InflightMessage.STATE_AWAITING_PUBREC) {
             inflight.setState(InflightMessage.STATE_AWAITING_PUBCOMP);
             session.getOutboundInflight().put(packetId, inflight);
             asyncSaveInflight(session.getDeviceKey(), inflight);
+            sendPubRel(ctx.channel(), packetId);
+        } else if (inflight.getState() == InflightMessage.STATE_AWAITING_PUBCOMP) {
+            // 防御分支：PUBREL 可能丢失，收到重复 PUBREC 时重发 PUBREL
             sendPubRel(ctx.channel(), packetId);
         }
     }
@@ -454,11 +506,25 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
         int packetId = messageId(msg);
         InboundPublish inbound = session.getInboundQos2().remove(packetId);
+        Channel channel = ctx.channel();
         if (inbound != null) {
-            deliverer.deliver(inbound.topic(), inbound.payload(), inbound.qos(), false, null);
-            stats.recordIncoming();
+            // PUBCOMP 推迟到路由持久化确认之后；失败关连接，设备重连后重发 PUBREL 完成恰好一次
+            deliverer.deliver(inbound.topic(), inbound.payload(), inbound.qos(), false, null,
+                    () -> channel.eventLoop().execute(() -> {
+                        if (channel.isActive()) {
+                            sendPubComp(channel, packetId);
+                        }
+                    }),
+                    () -> channel.eventLoop().execute(() -> {
+                        log.error("[Deliver] QoS2 入站路由失败关连接 deviceKey={} topic={}",
+                                session.getDeviceKey(), inbound.topic());
+                        channel.close();
+                    }));
+        } else {
+            // 重复 PUBREL（首次已完成或会话重启）：直接确认，幂等
+            sendPubComp(channel, packetId);
         }
-        sendPubComp(ctx.channel(), packetId);
+        stats.recordIncoming();
     }
 
     private void handlePubComp(ChannelHandlerContext ctx, MqttMessage msg) {

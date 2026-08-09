@@ -2,6 +2,7 @@ package com.energyx.broker.server;
 
 import com.energyx.broker.config.BrokerProperties;
 import com.energyx.broker.mqtt.KafkaEventProducer;
+import com.energyx.broker.retained.RetainedMessageStore;
 import com.energyx.broker.routing.KafkaTopicInitializer;
 import com.energyx.broker.routing.RouterConsumer;
 import com.energyx.broker.session.Session;
@@ -12,7 +13,9 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.handler.codec.mqtt.MqttFixedHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageType;
+import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttQoS;
+import io.netty.handler.codec.mqtt.MqttReasonCodeAndPropertiesVariableHeader;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +47,7 @@ public class MqttBrokerServer {
     private final RouterConsumer routerConsumer;
     private final KafkaTopicInitializer topicInitializer;
     private final KafkaEventProducer kafkaProducer;
+    private final RetainedMessageStore retainedStore;
     private final ExecutorService executor;
 
     private volatile Channel serverChannel;
@@ -61,6 +65,7 @@ public class MqttBrokerServer {
                             RouterConsumer routerConsumer,
                             KafkaTopicInitializer topicInitializer,
                             KafkaEventProducer kafkaProducer,
+                            RetainedMessageStore retainedStore,
                             ExecutorService brokerExecutor) {
         this.bootstrap = bootstrap;
         this.tlsBootstrapProvider = tlsBootstrapProvider;
@@ -69,6 +74,7 @@ public class MqttBrokerServer {
         this.routerConsumer = routerConsumer;
         this.topicInitializer = topicInitializer;
         this.kafkaProducer = kafkaProducer;
+        this.retainedStore = retainedStore;
         this.executor = brokerExecutor;
     }
 
@@ -88,6 +94,7 @@ public class MqttBrokerServer {
         }
         routerConsumer.start();
         topicInitializer.initializeAsync();
+        retainedStore.warmUp(); // 冷启动预热保留消息（后台线程，不阻塞启动）
     }
 
     @PreDestroy
@@ -100,12 +107,14 @@ public class MqttBrokerServer {
         if (tlsChannel != null) {
             tlsChannel.close().syncUninterruptibly();
         }
-        // 2. 通知在线设备（MQTT5 DISCONNECT 0x8B）
+        // 2. 通知在线设备（MQTT5 DISCONNECT reason=0x8B 服务器关闭）
         sessionRegistry.closeAll(session -> {
             if (session.getMqttVersion() == 5 && session.isOnline()) {
+                // 修复：0x8B 是 v5 reason code，必须走 VariableHeader 编码；
+                // 误放 MqttFixedHeader 第 5 参（remainingLength）会被编码器重算覆盖，reason 静默丢失
                 session.getChannel().writeAndFlush(new MqttMessage(
-                        new MqttFixedHeader(MqttMessageType.DISCONNECT, false,
-                                MqttQoS.AT_MOST_ONCE, false, 0x8B)));
+                        new MqttFixedHeader(MqttMessageType.DISCONNECT, false, MqttQoS.AT_MOST_ONCE, false, 0),
+                        new MqttReasonCodeAndPropertiesVariableHeader((byte) 0x8B, MqttProperties.NO_PROPERTIES)));
             }
             session.getChannel().close();
         });

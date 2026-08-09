@@ -9,11 +9,11 @@ import com.energyx.broker.session.OfflineMessage;
 import com.energyx.broker.session.Session;
 import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.stats.BrokerStats;
+import com.energyx.broker.util.TopicMatcher;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.mqtt.RouterEnvelope;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import com.energyx.broker.session.MqttSubscription;
 import io.netty.handler.codec.mqtt.MqttFixedHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
@@ -29,18 +29,29 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 /**
- * 消息投递核心：本地投递 + 跨节点路由 + QoS 状态机 + 保留消息 + 离线队列。
+ * 消息投递核心：本地投递 + 跨节点路由 + QoS 状态机 + 保留消息 + 离线队列 + 背压。
  *
  * <p>投递路径：
  * <pre>
  * 设备 PUBLISH(ACL 通过) ──▶ deliverLocal（本节点订阅者）
  *                        └─▶ mqtt.router（key=topic）──▶ 其他节点 RouterConsumer ──▶ deliverLocal
  * </pre>
- * 跨节点投递为「至少一次」（QoS0 无重试，QoS1/2 依赖订阅端会话状态机续传），
- * 上游去重由 Phase 5 按 deviceId+上报序号处理。</p>
  *
- * <p>线程安全：deliverToSession 可被 IO 线程与 Router 消费线程并发调用，
- * Netty channel.writeAndFlush 线程安全；Redis in-flight 持久化经 brokerExecutor 异步执行。</p>
+ * <p>可靠性契约（P0 修复后）：
+ * <ul>
+ *   <li>QoS1/2 上行：Kafka 持久化回调成功后才回 PUBACK/PUBCOMP（{@code onRouted}）；
+ *       路由失败（{@code onRouteFailed}）由 handler 关连接，设备重连重传，at-least-once 不破；</li>
+ *   <li>跨节点投递为「至少一次」（QoS0 无重试，QoS1/2 依赖订阅端会话状态机续传），
+ *       上游去重由 Phase 5 按 deviceId+上报序号处理。</li>
+ * </ul>
+ *
+ * <p>背压：channel 不可写时报文挂入 {@link Session#getPendingWrites()}（容量上限
+ * max-pending-messages-per-session），恢复可写后由 {@link #flushPending} 冲刷；
+ * 超限 QoS0 丢弃、QoS1/2 丢弃本次写出但保留 inflight（重连续传兜底），杜绝慢设备打爆内存。</p>
+ *
+ * <p>线程安全：deliverToSession 可被 IO 线程与 Router 消费线程并发调用；
+ * 所有 channel 写出收敛到目标 channel 的 EventLoop 执行（保证同连接写序）；
+ * Redis 慢操作（in-flight 持久化、离线入队）经 brokerExecutor 异步执行，IO 线程零阻塞。</p>
  */
 @Slf4j
 @Component
@@ -71,12 +82,24 @@ public class MessageDeliverer {
     }
 
     /**
-     * 设备上行报文入口（ACL 已在 handler 校验）。
-     *
-     * @param sourceNode 路由源节点；null 表示本节点发起（需要发路由），否则为远端已路由消息
+     * 设备上行报文入口（ACL 已在 handler 校验）。等价于无回调版本：
+     * 路由结果不通知调用方（用于遗嘱、跨节点转发等无需 ACK 的场景）。
      */
     public void deliver(String topic, byte[] payload, int qos, boolean retain, String sourceNode) {
-        // 保留消息更新（无论 QoS，retain 位生效）
+        deliver(topic, payload, qos, retain, sourceNode, null, null);
+    }
+
+    /**
+     * 设备上行报文入口（带路由确认回调）。
+     *
+     * @param sourceNode     路由源节点；null 表示本节点发起（需要发路由），否则为远端已路由消息
+     * @param onRouted       路由持久化确认回调（Kafka 回调成功，或路由停用/远端消息时立即触发）；
+     *                       在 Kafka sender 线程触发，需要写 channel 的回调必须自行回投 eventLoop
+     * @param onRouteFailed  路由持久化失败回调（同上线程约束）；为 null 时失败仅记日志
+     */
+    public void deliver(String topic, byte[] payload, int qos, boolean retain, String sourceNode,
+                        Runnable onRouted, Runnable onRouteFailed) {
+        // 保留消息更新（无论 QoS，retain 位生效；内存同步 + Redis 异步）
         if (retain) {
             retainedStore.put(topic, payload, qos);
         }
@@ -85,12 +108,26 @@ public class MessageDeliverer {
         // 跨节点路由（仅本节点发起时）
         if (sourceNode == null && properties.isEnableRouter() && kafkaProducer.isEnabled()) {
             String envelope = toJson(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
-            kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, topic, envelope);
-            stats.recordCrossNode();
+            kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, topic, envelope,
+                    () -> {
+                        stats.recordCrossNode();
+                        if (onRouted != null) {
+                            onRouted.run();
+                        }
+                    },
+                    () -> {
+                        stats.recordRouteFailure();
+                        log.error("[Deliver] 路由持久化失败 topic={}，触发降级", topic);
+                        if (onRouteFailed != null) {
+                            onRouteFailed.run();
+                        }
+                    });
+        } else if (onRouted != null) {
+            onRouted.run();
         }
     }
 
-    /** 本地投递：在线会话即时下发，持久离线会话进离线队列 */
+    /** 本地投递：在线会话即时下发，持久离线会话进离线队列（Redis 写异步，不阻塞调用线程） */
     private void deliverLocal(String topic, byte[] payload, int qos, boolean retain) {
         List<LocalSubscriberIndex.SubscriberMatch> matches = subscriberIndex.match(topic);
         for (LocalSubscriberIndex.SubscriberMatch m : matches) {
@@ -99,22 +136,36 @@ public class MessageDeliverer {
             if (session.isOnline()) {
                 deliverToSession(session, topic, payload, effQos, retain);
             } else if (!session.isCleanSession()) {
-                // 持久会话离线：进离线队列（容量/ TTL 由 SessionStore 兜底）
-                sessionStore.pushOffline(session.getDeviceKey(), new OfflineMessage(topic, payload, qos));
-                log.debug("[Deliver] 持久会话离线入队 deviceKey={} topic={}", session.getDeviceKey(), topic);
+                // 持久会话离线：进离线队列（容量/TTL 由 SessionStore Lua 原子兜底）
+                String deviceKey = session.getDeviceKey();
+                executor.execute(() ->
+                        sessionStore.pushOffline(deviceKey, new OfflineMessage(topic, payload, qos)));
+                log.debug("[Deliver] 持久会话离线入队 deviceKey={} topic={}", deviceKey, topic);
             }
         }
     }
 
-    /** 向单会话投递（QoS 状态机 + Redis in-flight 异步持久化） */
+    /** 向单会话投递（QoS 状态机 + inflight 上限 + Redis in-flight 异步持久化 + 背压挂起） */
     public void deliverToSession(Session session, String topic, byte[] payload, int effQos, boolean retain) {
         if (!session.isOnline()) {
             return;
         }
-        Channel channel = session.getChannel();
         if (effQos == MqttQoS.AT_MOST_ONCE.value()) {
-            writeToChannel(channel, buildPublish(topic, payload, effQos, retain, 0));
+            writeToChannel(session, buildPublish(topic, payload, effQos, retain, 0), effQos);
             stats.recordOutgoing();
+            return;
+        }
+        // inflight 上限（max-inflight-per-session 落地）：超限持久会话转离线队列，干净会话丢弃
+        if (session.getOutboundInflight().size() >= properties.getMaxInflightPerSession()) {
+            stats.recordInflightOverflow();
+            if (!session.isCleanSession()) {
+                String deviceKey = session.getDeviceKey();
+                executor.execute(() ->
+                        sessionStore.pushOffline(deviceKey, new OfflineMessage(topic, payload, effQos)));
+            } else {
+                log.warn("[Deliver] inflight 超限丢弃 deviceKey={} topic={} inflight={}",
+                        session.getDeviceKey(), topic, session.getOutboundInflight().size());
+            }
             return;
         }
         // QoS1/2：分配 packetId + 记录 in-flight（重连续传依据）
@@ -139,20 +190,57 @@ public class MessageDeliverer {
                 log.warn("[Deliver] in-flight 持久化失败 deviceKey={}", deviceKey, e);
             }
         });
-        writeToChannel(channel, buildPublish(topic, payload, effQos, retain, packetId));
+        writeToChannel(session, buildPublish(topic, payload, effQos, retain, packetId), effQos);
         stats.recordOutgoing();
     }
 
     /**
-     * 统一写出入口：已在 event loop 直接写，否则提交到 event loop，保证同连接写序。
+     * 统一写出入口：收敛到目标 channel 的 EventLoop 后走背压逻辑，保证同连接写序。
      * Netty 跨线程 writeAndFlush 线程安全但顺序不保证，QoS 状态机依赖 ACK 顺序，必须收敛到单线程。
      */
-    private void writeToChannel(Channel channel, io.netty.handler.codec.mqtt.MqttMessage message) {
+    private void writeToChannel(Session session, MqttMessage message, int qos) {
+        Channel channel = session.getChannel();
         if (channel.eventLoop().inEventLoop()) {
-            channel.writeAndFlush(message);
+            writeOrPark(session, message, qos);
         } else {
-            channel.eventLoop().execute(() -> channel.writeAndFlush(message));
+            channel.eventLoop().execute(() -> writeOrPark(session, message, qos));
         }
+    }
+
+    /** 背压核心：可写且无积压直接写；否则挂入 pending 队列；超限时 QoS0 丢弃、QoS1/2 保留 inflight */
+    private void writeOrPark(Session session, MqttMessage message, int qos) {
+        Channel channel = session.getChannel();
+        if (!session.isOnline()) {
+            return;
+        }
+        if (session.getPendingWrites().isEmpty() && channel.isWritable()) {
+            channel.writeAndFlush(message);
+            return;
+        }
+        if (session.getPendingWrites().size() >= properties.getMaxPendingMessagesPerSession()) {
+            stats.recordBackpressureDrop();
+            if (qos > 0) {
+                log.warn("[Deliver] pending 超限，丢弃本次写出（inflight 保留待重连续传）deviceKey={} pending={}",
+                        session.getDeviceKey(), session.getPendingWrites().size());
+            }
+            return;
+        }
+        session.getPendingWrites().offer(message);
+        stats.recordBackpressureParked();
+    }
+
+    /** channel 恢复可写时冲刷挂起队列（由 handler 的 channelWritabilityChanged 在 eventLoop 上调用） */
+    public void flushPending(Session session) {
+        Channel channel = session.getChannel();
+        if (!session.isOnline()) {
+            session.getPendingWrites().clear();
+            return;
+        }
+        MqttMessage msg;
+        while (channel.isWritable() && (msg = session.getPendingWrites().poll()) != null) {
+            channel.write(msg);
+        }
+        channel.flush();
     }
 
     private MqttPublishMessage buildPublish(String topic, byte[] payload, int qos, boolean retain, int packetId) {
@@ -187,44 +275,79 @@ public class MessageDeliverer {
         deliverToSession(session, topic, payload, qos, false);
     }
 
-    /** 重连续传：恢复 outbound in-flight（QoS1 重发 dup PUBLISH，QoS2 发 PUBREL） */
+    /**
+     * 重连续传：恢复 outbound in-flight。
+     * QoS1 重发 dup PUBLISH（状态 AWAITING_PUBACK）；QoS2 未完成 PUBLISH 阶段的重发 dup PUBLISH
+     * 且状态必须保持 AWAITING_PUBREC（否则 PUBREC 到达后不发 PUBREL，消息卡死）；
+     * 已完成 PUBREC 的（AWAITING_PUBCOMP）按原 packetId 重发 PUBREL。
+     * 重发后按新 packetId 重新持久化，避免恢复窗口内再次断连丢消息。
+     */
     public void resendInflight(Session session) {
         List<InflightMessage> pending = sessionStore.loadInflight(session.getDeviceKey());
+        sessionStore.deleteInflight(session.getDeviceKey()); // 旧 packetId 记录清除，下面按新 id 重写
         for (InflightMessage msg : pending) {
             if (msg.getState() == InflightMessage.STATE_AWAITING_PUBACK
                     || msg.getState() == InflightMessage.STATE_AWAITING_PUBREC) {
-                // 重新分配 packetId（原 id 已失效），QoS2 重发 PUBLISH dup
+                // 重新分配 packetId（原 id 已失效）；QoS2 重发 PUBLISH dup 后仍等待 PUBREC
                 int newId = session.allocPacketId();
+                if (newId < 0) {
+                    log.warn("[Deliver] 续传分配 packetId 失败 deviceKey={}", session.getDeviceKey());
+                    continue;
+                }
                 msg.setPacketId(newId);
-                msg.setState(InflightMessage.STATE_AWAITING_PUBACK);
+                msg.setState(msg.getQos() == 2
+                        ? InflightMessage.STATE_AWAITING_PUBREC
+                        : InflightMessage.STATE_AWAITING_PUBACK);
                 session.getOutboundInflight().put(newId, msg);
+                asyncSaveInflight(session.getDeviceKey(), msg);
                 MqttQoS mqttQos = msg.getQos() == 2 ? MqttQoS.EXACTLY_ONCE : MqttQoS.AT_LEAST_ONCE;
                 MqttFixedHeader header = new MqttFixedHeader(MqttMessageType.PUBLISH, true, mqttQos, msg.isRetain(), 0);
                 MqttPublishVariableHeader vh = new MqttPublishVariableHeader(msg.getTopic(), newId, MqttProperties.NO_PROPERTIES);
-                writeToChannel(session.getChannel(),
-                        new MqttPublishMessage(header, vh, Unpooled.wrappedBuffer(msg.getPayload())));
+                writeToChannel(session,
+                        new MqttPublishMessage(header, vh, Unpooled.wrappedBuffer(msg.getPayload())), msg.getQos());
             } else {
-                // STATE_AWAITING_PUBCOMP：重发 PUBREL
-                writeToChannel(session.getChannel(),
+                // STATE_AWAITING_PUBCOMP：按原 packetId 重发 PUBREL，并恢复内存/持久化状态
+                session.getOutboundInflight().put(msg.getPacketId(), msg);
+                asyncSaveInflight(session.getDeviceKey(), msg);
+                writeToChannel(session,
                         new MqttMessage(
                                 new MqttFixedHeader(MqttMessageType.PUBREL, false, MqttQoS.AT_LEAST_ONCE, false, 0),
-                                MqttMessageIdVariableHeader.from(msg.getPacketId())));
+                                MqttMessageIdVariableHeader.from(msg.getPacketId())), 0);
             }
         }
-        sessionStore.deleteInflight(session.getDeviceKey());
     }
 
-    /** 重连续传后的离线队列补发（持久会话上线时调用） */
+    /**
+     * 重连续传后的离线队列补发（持久会话上线时调用）。
+     * 用 TopicMatcher 按订阅 filter 通配匹配（取最高授予 QoS），修复按具体 topic 精确查表
+     * 导致通配订阅下离线消息被静默丢弃的缺陷。
+     */
     public void deliverOfflineQueue(Session session) {
         List<OfflineMessage> queue = sessionStore.popOffline(session.getDeviceKey());
         for (OfflineMessage m : queue) {
-            MqttSubscription sub = session.getSubscriptions().get(m.getTopic());
-            if (sub == null) {
+            int effQos = -1;
+            for (MqttSubscription sub : session.getSubscriptions().values()) {
+                if (TopicMatcher.matches(m.getTopic(), sub.getTopicFilter())) {
+                    effQos = Math.max(effQos, Math.min(m.getQos(), sub.getQos()));
+                }
+            }
+            if (effQos < 0) {
+                log.debug("[Deliver] 离线消息无匹配订阅，跳过 deviceKey={} topic={}",
+                        session.getDeviceKey(), m.getTopic());
                 continue; // 订阅已变化，跳过
             }
-            int effQos = Math.min(m.getQos(), sub.getQos());
             deliverToSession(session, m.getTopic(), m.payload(), effQos, false);
         }
+    }
+
+    private void asyncSaveInflight(String deviceKey, InflightMessage msg) {
+        executor.execute(() -> {
+            try {
+                sessionStore.saveInflight(deviceKey, msg);
+            } catch (Exception e) {
+                log.warn("[Deliver] 续传 in-flight 持久化失败 deviceKey={}", deviceKey, e);
+            }
+        });
     }
 
     private String toJson(Object value) {
