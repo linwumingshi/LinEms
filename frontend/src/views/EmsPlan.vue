@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
 import type { EmsElectricityPrice, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
+import { constraintReady } from '@/utils/planGate'
 
 const list = ref<EmsPlan[]>([])
 const total = ref(0)
@@ -154,8 +155,20 @@ function renderChart(pts: EmsPlanPoint[], bands: EmsElectricityPrice[]): void {
   const times = pts.map((p) => timeLabel(p.time))
   render({
     animation: false, // 数据仪表：无多余动效
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
-    grid: { left: 56, right: 58, top: 20, bottom: 40 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'line' },
+      formatter(params: unknown) {
+        const list = params as Array<{ axisValueLabel: string; seriesName: string; value: number | [number, number] }>
+        const head = list[0]?.axisValueLabel ?? ''
+        const rows = list.map((p) => {
+          const v = typeof p.value === 'number' ? p.value : (p.value as [number, number] | undefined)?.[1] ?? 0
+          return p.seriesName === 'SOC' ? `SOC：${round1(v)} %` : `${p.seriesName}：${round1(v)} kW`
+        })
+        return [head, ...rows].join('<br/>')
+      },
+    },
+    grid: { left: 56, right: 58, top: 48, bottom: 40 },
     xAxis: {
       type: 'category',
       data: times,
@@ -220,9 +233,11 @@ async function dispatch(row: EmsPlan): Promise<void> {
 
 // ---- 内联「生成计划」弹窗 ----
 const genDialogVisible = ref(false)
+const genErrs = ref<Record<string, string>>({})
 const generating = ref(false)
 const genForm = ref<{ planDate: string; stationId?: string; strategyId?: string }>({ planDate: todayStr() })
 const genStrategies = ref<EmsStrategy[]>([])
+watch([() => genForm.value.planDate, () => genForm.value.stationId], () => { genErrs.value = {} })
 
 function todayStr(): string {
   const d = new Date()
@@ -250,12 +265,19 @@ async function onGenStationChange(stationId?: string) {
 }
 
 async function generate() {
+  genErrs.value = {}
+  const e: Record<string, string> = {}
   const { planDate, stationId, strategyId } = genForm.value
-  if (!planDate) { ElMessage.error('请选择计划日期'); return }
-  if (!stationId) { ElMessage.error('请选择电站'); return }
+  if (!planDate) e.planDate = '请选择计划日期'
+  if (!stationId) e.stationId = '请选择电站'
+  if (Object.keys(e).length) { genErrs.value = e; return }
+  if (!(await constraintReady(stationId!))) {
+    ElMessage.warning('该电站安全约束未就绪（未配置或 SOC/功率上下限缺失），无法生成计划')
+    return
+  }
   generating.value = true
   try {
-    await emsApi.planGenerate({ stationId, strategyId: strategyId || undefined, planDate })
+    await emsApi.planGenerate({ stationId: stationId!, strategyId: strategyId || undefined, planDate })
     ElMessage.success('计划已生成')
     genDialogVisible.value = false
     await load()
@@ -373,10 +395,10 @@ onMounted(() => {
     <!-- 生成调度计划弹窗 -->
     <el-dialog v-model="genDialogVisible" title="生成调度计划" width="480px">
       <el-form label-width="80px">
-        <el-form-item label="计划日期">
+        <el-form-item label="计划日期" required :error="genErrs.planDate">
           <el-date-picker v-model="genForm.planDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="电站">
+        <el-form-item label="电站" required :error="genErrs.stationId">
           <el-select v-model="genForm.stationId" placeholder="请选择电站" filterable clearable style="width: 100%" @change="onGenStationChange">
             <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
           </el-select>
