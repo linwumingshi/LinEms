@@ -243,11 +243,43 @@ export interface EmsElectricityPrice {
 /** 电站资产（iot_station；stationId 为 Long，序列化为字符串，同雪花约定） */
 export interface Station {
   stationId: string
+  tenantId?: string
   enterpriseId?: string | null
   stationCode?: string | null
   stationName: string
   address?: string | null
+  longitude?: number | null
+  latitude?: number | null
+  installCapacity?: number | null
+  pcsCapacity?: number | null
+  batteryCapacity?: number | null
   gridType?: string | null
+  status?: number
+  createTime?: string
+  updateTime?: string
+}
+
+/** 单位创建/更新请求（后端 SysEnterpriseSaveReq；parentId 空=顶级） */
+export interface SysEnterpriseSaveReq {
+  enterpriseCode: string
+  enterpriseName: string
+  parentId?: string
+  sort?: number
+  status?: number
+}
+
+/** 电站创建/更新请求（后端 StationSaveReq；capacity 均为可空数值） */
+export interface StationSaveReq {
+  stationCode: string
+  stationName: string
+  enterpriseId: string
+  address?: string
+  longitude?: number | null
+  latitude?: number | null
+  installCapacity?: number | null
+  pcsCapacity?: number | null
+  batteryCapacity?: number | null
+  gridType?: string
   status?: number
 }
 

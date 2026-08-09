@@ -1,7 +1,7 @@
 // frontend/src/api/system.ts
 import http from './http'
 import type {
-  PageResult, SysEnterprise, SysPermission, SysPermissionSaveReq,
+  PageResult, SysEnterprise, SysEnterpriseSaveReq, SysPermission, SysPermissionSaveReq,
   SysRole, SysRoleSaveReq, SysUserSaveReq, SysUserVO,
 } from '@/types/models'
 
@@ -82,8 +82,27 @@ export const permApi = {
 }
 
 export const enterpriseApi = {
-  /** 全量企业列表（用户筛选/表单下拉用） */
+  /** 组织树（单位管理页左树） */
+  tree(): Promise<SysEnterprise[]> {
+    return http.get('/api/system/enterprise/tree')
+  },
+  /** 全量企业列表（下拉用） */
   list(): Promise<SysEnterprise[]> {
     return http.get('/api/system/enterprise/list')
+  },
+  detail(enterpriseId: string): Promise<SysEnterprise> {
+    return http.get(`/api/system/enterprise/${enterpriseId}`)
+  },
+  create(body: SysEnterpriseSaveReq): Promise<string> {
+    return http.post('/api/system/enterprise', body)
+  },
+  update(enterpriseId: string, body: SysEnterpriseSaveReq): Promise<void> {
+    return http.put(`/api/system/enterprise/${enterpriseId}`, body)
+  },
+  remove(enterpriseId: string): Promise<void> {
+    return http.delete(`/api/system/enterprise/${enterpriseId}`)
+  },
+  switchStatus(enterpriseId: string, status: number): Promise<void> {
+    return http.put(`/api/system/enterprise/${enterpriseId}/status?status=${status}`)
   },
 }
