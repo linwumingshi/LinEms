@@ -4,6 +4,7 @@ import {
   parsePeakValleyConfig,
   serializePeakValley,
   validatePeakValleyConfig,
+  validatePeakValleySaveable,
 } from '@/utils/strategyConfig'
 
 describe('strategyConfig', () => {
@@ -59,10 +60,13 @@ describe('strategyConfig', () => {
     expect(parsePeakValleyConfig({ chargeWindows: [{ start: '02:00', end: '06:00', powerLimit: -5 }], dischargeWindows: [] }).ok).toBe(false)
   })
 
-  it('parsePeakValleyConfig：至少一个窗口', () => {
+  it('parsePeakValleyConfig：空窗口数组合法（ID2 可往返结构化编辑）', () => {
     const r = parsePeakValleyConfig({ chargeWindows: [], dischargeWindows: [] })
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toBe('请至少配置一个充电或放电窗口')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.config.chargeWindows).toHaveLength(0)
+      expect(r.config.dischargeWindows).toHaveLength(0)
+    }
   })
 
   it('validatePeakValleyConfig：合法 → []', () => {
@@ -75,7 +79,7 @@ describe('strategyConfig', () => {
       chargeWindows: [{ start: '08:00', end: '06:00', powerLimit: 1 }],
       dischargeWindows: [],
     }))[0]).toMatch(/结束时间必须晚于开始时间/)
-    expect(validatePeakValleyConfig('{"chargeWindows":[],"dischargeWindows":[]}')[0]).toBe('请至少配置一个充电或放电窗口')
+    expect(validatePeakValleyConfig('{"chargeWindows":[],"dischargeWindows":[]}')).toEqual([])
   })
 
   it('serializePeakValley：rest 合并 + socRange 往返不丢 + 键序稳定', () => {
@@ -86,5 +90,19 @@ describe('strategyConfig', () => {
     expect(back.socRange).toEqual({ min: 10, max: 90 })
     expect(back.chargeWindows[0].powerLimit).toBe(100)
     expect(Object.keys(back)).toEqual(['socRange', 'chargeWindows', 'dischargeWindows'])
+  })
+
+  it('validatePeakValleySaveable：空配置 / 空窗口 → 至少一个窗口；合法 → []', () => {
+    expect(validatePeakValleySaveable('')).toEqual(['请至少配置一个充电或放电窗口'])
+    expect(validatePeakValleySaveable('  ')).toEqual(['请至少配置一个充电或放电窗口'])
+    expect(validatePeakValleySaveable('{"chargeWindows":[],"dischargeWindows":[]}')).toEqual(['请至少配置一个充电或放电窗口'])
+    expect(validatePeakValleySaveable(validConfig)).toEqual([])
+  })
+
+  it('空窗口配置序列化后往返解析 ok（ID2 模式切换）', () => {
+    const s = serializePeakValley({ chargeWindows: [], dischargeWindows: [] }, {})
+    const back = parsePeakValleyConfig(JSON.parse(s))
+    expect(back.ok).toBe(true)
+    if (back.ok) expect(back.config.chargeWindows).toHaveLength(0)
   })
 })

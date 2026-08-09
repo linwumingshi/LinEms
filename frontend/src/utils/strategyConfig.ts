@@ -73,9 +73,6 @@ export function parsePeakValleyConfig(value: unknown): ParsePeakValleyResult {
     if (err) return { ok: false, error: err }
     dischargeWindows.push(obj.dischargeWindows[i] as TimeWindow)
   }
-  if (chargeWindows.length === 0 && dischargeWindows.length === 0) {
-    return { ok: false, error: '请至少配置一个充电或放电窗口' }
-  }
   const rest: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (k !== 'chargeWindows' && k !== 'dischargeWindows') rest[k] = v
@@ -89,6 +86,20 @@ export function validatePeakValleyConfig(config: string): string[] {
   if (!parsed.ok) return [parsed.error]
   const structured = parsePeakValleyConfig(parsed.value)
   if (!structured.ok) return [structured.error]
+  return []
+}
+
+/** 保存闸：结构校验（validatePeakValleyConfig）+ 至少一个窗口。空配置 = 无窗口。 */
+export function validatePeakValleySaveable(config: string): string[] {
+  if (!config.trim()) return ['请至少配置一个充电或放电窗口'] // 空配置 ≠ 非法 JSON，先给「至少一个窗口」
+  const issues = validatePeakValleyConfig(config)
+  if (issues.length) return issues
+  const parsed = parseJsonConfig(config)
+  if (!parsed.ok) return [parsed.error] // 理论不可达（上面已过结构校验），防御窄化
+  const obj = parsed.value as { chargeWindows?: unknown[]; dischargeWindows?: unknown[] }
+  if ((obj.chargeWindows?.length ?? 0) === 0 && (obj.dischargeWindows?.length ?? 0) === 0) {
+    return ['请至少配置一个充电或放电窗口']
+  }
   return []
 }
 
