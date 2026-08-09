@@ -31,6 +31,8 @@ export interface ShadowView {
   desired: Record<string, unknown>
   /** 乐观锁版本；行不存在时为 null */
   version: number | null
+  /** 最近一次属性上报时间（ISO8601）；从未上报过为 undefined */
+  lastReportedTime?: string
 }
 
 export interface DesiredResult {
@@ -312,6 +314,41 @@ export interface ThingModelView {
   schemaJson: string
   status: number
   isCurrent: number
+}
+
+// ---------------- 时序历史 Tsdb ----------------
+
+/** 物模型属性（TSL properties 条目，parseThingModel 解析产物） */
+export interface TsProperty {
+  identifier: string
+  name: string
+  dataType: string
+  unit?: string
+  accessMode?: string
+  /** 枚举属性取值说明（runMode 等）；本子项目仅透传不映射 */
+  enumValues?: Array<{ value: number; desc: string }>
+}
+
+/** 物模型 schema_json 顶层结构（本子项目只用 properties） */
+export interface ThingModelSchema {
+  properties: TsProperty[]
+  services: unknown[]
+  events: unknown[]
+}
+
+/** TDengine 属性历史单行（某属性该行为 NULL 时 values 省略该键） */
+export interface PropertyHistoryRecord {
+  /** epoch 毫秒 */
+  ts: number
+  values: Record<string, number | string | null>
+}
+
+/** TDengine 属性历史分页视图（ts/total 均为数字） */
+export interface PropertyHistoryView {
+  deviceId: string
+  productKey: string
+  total: number
+  records: PropertyHistoryRecord[]
 }
 
 // ---------------- 设备 Device ----------------

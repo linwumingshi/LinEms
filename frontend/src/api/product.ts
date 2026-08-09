@@ -23,6 +23,10 @@ export const productApi = {
   thingModelGet(productId: string): Promise<ThingModelView> {
     return http.get(`/api/product/${productId}/thing-model`)
   },
+  /** 按 productKey 取当前生效物模型（设备仅有 productKey，无 productId）；未发布后端返回业务错误 */
+  thingModelByKey(productKey: string): Promise<ThingModelView> {
+    return http.get('/api/product/thing-model/by-key', { params: { productKey } })
+  },
   /** 发布/覆盖：同 version 覆盖并置当前，异 version 新增并切换当前 */
   thingModelSave(productId: string, body: { version: string; schemaJson: string }): Promise<ThingModelView> {
     return http.put(`/api/product/${productId}/thing-model`, body)
