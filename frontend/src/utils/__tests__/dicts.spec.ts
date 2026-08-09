@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   authStatusText, dataScopeText, deviceStatusTag, deviceStatusText,
-  deviceTypeOptions, isStrategyGeneratable, permTypeText, productStatusText,
-  roleStatusTag, roleStatusText, thingModelStatusText, userStatusTag,
-  userStatusText,
+  deviceTypeLabel, deviceTypeOptions, deviceTypeText, isStrategyGeneratable,
+  permTypeText, productStatusText, resourceTypeText, roleStatusTag,
+  roleStatusText, thingModelStatusText, userStatusTag, userStatusText,
 } from '@/utils/dicts'
 
 describe('dicts', () => {
@@ -50,5 +50,19 @@ describe('dicts', () => {
     expect(isStrategyGeneratable('TIME')).toBe(false)
     expect(isStrategyGeneratable(undefined)).toBe(false)
     expect(isStrategyGeneratable('')).toBe(false)
+  })
+
+  it('设备类型中文', () => {
+    expect(deviceTypeText('PCS')).toBe('变流器 PCS')
+    expect(deviceTypeText('ENERGY_CABINET')).toBe('储能柜')
+    expect(deviceTypeText('NOPE')).toBe('NOPE')
+    expect(deviceTypeText(null)).toBe('—')
+    expect(deviceTypeLabel('PCS')).toBe('变流器 PCS (PCS)')
+  })
+
+  it('资源类型中文', () => {
+    expect(resourceTypeText('DEVICE')).toBe('设备')
+    expect(resourceTypeText('X')).toBe('X')
+    expect(resourceTypeText(null)).toBe('不限')
   })
 })

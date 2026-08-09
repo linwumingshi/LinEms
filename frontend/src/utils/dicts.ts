@@ -36,6 +36,33 @@ export function thingModelStatusText(s: number): string {
 export function authStatusText(s: number): string { return s === 1 ? '正常' : s === 2 ? '吊销' : `未知(${s})` }
 
 export const deviceTypeOptions = ['ENERGY_CABINET', 'BATTERY_CLUSTER', 'PCS', 'BMS', 'EMS', 'EDGE_GW']
+export const DEVICE_TYPE_TEXT: Record<string, string> = {
+  ENERGY_CABINET: '储能柜',
+  BATTERY_CLUSTER: '电池簇',
+  PCS: '变流器 PCS',
+  BMS: '电池管理系统 BMS',
+  EMS: '能量管理系统 EMS',
+  EDGE_GW: '边缘网关',
+}
+/** 设备类型中文（未知回退原 code；空回退 '—'） */
+export function deviceTypeText(t?: string | null): string {
+  return t ? (DEVICE_TYPE_TEXT[t] ?? t) : '—'
+}
+/** 下拉 label：中文 (CODE) */
+export function deviceTypeLabel(t: string): string {
+  return `${DEVICE_TYPE_TEXT[t] ?? t} (${t})`
+}
+
+export const RESOURCE_TYPE_TEXT: Record<string, string> = {
+  DEVICE: '设备',
+  STRATEGY: '策略',
+  ALARM: '告警',
+  STATION: '电站',
+}
+/** 资源类型中文（未知回退原 code；空回退「不限」） */
+export function resourceTypeText(t?: string | null): string {
+  return t ? (RESOURCE_TYPE_TEXT[t] ?? t) : '不限'
+}
 
 /** 可生成调度计划的策略类型（与后端 PlanGenerator.java 支持集合对齐；后端新增支持时同步此数组） */
 export const STRATEGY_GENERATABLE_TYPES: string[] = ['PEAK_VALLEY']
