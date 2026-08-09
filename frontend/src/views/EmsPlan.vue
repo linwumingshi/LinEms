@@ -242,9 +242,10 @@ async function onGenStationChange(stationId?: string) {
   if (!stationId) return
   try {
     const page = await emsApi.strategyPage({ pageNo: 1, pageSize: 50, stationId, status: 1 })
+    if (genForm.value.stationId !== stationId) return // 过期响应丢弃：候选串站会把 A 站策略带到 B 站生成错误计划
     genStrategies.value = page.records
   } catch {
-    genStrategies.value = [] // 候选拉取失败：策略留空走自动选择
+    if (genForm.value.stationId === stationId) genStrategies.value = [] // 候选拉取失败：策略留空走自动选择
   }
 }
 
