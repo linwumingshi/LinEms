@@ -127,6 +127,24 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     }
 
     @Override
+    public ThingModelView getThingModelByProductKey(String productKey) {
+        if (productKey == null || productKey.isBlank()) {
+            return null;
+        }
+        Product product = getBaseMapper().selectOne(
+                new LambdaQueryWrapper<Product>().eq(Product::getProductKey, productKey));
+        if (product == null) {
+            return null;
+        }
+        // 不调 getThingModel(productId)：其内部 requireProduct 会再回源一次主键查询（且单测需 mock
+        // selectById）。本路径已有 product，直接查当前生效物模型。
+        ThingModel model = thingModelMapper.selectOne(new LambdaQueryWrapper<ThingModel>()
+                .eq(ThingModel::getProductId, product.getProductId())
+                .eq(ThingModel::getIsCurrent, 1));
+        return model == null ? null : toView(model);
+    }
+
+    @Override
     public ThingModelView saveThingModel(Long productId, ThingModelSaveReq req) {
         Product product = requireProduct(productId);
         ThingModelValidator.validate(req.getSchemaJson());

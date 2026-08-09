@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -75,6 +76,14 @@ public class ProductController {
     public Result<ThingModelView> getThingModel(@PathVariable Long productId) {
         ThingModelView view = productService.getThingModel(productId);
         return view == null ? Result.fail(ErrorCode.NOT_FOUND, "产品未发布物模型：" + productId) : Result.ok(view);
+    }
+
+    @GetMapping("/thing-model/by-key")
+    public Result<ThingModelView> getThingModelByKey(@RequestParam("productKey") String productKey) {
+        ThingModelView view = productService.getThingModelByProductKey(productKey);
+        return view == null
+                ? Result.fail(ErrorCode.NOT_FOUND, "产品未发布物模型或不存在：" + productKey)
+                : Result.ok(view);
     }
 
     @PutMapping("/{productId}/thing-model")
