@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { permApi } from '@/api/system'
 import type { SysPermission, SysPermissionSaveReq } from '@/types/models'
-import { permTypeText } from '@/utils/dicts'
+import { permTypeText, resourceTypeText } from '@/utils/dicts'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermi } from '@/utils/permission'
 
@@ -132,9 +132,15 @@ onMounted(load)
         <el-form-item label="权限名称" required>
           <el-input v-model="form.permName" placeholder="如 用户新增" maxlength="64" />
         </el-form-item>
-        <el-form-item label="资源类型">
+        <el-form-item>
+          <template #label>
+            <span>资源类型</span>
+            <el-tooltip content="数据权限预留字段：当前鉴权按权限编码判断，此字段暂不生效" placement="top">
+              <span class="res-tip">ⓘ</span>
+            </el-tooltip>
+          </template>
           <el-select v-model="form.resourceType" clearable placeholder="不限" style="width: 100%">
-            <el-option v-for="t in ['DEVICE', 'STRATEGY', 'ALARM', 'STATION']" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in ['DEVICE', 'STRATEGY', 'ALARM', 'STATION']" :key="t" :label="`${resourceTypeText(t)} (${t})`" :value="t" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.permType === 1" label="路由">
@@ -176,4 +182,9 @@ onMounted(load)
 <style scoped>
 .table-card { padding-bottom: 10px; }
 .perm-code { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px; color: var(--ex-ink-2); }
+.res-tip {
+  cursor: help;
+  margin-left: 4px;
+  font-size: 12px;
+}
 </style>
