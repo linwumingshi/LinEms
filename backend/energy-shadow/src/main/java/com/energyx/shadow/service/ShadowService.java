@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -105,13 +106,14 @@ public class ShadowService {
         return new DesiredResult(target, delta);
     }
 
-    /** 影子合并视图：Redis 热路径优先，未命中回 MySQL */
+    /** 影子合并视图：Redis 热路径优先，未命中回 MySQL；last_reported_time 仅存于 MySQL 行 */
     public ShadowView getShadow(long deviceId) {
         ShadowView view = new ShadowView();
         view.setDeviceId(deviceId);
         Map<String, Object> reported = readReportedRedis(deviceId);
         Map<String, Object> desired = readDesiredRedis(deviceId);
         Integer version = null;
+        LocalDateTime lastReportedTime = null;
         if (reported.isEmpty() || desired.isEmpty()) {
             ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
             if (row != null) {
@@ -122,11 +124,20 @@ public class ShadowService {
                     desired = parse(row.getDesired());
                 }
                 version = row.getVersion();
+                lastReportedTime = row.getLastReportedTime();
+            }
+        } else {
+            // Redis 热路径：reported/desired 齐备但缓存不含时间字段 → 补一次主键查询（PK 命中，管理端可接受）
+            ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+            if (row != null) {
+                lastReportedTime = row.getLastReportedTime();
             }
         }
         view.setReported(reported);
         view.setDesired(desired);
         view.setVersion(version);
+        view.setLastReportedTime(lastReportedTime == null ? null
+                : lastReportedTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return view;
     }
 
