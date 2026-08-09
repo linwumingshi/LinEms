@@ -190,7 +190,12 @@ git commit -m "fix(tsdb): TDengine stable 属性列 run_mode→runMode 对齐写
         if (product == null) {
             return null;
         }
-        return getThingModel(product.getProductId());
+        // 不调 getThingModel(productId)：其内部 requireProduct 会再回源一次主键查询（且单测需 mock
+        // selectById）。本路径已有 product，直接查当前生效物模型。
+        ThingModel model = thingModelMapper.selectOne(new LambdaQueryWrapper<ThingModel>()
+                .eq(ThingModel::getProductId, product.getProductId())
+                .eq(ThingModel::getIsCurrent, 1));
+        return model == null ? null : toView(model);
     }
 ```
 
@@ -1668,3 +1673,4 @@ git commit -m "test(web): 子项目B 设备数据中心浏览器冒烟脚本 + �
 - spec §6.4 写 `String lastReportedTime`；实现以 `LocalDateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)` 产出固定 19 位 ISO 字符串，wire 格式与前端 `string` 类型一致（避免 `LocalDateTime.toString()` 整秒省略 `:00` 的边界）。
 - spec §6.2 说「identifiers 全被白名单过滤 → 400」：service 抛 `IllegalArgumentException`，controller 捕获转 `BusinessException(PARAM_INVALID)`（400）——不用裸 `ValidationException`（GlobalExceptionHandler 无对应 handler，会落 `Throwable`→500）。
 - energy-tsdb 无需改 pom：`spring-boot-starter-web`/`validation` 由 energy-common 传递，`server.port:8112` 已配，`@RestController` 注册到既有 Tomcat。
+- Task 2 `getThingModelByProductKey` 不调 `getThingModel(productId)`：后者内部 `requireProduct`→`getById` 会二次回源主键查询，且单测需额外 mock `selectById`；本路径已有 product，直接内联查 `thingModelMapper` 当前生效版本。
