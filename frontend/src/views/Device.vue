@@ -233,7 +233,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
           </template>
         </el-table-column>
         <el-table-column label="电站" min-width="110" show-overflow-tooltip>
-          <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
+          <template #default="{ row }">{{ stationName(row.stationId, stations) || '—' }}</template>
         </el-table-column>
         <el-table-column label="最近上线" width="150">
           <template #default="{ row }"><span class="ex-num">{{ toLocal(row.lastOnlineTime) }}</span></template>

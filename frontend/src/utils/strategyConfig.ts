@@ -52,7 +52,7 @@ function checkWindow(w: unknown, i: number): string | null {
   return null
 }
 
-/** PEAK_VALLEY 结构化校验：窗口数组、字段格式、start<end、powerLimit>0、至少一个窗口。 */
+/** PEAK_VALLEY 结构化校验：窗口数组、字段格式、start<end、powerLimit>0。空窗口列表允许——「至少一个充电或放电窗口」由 validatePeakValleySaveable 在保存时强制。 */
 export function parsePeakValleyConfig(value: unknown): ParsePeakValleyResult {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return { ok: false, error: '缺少 chargeWindows 或 dischargeWindows 数组' }

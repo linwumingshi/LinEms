@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { permApi } from '@/api/system'
 import type { SysPermission, SysPermissionSaveReq } from '@/types/models'
@@ -23,6 +23,8 @@ async function load() {
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<SysPermission>>({})
+const errs = ref<{ permCode?: string; permName?: string }>({})
+watch(() => [form.value.permCode, form.value.permName], () => { errs.value = {} })
 function openCreate(parent?: SysPermission) {
   form.value = { parentId: parent?.permId ?? '0', permType: 1, status: 0, visible: 0, sort: 0 }
   isEdit.value = false
@@ -30,7 +32,10 @@ function openCreate(parent?: SysPermission) {
 }
 function openEdit(row: SysPermission) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
-  if (!form.value.permCode?.trim() || !form.value.permName?.trim()) { ElMessage.warning('权限编码 / 名称 为必填'); return }
+  const e: { permCode?: string; permName?: string } = {}
+  if (!form.value.permCode?.trim()) e.permCode = '请输入权限编码'
+  if (!form.value.permName?.trim()) e.permName = '请输入权限名称'
+  if (Object.keys(e).length) { errs.value = e; return }
   try {
     if (isEdit.value) await permApi.update(form.value.permId!, form.value as SysPermissionSaveReq)
     else await permApi.create(form.value as SysPermissionSaveReq)
@@ -126,10 +131,10 @@ onMounted(load)
             <el-radio :value="3">数据</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="权限编码" required>
+        <el-form-item label="权限编码" required :error="errs.permCode">
           <el-input v-model="form.permCode" placeholder="如 system:user:add（全局唯一）" maxlength="100" />
         </el-form-item>
-        <el-form-item label="权限名称" required>
+        <el-form-item label="权限名称" required :error="errs.permName">
           <el-input v-model="form.permName" placeholder="如 用户新增" maxlength="64" />
         </el-form-item>
         <el-form-item>

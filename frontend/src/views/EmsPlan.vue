@@ -237,7 +237,7 @@ const genErrs = ref<Record<string, string>>({})
 const generating = ref(false)
 const genForm = ref<{ planDate: string; stationId?: string; strategyId?: string }>({ planDate: todayStr() })
 const genStrategies = ref<EmsStrategy[]>([])
-watch([() => genForm.value.planDate, () => genForm.value.stationId], () => { genErrs.value = {} })
+watch(() => [genForm.value.planDate, genForm.value.stationId], () => { genErrs.value = {} })
 
 function todayStr(): string {
   const d = new Date()
