@@ -176,27 +176,53 @@ INSERT INTO `sys_role` (`role_id`, `tenant_id`, `role_code`, `role_name`, `data_
 
 INSERT INTO `sys_user_role` (`user_id`, `role_id`) VALUES (1, 1);
 
--- 系统管理菜单种子（perm_type：1菜单 2按钮 3数据；perm_code 即 @ss.hasPermi 权限标识）
+-- 菜单资源种子（perm_type：1菜单 2按钮 3数据；perm_code 即 @ss.hasPermi 权限标识）
+-- 一级菜单 sort：设备监控2 … 充放电计划9 · 基础档案10 · 系统管理11
 INSERT IGNORE INTO `sys_permission`
   (`perm_id`, `parent_id`, `perm_code`, `perm_name`, `perm_type`, `resource_type`, `path`, `sort`, `icon`, `component`, `visible`, `status`, `remark`)
 VALUES
-  (1,    0,   'system',                 '系统管理', 1, NULL, 'system',   1, 'setting', NULL, 0, 0, '系统管理目录'),
-  (100,  1,   'system:user:list',       '用户管理', 1, NULL, 'system/user', 1, 'user', 'system/user/index', 0, 0, '用户管理菜单'),
-  (101,  100, 'system:user:add',        '用户新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
-  (102,  100, 'system:user:edit',       '用户编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
-  (103,  100, 'system:user:remove',     '用户删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
-  (104,  100, 'system:user:resetPwd',   '重置密码', 2, NULL, NULL, 4, NULL, NULL, 1, 0, NULL),
-  (105,  100, 'system:user:role',       '分配角色', 2, NULL, NULL, 5, NULL, NULL, 1, 0, NULL),
-  (200,  1,   'system:role:list',       '角色管理', 1, NULL, 'system/role', 2, 'peoples', 'system/role/index', 0, 0, '角色管理菜单'),
-  (201,  200, 'system:role:add',        '角色新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
-  (202,  200, 'system:role:edit',       '角色编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
-  (203,  200, 'system:role:remove',     '角色删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
-  (204,  200, 'system:role:perm',       '分配权限', 2, NULL, NULL, 4, NULL, NULL, 1, 0, NULL),
-  (300,  1,   'system:perm:list',       '菜单管理', 1, NULL, 'system/menu', 3, 'tree-table', 'system/menu/index', 0, 0, '菜单管理菜单'),
-  (301,  300, 'system:perm:add',        '菜单新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
-  (302,  300, 'system:perm:edit',       '菜单编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
-  (303,  300, 'system:perm:remove',     '菜单删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
-  (400,  1,   'system:enterprise:list', '单位管理', 1, NULL, 'system/enterprise', 4, 'office-building', 'system/enterprise/index', 0, 0, '单位管理菜单'),
-  (401,  400, 'system:enterprise:add',  '单位新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
-  (402,  400, 'system:enterprise:edit', '单位编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
-  (403,  400, 'system:enterprise:remove', '单位删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL);
+  -- 八大业务一级菜单
+  (600,  0,   'monitor:view',          '设备监控',   1, 'DEVICE',   'dashboard',     2, 'monitor',    'dashboard/index',     0, 0, '设备监控菜单'),
+  (610,  0,   'shadow:view',           '影子',       1, 'DEVICE',   'shadow',        3, 'connection', 'shadow/index',        0, 0, '影子菜单'),
+  (620,  0,   'command:view',          '指令中心',   1, 'DEVICE',   'command',       4, 'promotion',  'command/index',       0, 0, '指令中心菜单'),
+  (630,  0,   'alarm:view',            '告警中心',   1, 'ALARM',    'alarm',         5, 'bell',       'alarm/index',         0, 0, '告警中心菜单'),
+  (640,  0,   'product:view',          '产品管理',   1, 'DEVICE',   'product',       6, 'goods',      'product/index',       0, 0, '产品管理菜单'),
+  (650,  0,   'device:view',           '设备管理',   1, 'DEVICE',   'device',        7, 'cpu',        'device/index',        0, 0, '设备管理菜单'),
+  (660,  0,   'strategy:view',         '策略管理',   1, 'STRATEGY', 'ems/strategy',  8, 'operation',  'ems/strategy/index',  0, 0, '策略管理菜单'),
+  (670,  0,   'plan:view',             '充放电计划', 1, 'STRATEGY', 'ems/plan',      9, 'date-range', 'ems/plan/index',      0, 0, '充放电计划菜单'),
+  -- 基础档案目录（单位管理 + 电站管理）
+  (2,    0,   'archive',               '基础档案',   1, NULL,     'archive',           10, 'office-building', NULL,                      0, 0, '基础档案目录'),
+  (400,  2,   'system:enterprise:list','单位管理',   1, NULL,     'archive/enterprise', 1, 'office-building', 'archive/enterprise/index', 0, 0, '单位管理菜单'),
+  (500,  2,   'system:station:list',   '电站管理',   1, 'STATION', 'archive/station',    2, 'location',       'archive/station/index', 0, 0, '电站管理菜单'),
+  -- 系统管理目录（排在业务菜单之后）
+  (1,    0,   'system',                '系统管理',   1, NULL,     'system',            11, 'setting',         NULL,                      0, 0, '系统管理目录'),
+  -- 用户管理
+  (100,  1,   'system:user:list',      '用户管理', 1, NULL, 'system/user', 1, 'user', 'system/user/index', 0, 0, '用户管理菜单'),
+  (101,  100, 'system:user:add',       '用户新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
+  (102,  100, 'system:user:edit',      '用户编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
+  (103,  100, 'system:user:remove',    '用户删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
+  (104,  100, 'system:user:resetPwd',  '重置密码', 2, NULL, NULL, 4, NULL, NULL, 1, 0, NULL),
+  (105,  100, 'system:user:role',      '分配角色', 2, NULL, NULL, 5, NULL, NULL, 1, 0, NULL),
+  -- 角色管理
+  (200,  1,   'system:role:list',      '角色管理', 1, NULL, 'system/role', 2, 'peoples', 'system/role/index', 0, 0, '角色管理菜单'),
+  (201,  200, 'system:role:add',       '角色新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
+  (202,  200, 'system:role:edit',      '角色编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
+  (203,  200, 'system:role:remove',    '角色删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
+  (204,  200, 'system:role:perm',      '分配权限', 2, NULL, NULL, 4, NULL, NULL, 1, 0, NULL),
+  -- 菜单管理
+  (300,  1,   'system:perm:list',      '菜单管理', 1, NULL, 'system/menu', 3, 'tree-table', 'system/menu/index', 0, 0, '菜单管理菜单'),
+  (301,  300, 'system:perm:add',       '菜单新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
+  (302,  300, 'system:perm:edit',      '菜单编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
+  (303,  300, 'system:perm:remove',    '菜单删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
+  -- 单位管理按钮
+  (401,  400, 'system:enterprise:add', '单位新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
+  (402,  400, 'system:enterprise:edit','单位编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
+  (403,  400, 'system:enterprise:remove', '单位删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL),
+  -- 电站管理按钮
+  (501,  500, 'system:station:add',    '电站新增', 2, NULL, NULL, 1, NULL, NULL, 1, 0, NULL),
+  (502,  500, 'system:station:edit',   '电站编辑', 2, NULL, NULL, 2, NULL, NULL, 1, 0, NULL),
+  (503,  500, 'system:station:remove', '电站删除', 2, NULL, NULL, 3, NULL, NULL, 1, 0, NULL);
+
+-- 超级管理员（role 1）关联全部菜单资源
+INSERT IGNORE INTO `sys_role_permission` (`role_id`, `perm_id`)
+SELECT 1, `perm_id` FROM `sys_permission`;

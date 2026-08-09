@@ -66,9 +66,10 @@ async function openPerms(row: SysRole) {
 async function savePerms() {
   if (!permRole.value) return
   try {
+    // 仅保存全选节点（getCheckedKeys(false)）；半选父节点不落库——
+    // 若把半选父节点一并存入，重开授权时 setCheckedKeys 会按父节点级联全选其全部子孙，权限被放大
     const checked = permRef.value?.getCheckedKeys(false) as string[] ?? []
-    const half = permRef.value?.getHalfCheckedKeys() as string[] ?? []
-    await roleApi.assignPerms(permRole.value.roleId, [...checked, ...half])
+    await roleApi.assignPerms(permRole.value.roleId, checked)
     ElMessage.success('权限已更新')
     permDialog.value = false
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }

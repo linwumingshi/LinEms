@@ -57,7 +57,7 @@ export const roleApi = {
   perms(roleId: string): Promise<string[]> {
     return http.get(`/api/system/role/${roleId}/perms`)
   },
-  /** 全量覆盖：body 为裸 List<Long>（含半选父节点由前端拼好传入） */
+  /** 全量覆盖：body 为裸 List<Long>（前端仅传全选节点 permId；半选父节点不落库，避免重开时 setCheckedKeys 级联放大） */
   assignPerms(roleId: string, permIds: string[]): Promise<void> {
     return http.put(`/api/system/role/${roleId}/perms`, permIds)
   },
