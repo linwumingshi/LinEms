@@ -38,6 +38,14 @@ const menus: MenuItem[] = [
   { path: '/ems/strategy', title: '策略管理' },
   { path: '/ems/plan', title: '充放电计划' },
   {
+    group: '/archive',
+    title: '基础档案',
+    children: [
+      { path: '/archive/enterprise', title: '单位管理', perms: ['system:enterprise:list'] },
+      { path: '/archive/station', title: '电站管理' },
+    ],
+  },
+  {
     group: '/system',
     title: '系统管理',
     children: [

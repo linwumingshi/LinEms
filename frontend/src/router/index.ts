@@ -50,6 +50,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '充放电计划', icon: 'TrendCharts' },
       },
       {
+        path: 'archive/enterprise',
+        name: 'Enterprise',
+        component: () => import('@/views/Enterprise.vue'),
+        meta: { title: '单位管理', icon: 'OfficeBuilding' },
+      },
+      {
+        path: 'archive/station',
+        name: 'Station',
+        component: () => import('@/views/Station.vue'),
+        meta: { title: '电站管理', icon: 'Monitor' },
+      },
+      {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/Product.vue'),
