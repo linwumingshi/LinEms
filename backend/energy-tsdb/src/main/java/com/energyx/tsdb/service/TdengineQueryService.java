@@ -2,6 +2,7 @@ package com.energyx.tsdb.service;
 
 import com.energyx.tsdb.config.TsdbProperties;
 import com.energyx.tsdb.sql.TdengineQuerySqlBuilder;
+import com.energyx.tsdb.sql.TdengineSqlBuilder;
 import com.energyx.tsdb.web.dto.PropertyHistoryRecord;
 import com.energyx.tsdb.web.dto.PropertyHistoryView;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * TDengine 属性历史查询。
@@ -36,8 +38,8 @@ public class TdengineQueryService {
 
     private final TsdbProperties props;
     private volatile Connection connection;
-    private volatile Map<String, Set<String>> columnCache = Map.of();
-    private volatile long cacheLoadedAt = 0L;
+    private final Map<String, Set<String>> columnCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> columnCacheLoadedAt = new ConcurrentHashMap<>();
 
     public TdengineQueryService(TsdbProperties props) {
         this.props = props;
@@ -48,6 +50,9 @@ public class TdengineQueryService {
                                             List<String> identifiers,
                                             long startTime, long endTime,
                                             boolean asc, int page, int size) throws SQLException {
+        if (!TdengineSqlBuilder.isSafeKey(productKey)) {
+            throw new IllegalArgumentException("productKey 非法: " + productKey);
+        }
         Set<String> whitelist = columnWhitelist(productKey);
         List<String> selected = identifiers.stream()
                 .filter(whitelist::contains)
@@ -57,7 +62,12 @@ public class TdengineQueryService {
             throw new IllegalArgumentException("请求的属性均不在该产品物模型中");
         }
 
-        int offset = (page - 1) * size;
+        // (page-1)*size 可能 int 溢出为负 → long 计算并对超范围 offset 抛参数异常（controller 转 400）
+        long longOffset = (long) (page - 1) * size;
+        if (longOffset > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("分页 offset 超出范围");
+        }
+        int offset = (int) longOffset;
         String dataSql = TdengineQuerySqlBuilder.buildDataSql(
                 props.getRawDb(), productKey, selected, deviceId, startTime, endTime, asc, size, offset);
         String countSql = TdengineQuerySqlBuilder.buildCountSql(
@@ -122,7 +132,8 @@ public class TdengineQueryService {
     private Set<String> columnWhitelist(String productKey) throws SQLException {
         long now = System.currentTimeMillis();
         Set<String> cached = columnCache.get(productKey);
-        if (cached != null && now - cacheLoadedAt < WHITELIST_TTL_MS) {
+        Long loadedAt = columnCacheLoadedAt.get(productKey);
+        if (cached != null && loadedAt != null && now - loadedAt < WHITELIST_TTL_MS) {
             return cached;
         }
         Set<String> whitelist = new LinkedHashSet<>();
@@ -155,8 +166,8 @@ public class TdengineQueryService {
                 log.warn("[Tsdb] DESCRIBE 异常，重建连接重试 errorCode={}", e.getErrorCode(), e);
             }
         }
-        columnCache = Map.of(productKey, whitelist);
-        cacheLoadedAt = now;
+        columnCache.put(productKey, whitelist);
+        columnCacheLoadedAt.put(productKey, now);
         return whitelist;
     }
 

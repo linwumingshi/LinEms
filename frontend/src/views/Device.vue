@@ -183,7 +183,12 @@ async function loadRuntime() {
   try {
     const [sh, tm] = await Promise.all([
       shadowApi.getShadow(deviceId),
-      productApi.thingModelByKey(detail.value.productKey).catch(() => null),
+      productApi.thingModelByKey(detail.value.productKey).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        // 业务"未发布物模型"→ 空态（返回 null 走空对象兜底）；网络/HTTP/超时等真实失败 → 抛出
+        if (message.includes('未发布物模型')) return null
+        throw err
+      }),
     ])
     if (String(detail.value?.deviceId) !== deviceId) return
     shadow.value = sh
@@ -192,6 +197,9 @@ async function loadRuntime() {
     if (model.value.properties.length) selProp.value = model.value.properties[0].identifier
     if (!timeRange.value) timeRange.value = defaultTimeRange()
   } catch (e) {
+    if (String(detail.value?.deviceId) !== deviceId) return
+    // 真实加载失败（网络/HTTP/超时）→ model 置 null，隐藏整个运行态面板并提示
+    model.value = null
     ElMessage.error(e instanceof Error ? e.message : String(e))
   } finally {
     runtimeLoading.value = false
@@ -201,29 +209,36 @@ async function loadRuntime() {
 async function queryHistory() {
   if (!detail.value || !selProp.value || !timeRange.value) return
   historyLoading.value = true
+  const deviceId = String(detail.value.deviceId)
   const [start, end] = rangeToEpoch(timeRange.value)
   const base = {
-    deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+    deviceId, productKey: detail.value.productKey,
     identifiers: [selProp.value], startTime: start, endTime: end,
   }
   try {
-    const chartData = await tsdbApi.propertyHistory({ ...base, order: 'asc', page: 1, size: 1000 })
-    renderChart(chartData.records, selProp.value)
-    historyPage.value = 1
-  } catch {
-    ElMessage.error('历史数据查询失败')
-    hasChartData.value = false
-    render({ xAxis: { type: 'time' }, yAxis: { type: 'value' }, series: [] })
-    if (detail.value) {
-      historyTable.value = { deviceId: String(detail.value.deviceId), productKey: detail.value.productKey, total: 0, records: [] }
+    try {
+      const chartData = await tsdbApi.propertyHistory({ ...base, order: 'asc', page: 1, size: 1000 })
+      if (String(detail.value?.deviceId) !== deviceId) return
+      renderChart(chartData.records, selProp.value)
+      historyPage.value = 1
+    } catch {
+      if (String(detail.value?.deviceId) !== deviceId) return
+      ElMessage.error('历史数据查询失败')
+      hasChartData.value = false
+      render({ xAxis: { type: 'time' }, yAxis: { type: 'value' }, series: [] })
+      if (detail.value) {
+        historyTable.value = { deviceId: String(detail.value.deviceId), productKey: detail.value.productKey, total: 0, records: [] }
+      }
+      return
     }
-    historyLoading.value = false
-    return
-  }
-  try {
-    historyTable.value = await tsdbApi.propertyHistory({ ...base, order: 'desc', page: historyPage.value, size: historySize.value })
-  } catch {
-    ElMessage.error('历史数据查询失败')
+    try {
+      const result = await tsdbApi.propertyHistory({ ...base, order: 'desc', page: historyPage.value, size: historySize.value })
+      if (String(detail.value?.deviceId) !== deviceId) return
+      historyTable.value = result
+    } catch {
+      if (String(detail.value?.deviceId) !== deviceId) return
+      ElMessage.error('历史数据查询失败')
+    }
   } finally {
     historyLoading.value = false
   }
@@ -232,14 +247,18 @@ async function queryHistory() {
 async function onTablePage(p: number) {
   if (!detail.value || !selProp.value || !timeRange.value) return
   historyLoading.value = true
+  const deviceId = String(detail.value.deviceId)
   const [start, end] = rangeToEpoch(timeRange.value)
   try {
-    historyTable.value = await tsdbApi.propertyHistory({
-      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+    const result = await tsdbApi.propertyHistory({
+      deviceId, productKey: detail.value.productKey,
       identifiers: [selProp.value], startTime: start, endTime: end,
       order: 'desc', page: p, size: historySize.value,
     })
+    if (String(detail.value?.deviceId) !== deviceId) return
+    historyTable.value = result
   } catch {
+    if (String(detail.value?.deviceId) !== deviceId) return
     ElMessage.error('历史数据查询失败')
   } finally {
     historyLoading.value = false
