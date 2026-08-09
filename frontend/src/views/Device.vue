@@ -8,6 +8,12 @@ import type { CredentialView, Device, Product, Station, SysEnterprise } from '@/
 import { deviceStatusTag, deviceStatusText, deviceTypeLabel, deviceTypeOptions, deviceTypeText } from '@/utils/dicts'
 import { toLocal } from '@/utils/alarmFormat'
 import { loadStations, stationName } from '@/utils/stationDict'
+import { useEChart } from '@/composables/useEChart'
+import { shadowApi } from '@/api/shadow'
+import { tsdbApi } from '@/api/tsdb'
+import { parseThingModel } from '@/utils/thingModel'
+import { tsToLocal } from '@/utils/alarmFormat'
+import type { PropertyHistoryView, ShadowView, ThingModelSchema, PropertyHistoryRecord } from '@/types/models'
 
 const loading = ref(false)
 const list = ref<Device[]>([])
@@ -123,7 +129,142 @@ const drawerVisible = ref(false)
 const detail = ref<Device | null>(null)
 const cred = ref<CredentialView | null>(null)
 const plainSecret = ref('')
+
+// ---- 详情抽屉：基本信息 / 运行状态 ----
+const activeTab = ref('basic')
+const runtimeLoading = ref(false)
+const shadow = ref<ShadowView | null>(null)
+const model = ref<ThingModelSchema | null>(null)
+const lastReported = ref('')
+const timeRange = ref<[string, string] | null>(null)
+const selProp = ref('')
+const historyLoading = ref(false)
+const hasChartData = ref(false)
+const chartEl = ref<HTMLElement>()
+const { render } = useEChart(chartEl)
+const historyTable = ref<PropertyHistoryView>({ deviceId: '', productKey: '', total: 0, records: [] })
+const historyPage = ref(1)
+const historySize = ref(20)
+
+function resetRuntime() {
+  shadow.value = null
+  model.value = null
+  lastReported.value = ''
+  historyTable.value = { deviceId: '', productKey: '', total: 0, records: [] }
+  historyPage.value = 1
+  timeRange.value = null
+  selProp.value = ''
+  hasChartData.value = false
+  render({ xAxis: { type: 'time' }, yAxis: { type: 'value' }, series: [] })
+}
+
+function defaultTimeRange(): [string, string] {
+  const end = new Date()
+  const start = new Date(end.getTime() - 24 * 3600 * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return [fmt(start), fmt(end)]
+}
+
+function propName(id: string): string {
+  return model.value?.properties.find((x) => x.identifier === id)?.name ?? id
+}
+
+function rangeToEpoch(r: [string, string]): [number, number] {
+  return [new Date(r[0]).getTime(), new Date(r[1]).getTime()]
+}
+
+/** activeTab 切到 runtime 且当前设备未加载时并行拉 shadow + TSL */
+async function loadRuntime() {
+  if (!detail.value || activeTab.value !== 'runtime') return
+  if (shadow.value) return
+  runtimeLoading.value = true
+  try {
+    const [sh, tm] = await Promise.all([
+      shadowApi.getShadow(String(detail.value.deviceId)),
+      productApi.thingModelByKey(detail.value.productKey).catch(() => null),
+    ])
+    shadow.value = sh
+    lastReported.value = sh.lastReportedTime ?? ''
+    model.value = tm ? parseThingModel(tm.schemaJson) : { properties: [], services: [], events: [] }
+    if (model.value.properties.length) selProp.value = model.value.properties[0].identifier
+    if (!timeRange.value) timeRange.value = defaultTimeRange()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    runtimeLoading.value = false
+  }
+}
+
+async function queryHistory() {
+  if (!detail.value || !selProp.value || !timeRange.value) return
+  historyLoading.value = true
+  const [start, end] = rangeToEpoch(timeRange.value)
+  try {
+    const chartData = await tsdbApi.propertyHistory({
+      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+      identifiers: [selProp.value], startTime: start, endTime: end,
+      order: 'asc', page: 1, size: 1000,
+    })
+    renderChart(chartData.records, selProp.value)
+    historyPage.value = 1
+    historyTable.value = await tsdbApi.propertyHistory({
+      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+      identifiers: [selProp.value], startTime: start, endTime: end,
+      order: 'desc', page: historyPage.value, size: historySize.value,
+    })
+  } catch {
+    ElMessage.error('历史数据查询失败')
+    hasChartData.value = false
+    render({ xAxis: { type: 'time' }, yAxis: { type: 'value' }, series: [] })
+    if (detail.value) {
+      historyTable.value = { deviceId: String(detail.value.deviceId), productKey: detail.value.productKey, total: 0, records: [] }
+    }
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function onTablePage(p: number) {
+  if (!detail.value || !selProp.value || !timeRange.value) return
+  historyLoading.value = true
+  const [start, end] = rangeToEpoch(timeRange.value)
+  try {
+    historyTable.value = await tsdbApi.propertyHistory({
+      deviceId: String(detail.value.deviceId), productKey: detail.value.productKey,
+      identifiers: [selProp.value], startTime: start, endTime: end,
+      order: 'desc', page: p, size: historySize.value,
+    })
+  } catch {
+    ElMessage.error('历史数据查询失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function renderChart(records: PropertyHistoryRecord[], identifier: string) {
+  const prop = model.value?.properties.find((x) => x.identifier === identifier)
+  const unit = prop?.unit ? ` (${prop.unit})` : ''
+  hasChartData.value = records.length > 0
+  render({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 52, right: 24, top: 24, bottom: 44 },
+    xAxis: { type: 'time' },
+    yAxis: { type: 'value', name: unit },
+    series: [{
+      type: 'line',
+      showSymbol: false,
+      connectNulls: true,
+      data: records
+        .filter((r) => r.values[identifier] != null)
+        .map((r) => [r.ts, r.values[identifier]] as [number, number | string]),
+    }],
+  })
+}
+
 async function openDetail(row: Device) {
+  resetRuntime()
+  activeTab.value = 'basic'
   detail.value = row
   drawerVisible.value = true
   cred.value = null
@@ -171,6 +312,8 @@ async function remove(row: Device) {
     void load(); void loadReadout()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
+
+watch([detail, activeTab], () => { void loadRuntime() }, { flush: 'post' })
 
 onMounted(() => { void load(); void loadReadout(); void loadOptions(); void loadStationOptions() })
 </script>
@@ -300,50 +443,101 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
       </template>
     </el-dialog>
 
-    <el-drawer v-model="drawerVisible" size="480px" :title="`设备详情 · ${detail?.deviceName ?? ''}`">
+    <el-drawer v-model="drawerVisible" size="820px" :title="`设备详情 · ${detail?.deviceName ?? ''}`">
       <template v-if="detail">
-        <el-descriptions :column="2" border size="small" class="desc">
-          <el-descriptions-item label="deviceId" :span="2"><span class="ex-num">{{ detail.deviceId }}</span></el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="deviceStatusTag(detail.status)" size="small">{{ deviceStatusText(detail.status) }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="类型">{{ deviceTypeText(detail.deviceType) }}</el-descriptions-item>
-          <el-descriptions-item label="productKey" :span="2">{{ detail.productKey }}</el-descriptions-item>
-          <el-descriptions-item label="电站">{{ stationName(detail.stationId, stations) || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="企业">{{ detail.enterpriseId ?? '—' }}</el-descriptions-item>
-          <el-descriptions-item label="父设备" :span="2"><span class="ex-num">{{ detail.parentId }}</span></el-descriptions-item>
-          <el-descriptions-item label="路径" :span="2">{{ detail.path }}</el-descriptions-item>
-          <el-descriptions-item label="层级" :span="2"><span class="ex-num">{{ detail.level }}</span></el-descriptions-item>
-          <el-descriptions-item label="固件">{{ detail.firmwareVersion ?? '—' }}</el-descriptions-item>
-          <el-descriptions-item label="协议">{{ detail.protocol }}</el-descriptions-item>
-          <el-descriptions-item label="MAC" :span="2">{{ detail.mac ?? '—' }}</el-descriptions-item>
-          <el-descriptions-item label="IP" :span="2">{{ detail.ip ?? '—' }}</el-descriptions-item>
-          <el-descriptions-item label="累计在线" :span="2">{{ onlineSeconds(detail.onlineSeconds) }}</el-descriptions-item>
-          <el-descriptions-item label="最近上线" :span="2"><span class="ex-num">{{ toLocal(detail.lastOnlineTime) }}</span></el-descriptions-item>
-          <el-descriptions-item label="最近下线" :span="2"><span class="ex-num">{{ toLocal(detail.lastOfflineTime) }}</span></el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2"><span class="ex-num">{{ toLocal(detail.createTime) }}</span></el-descriptions-item>
-        </el-descriptions>
+        <el-tabs v-model="activeTab">
+          <el-tab-pane name="basic" label="基本信息">
+            <el-descriptions :column="2" border size="small" class="desc">
+              <el-descriptions-item label="deviceId" :span="2"><span class="ex-num">{{ detail.deviceId }}</span></el-descriptions-item>
+              <el-descriptions-item label="状态">
+                <el-tag :type="deviceStatusTag(detail.status)" size="small">{{ deviceStatusText(detail.status) }}</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="类型">{{ deviceTypeText(detail.deviceType) }}</el-descriptions-item>
+              <el-descriptions-item label="productKey" :span="2">{{ detail.productKey }}</el-descriptions-item>
+              <el-descriptions-item label="电站">{{ stationName(detail.stationId, stations) || '—' }}</el-descriptions-item>
+              <el-descriptions-item label="企业">{{ detail.enterpriseId ?? '—' }}</el-descriptions-item>
+              <el-descriptions-item label="父设备" :span="2"><span class="ex-num">{{ detail.parentId }}</span></el-descriptions-item>
+              <el-descriptions-item label="路径" :span="2">{{ detail.path }}</el-descriptions-item>
+              <el-descriptions-item label="层级" :span="2"><span class="ex-num">{{ detail.level }}</span></el-descriptions-item>
+              <el-descriptions-item label="固件">{{ detail.firmwareVersion ?? '—' }}</el-descriptions-item>
+              <el-descriptions-item label="协议">{{ detail.protocol }}</el-descriptions-item>
+              <el-descriptions-item label="MAC" :span="2">{{ detail.mac ?? '—' }}</el-descriptions-item>
+              <el-descriptions-item label="IP" :span="2">{{ detail.ip ?? '—' }}</el-descriptions-item>
+              <el-descriptions-item label="累计在线" :span="2">{{ onlineSeconds(detail.onlineSeconds) }}</el-descriptions-item>
+              <el-descriptions-item label="最近上线" :span="2"><span class="ex-num">{{ toLocal(detail.lastOnlineTime) }}</span></el-descriptions-item>
+              <el-descriptions-item label="最近下线" :span="2"><span class="ex-num">{{ toLocal(detail.lastOfflineTime) }}</span></el-descriptions-item>
+              <el-descriptions-item label="创建时间" :span="2"><span class="ex-num">{{ toLocal(detail.createTime) }}</span></el-descriptions-item>
+            </el-descriptions>
 
-        <div class="ex-card cred-card">
-          <div class="ex-card-head">
-            <h2 class="ex-card-title">连接凭据</h2>
-            <el-button size="small" type="warning" @click="regenerateSecret">重新生成</el-button>
-          </div>
-          <template v-if="cred">
-            <p class="cred-line">
-              <span class="cred-label">密钥（脱敏）</span>
-              <code class="cred-mask">{{ cred.deviceSecret }}</code>
-              <el-tag size="small" :type="cred.authStatus === 1 ? 'success' : 'danger'">{{ cred.authStatus === 1 ? '正常' : '吊销' }}</el-tag>
-            </p>
-            <el-alert v-if="plainSecret" type="warning" :closable="false" class="cred-plain">
-              <template #title>
-                新密钥（仅本次展示，请立即复制保存）
-                <el-button link type="primary" size="small" @click="copySecret">复制</el-button>
+            <div class="ex-card cred-card">
+              <div class="ex-card-head">
+                <h2 class="ex-card-title">连接凭据</h2>
+                <el-button size="small" type="warning" @click="regenerateSecret">重新生成</el-button>
+              </div>
+              <template v-if="cred">
+                <p class="cred-line">
+                  <span class="cred-label">密钥（脱敏）</span>
+                  <code class="cred-mask">{{ cred.deviceSecret }}</code>
+                  <el-tag size="small" :type="cred.authStatus === 1 ? 'success' : 'danger'">{{ cred.authStatus === 1 ? '正常' : '吊销' }}</el-tag>
+                </p>
+                <el-alert v-if="plainSecret" type="warning" :closable="false" class="cred-plain">
+                  <template #title>
+                    新密钥（仅本次展示，请立即复制保存）
+                    <el-button link type="primary" size="small" @click="copySecret">复制</el-button>
+                  </template>
+                  <code>{{ plainSecret }}</code>
+                </el-alert>
               </template>
-              <code>{{ plainSecret }}</code>
-            </el-alert>
-          </template>
-        </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane name="runtime" label="运行状态" lazy>
+            <div v-loading="runtimeLoading" class="runtime-pane">
+              <template v-if="model">
+                <div class="runtime-head">
+                  <span class="rt-label">最后上报：</span>
+                  <span class="ex-num">{{ toLocal(lastReported) }}</span>
+                </div>
+                <div class="rt-cards">
+                  <div v-for="p in model.properties" :key="p.identifier" class="rt-card">
+                    <div class="rt-card-name">{{ p.name }}</div>
+                    <div class="rt-card-value">
+                      {{ shadow?.reported?.[p.identifier] ?? '—' }}
+                      <span v-if="p.unit && shadow?.reported?.[p.identifier] != null" class="rt-card-unit">{{ p.unit }}</span>
+                    </div>
+                    <div class="rt-card-id">{{ p.identifier }}</div>
+                  </div>
+                </div>
+                <div class="hist-card">
+                  <div class="hist-controls">
+                    <el-date-picker v-model="timeRange" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss"
+                      start-placeholder="开始时间" end-placeholder="结束时间"
+                      :default-time="[new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59, 59)]" />
+                    <el-select v-model="selProp" style="width: 190px">
+                      <el-option v-for="p in model.properties" :key="p.identifier" :label="`${p.name} (${p.identifier})`" :value="p.identifier" />
+                    </el-select>
+                    <el-button type="primary" @click="queryHistory">查询</el-button>
+                  </div>
+                  <div ref="chartEl" class="hist-chart" v-loading="historyLoading"></div>
+                  <div v-if="!hasChartData && !historyLoading" class="hist-empty">所选属性在该时间范围无数据</div>
+                  <el-table :data="historyTable.records" size="small" empty-text="暂无数据" v-loading="historyLoading">
+                    <el-table-column label="时间" min-width="160">
+                      <template #default="{ row }"><span class="ex-num">{{ tsToLocal(row.ts) }}</span></template>
+                    </el-table-column>
+                    <el-table-column :label="propName(selProp)" min-width="120">
+                      <template #default="{ row }">{{ row.values[selProp] ?? '—' }}</template>
+                    </el-table-column>
+                  </el-table>
+                  <div class="pager">
+                    <el-pagination v-model:current-page="historyPage" v-model:page-size="historySize" :total="historyTable.total"
+                      :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next"
+                      @size-change="historyPage = 1; void queryHistory()" @current-change="onTablePage" />
+                  </div>
+                </div>
+              </template>
+              <el-empty v-else-if="!runtimeLoading" description="产品未发布物模型" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </template>
     </el-drawer>
   </div>
@@ -361,4 +555,17 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
 .cred-mask { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px; color: var(--ex-ink); }
 .cred-plain { margin: 12px 18px 0; }
 .cred-plain code { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px; word-break: break-all; }
+.runtime-pane { min-height: 320px; }
+.runtime-head { margin-bottom: 10px; font-size: 13px; color: var(--ex-ink-2); }
+.rt-label { color: var(--ex-ink-2); }
+.rt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.rt-card { border: 1px solid var(--ex-line); border-radius: 8px; padding: 10px 12px; background: var(--ex-bg-2, #fff); }
+.rt-card-name { font-size: 12px; color: var(--ex-ink-2); margin-bottom: 4px; }
+.rt-card-value { font-size: 18px; font-weight: 600; color: var(--ex-ink); }
+.rt-card-unit { font-size: 12px; font-weight: 400; color: var(--ex-ink-2); margin-left: 2px; }
+.rt-card-id { margin-top: 4px; font-size: 11px; font-family: 'Cascadia Mono', Consolas, monospace; color: var(--ex-ink-3); }
+.hist-card { border-top: 1px solid var(--ex-line); padding-top: 14px; }
+.hist-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.hist-chart { height: 300px; }
+.hist-empty { padding: 16px 0; text-align: center; font-size: 13px; color: var(--ex-ink-3); }
 </style>
