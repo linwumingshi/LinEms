@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { productApi } from '@/api/product'
 import type { Product } from '@/types/models'
-import { deviceTypeOptions, productStatusText, thingModelStatusText } from '@/utils/dicts'
+import { deviceTypeLabel, deviceTypeOptions, deviceTypeText, productStatusText, thingModelStatusText } from '@/utils/dicts'
 import { toLocal } from '@/utils/alarmFormat'
 
 const loading = ref(false)
@@ -47,13 +47,20 @@ function resetQuery() { query.value = { deviceType: '', status: undefined, keywo
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<Product>>({})
+const errs = ref<Record<string, string>>({})
+watch(
+  () => [form.value.productKey, form.value.productName, form.value.deviceType],
+  () => { errs.value = {} },
+)
 function openCreate() { form.value = { status: 1, protocol: 'MQTT', authType: 'SECRET' }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Product) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
-  if (!form.value.productKey?.trim() || !form.value.productName?.trim() || !form.value.deviceType) {
-    ElMessage.warning('productKey / productName / deviceType 为必填')
-    return
-  }
+  errs.value = {}
+  const e: Record<string, string> = {}
+  if (!form.value.productKey?.trim()) e.productKey = '请输入 productKey'
+  if (!form.value.productName?.trim()) e.productName = '请输入产品名称'
+  if (!form.value.deviceType) e.deviceType = '请选择设备类型'
+  if (Object.keys(e).length) { errs.value = e; return }
   try {
     if (isEdit.value) await productApi.update(form.value.productId!, form.value)
     else await productApi.create(form.value)
@@ -140,7 +147,7 @@ onMounted(() => { void load(); void loadReadout() })
       <el-form inline @submit.prevent>
         <el-form-item label="设备类型">
           <el-select v-model="query.deviceType" clearable placeholder="全部" style="width: 180px">
-            <el-option v-for="t in deviceTypeOptions" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in deviceTypeOptions" :key="t" :label="deviceTypeLabel(t)" :value="t" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -164,7 +171,7 @@ onMounted(() => { void load(); void loadReadout() })
         <el-table-column prop="productKey" label="productKey" min-width="140" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="deviceType" label="设备类型" width="150">
-          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.deviceType }}</el-tag></template>
+          <template #default="{ row }"><el-tag size="small" effect="plain">{{ deviceTypeText(row.deviceType) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="authType" label="认证" width="90" />
         <el-table-column label="物模型版本" width="110">
@@ -195,15 +202,15 @@ onMounted(() => { void load(); void loadReadout() })
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑产品' : '新增产品'" width="560px">
       <el-form label-width="110px">
-        <el-form-item label="productKey" required>
+        <el-form-item label="productKey" required :error="errs.productKey">
           <el-input v-model="form.productKey" placeholder="产品标识，如 snd_ess_pcs（修改影响已接入设备）" maxlength="64" />
         </el-form-item>
-        <el-form-item label="产品名称" required>
+        <el-form-item label="产品名称" required :error="errs.productName">
           <el-input v-model="form.productName" placeholder="产品名称" maxlength="128" />
         </el-form-item>
-        <el-form-item label="设备类型" required>
+        <el-form-item label="设备类型" required :error="errs.deviceType">
           <el-select v-model="form.deviceType" style="width: 100%">
-            <el-option v-for="t in deviceTypeOptions" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in deviceTypeOptions" :key="t" :label="deviceTypeLabel(t)" :value="t" />
           </el-select>
         </el-form-item>
         <el-form-item label="认证方式">
