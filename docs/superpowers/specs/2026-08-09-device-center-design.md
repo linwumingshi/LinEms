@@ -135,7 +135,7 @@ CREATE STABLE IF NOT EXISTS iot_tsdb_event.st_event (
   - `dataSql`：`SELECT ts, ` + 白名单内标识符列（反引号包裹） + ` FROM {db}.st_prop_{productKey} WHERE device_id = ? AND ts >= ? AND ts <= ? ORDER BY ts {ASC|DESC} LIMIT ? OFFSET ?`；
   - `countSql`：`SELECT count(*) FROM {db}.st_prop_{productKey} WHERE device_id = ? AND ts >= ? AND ts <= ?`；
   - **identifier 白名单**：先 `DESCRIBE {db}.st_prop_{productKey}`（结果缓存，TTL 60s）取合法列名集合（排除 ts/msg_id/data_type 公共列），请求的 identifiers 仅保留在白名单内的；过滤后为空 → 抛参数异常（400）。
-- 新增 `service/TdengineQueryService`：懒连接（照 `TdengineWriter` 单连接模式，DriverManager + 失败重建重试一次）；`PreparedStatement` 绑定 `?`（device_id 字符串、ts 毫秒 long、offset/limit int）；执行 dataSql + countSql；读 ResultSet 组装 `PropertyHistoryRecord`；**设备 501 无列数据时对应值省略或 null**。
+- 新增 `service/TdengineQueryService`：懒连接（照 `TdengineWriter` 单连接模式，DriverManager + 失败重建重试一次）；`PreparedStatement` 绑定 `?`（device_id 字符串、ts 毫秒 long、offset/limit int）；执行 dataSql + countSql；读 ResultSet 组装 `PropertyHistoryRecord`；**某行属性列为 NULL（该设备未上报该属性）时 `values` 省略该键或置 null**。
 - DTO（`web/dto`）：
   - `PropertyHistoryView { String deviceId; String productKey; long total; List<PropertyHistoryRecord> records; }`
   - `PropertyHistoryRecord { long ts; Map<String, Object> values; }`
