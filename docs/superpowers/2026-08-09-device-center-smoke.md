@@ -26,7 +26,7 @@
 - **首轮冒烟 1 次瞬态失败（非产品缺陷）**：首轮运行在步骤 6 等待 `.rt-card` 超时（10s 窗口不足）。根因：Edge 无头首次冷启动 + 网关链路（vite → 网关 :8000 → energy-shadow / energy-product → TDengine/Nacos）首次请求延迟叠加，超出 10s 等待；随后重跑 11/11 全绿。探针脚本确认影子 `GET /api/shadow/8000000000000000001` 与物模型 `GET /api/product/thing-model/by-key?productKey=snd_ess_pcs` 均返回 200，卡片在数据加载完成后正常渲染，功能本身无缺陷。
 - **验证命令**：vitest 17 文件 / 101 用例全绿；`vue-tsc --noEmit` EXIT 0；后端 `mvn -pl energy-tsdb,energy-product -am test` BUILD SUCCESS（退出码 0，`-q` 抑制 reactor 汇总行）。
 - **冒烟数据**：Task 1 种子设备 sim-dev-000001（在线、影子 reported 非空，soc=86 等）；历史数据来自 `st_prop_snd_ess_pcs`（约 59 行，runMode 的 NULL 残留行无害）。
-- **脚本解析**：playwright-core 位于 `frontend/node_modules`，ESM 解析自脚本所在路径（`test/smoke/`）逐级向上查找；故在 repo 根建 `node_modules` 目录联接（junction）指向 `frontend/node_modules`，使 `import 'playwright-core'` 可解析。该联接已 gitignore，不入库。
+- **脚本解析与重跑**：playwright-core 位于 `frontend/node_modules`，ESM 解析自脚本所在路径（`test/smoke/`）逐级向上查找，`frontend/node_modules` 不在解析链上；须在 repo 根建 `node_modules` 目录联接（junction）指向 `frontend/node_modules`，`import 'playwright-core'` 方可解析。该联接为本机未跟踪产物（不入库、勿 `git add`，跑完即删）。重跑步骤：① 建 junction（Git Bash，repo 根）：`cmd //c mklink //J node_modules "<repo-root>\frontend\node_modules"`；② 跑冒烟：`node test/smoke/smoke-device-center.mjs`；③ 移除（PowerShell，仅删联接不触目标）：`(Get-Item -LiteralPath "<repo-root>\node_modules" -Force).Delete()`。
 - 产品代码零改动。
 
 ## 结论
