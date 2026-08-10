@@ -182,15 +182,18 @@ INSERT IGNORE INTO `sys_permission`
   (`perm_id`, `parent_id`, `perm_code`, `perm_name`, `perm_type`, `resource_type`, `path`, `sort`, `icon`, `component`, `visible`, `status`, `remark`)
 VALUES
   -- 八大业务一级菜单
+  (690,  0,   'device:group',      '设备资产',   1, 'DEVICE',   'device',     6, 'cpu',        NULL,                           0, 0, '设备资产目录'),
+  (700,  0,   'operation:group',   '设备运维',   1, 'DEVICE',   'operation',  3, 'monitor',    NULL,                           0, 0, '设备运维目录'),
+  (710,  0,   'ems:group',         'EMS 能源管理', 1, 'STRATEGY', 'ems',        8, 'set-up',     NULL,                           0, 0, 'EMS 能源管理目录'),
   (600,  0,   'monitor:view',          '设备监控',   1, 'DEVICE',   'dashboard',     2, 'monitor',    'dashboard/index',     0, 0, '设备监控菜单'),
-  (610,  0,   'shadow:view',           '影子',       1, 'DEVICE',   'shadow',        3, 'connection', 'shadow/index',        0, 0, '影子菜单'),
-  (620,  0,   'command:view',          '指令中心',   1, 'DEVICE',   'command',       4, 'promotion',  'command/index',       0, 0, '指令中心菜单'),
-  (630,  0,   'alarm:view',            '告警中心',   1, 'ALARM',    'alarm',         5, 'bell',       'alarm/index',         0, 0, '告警中心菜单'),
-  (640,  0,   'product:view',          '产品管理',   1, 'DEVICE',   'product',       6, 'goods',      'product/index',       0, 0, '产品管理菜单'),
-  (650,  0,   'device:view',           '设备管理',   1, 'DEVICE',   'device',        7, 'cpu',        'device/index',        0, 0, '设备管理菜单'),
-  (660,  0,   'strategy:view',         '策略管理',   1, 'STRATEGY', 'ems/strategy',  8, 'operation',  'ems/strategy/index',  0, 0, '策略管理菜单'),
-  (670,  0,   'plan:view',             '充放电计划', 1, 'STRATEGY', 'ems/plan',      9, 'date-range', 'ems/plan/index',      0, 0, '充放电计划菜单'),
-  (680,  0,   'constraint:view',       '安全约束',   1, 'STRATEGY', 'ems/constraint', 10, 'lock', 'ems/constraint/index', 0, 0, '安全约束菜单'),
+  (610,  700,  'shadow:view',           '影子',       1, 'DEVICE',   'shadow',        3, 'connection', 'shadow/index',        0, 0, '影子菜单'),
+  (620,  700,  'command:view',          '指令中心',   1, 'DEVICE',   'command',       4, 'promotion',  'command/index',       0, 0, '指令中心菜单'),
+  (630,  700,  'alarm:view',            '告警中心',   1, 'ALARM',    'alarm',         5, 'bell',       'alarm/index',         0, 0, '告警中心菜单'),
+  (640,  690,  'product:view',          '产品管理',   1, 'DEVICE',   'product',       6, 'goods',      'product/index',       0, 0, '产品管理菜单'),
+  (650,  690,  'device:view',           '设备管理',   1, 'DEVICE',   'device',        7, 'cpu',        'device/index',        0, 0, '设备管理菜单'),
+  (660,  710,  'strategy:view',         '策略管理',   1, 'STRATEGY', 'ems/strategy',  8, 'operation',  'ems/strategy/index',  0, 0, '策略管理菜单'),
+  (670,  710,  'plan:view',             '充放电计划', 1, 'STRATEGY', 'ems/plan',      9, 'date-range', 'ems/plan/index',      0, 0, '充放电计划菜单'),
+  (680,  710,  'constraint:view',       '安全约束',   1, 'STRATEGY', 'ems/constraint', 10, 'lock', 'ems/constraint/index', 0, 0, '安全约束菜单'),
   -- 基础档案目录（单位管理 + 电站管理）
   (2,    0,   'archive',               '基础档案',   1, NULL,     'archive',           10, 'office-building', NULL,                      0, 0, '基础档案目录'),
   (400,  2,   'system:enterprise:list','单位管理',   1, NULL,     'archive/enterprise', 1, 'office-building', 'archive/enterprise/index', 0, 0, '单位管理菜单'),

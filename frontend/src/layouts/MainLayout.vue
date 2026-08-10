@@ -30,14 +30,32 @@ interface MenuItem {
 
 const menus: MenuItem[] = [
   { path: '/dashboard', title: '设备监控' },
-  { path: '/shadow', title: '影子' },
-  { path: '/command', title: '指令中心' },
-  { path: '/alarm', title: '告警中心' },
-  { path: '/product', title: '产品管理' },
-  { path: '/device', title: '设备管理' },
-  { path: '/ems/strategy', title: '策略管理' },
-  { path: '/ems/plan', title: '充放电计划' },
-  { path: '/ems/constraint', title: '安全约束' },
+  {
+    group: '/device',
+    title: '设备资产',
+    children: [
+      { path: '/product', title: '产品管理' },
+      { path: '/device', title: '设备管理' },
+    ],
+  },
+  {
+    group: '/operation',
+    title: '设备运维',
+    children: [
+      { path: '/shadow', title: '影子' },
+      { path: '/command', title: '指令中心' },
+      { path: '/alarm', title: '告警中心' },
+    ],
+  },
+  {
+    group: '/ems',
+    title: 'EMS 能源管理',
+    children: [
+      { path: '/ems/strategy', title: '策略管理' },
+      { path: '/ems/constraint', title: '安全约束' },
+      { path: '/ems/plan', title: '充放电计划' },
+    ],
+  },
   {
     group: '/archive',
     title: '基础档案',
