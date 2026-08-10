@@ -248,6 +248,31 @@ public class SessionStore {
         return result;
     }
 
+    /** 查看离线队列队首（不删除）。队列空返回 message=null 且 skipped=false；非法消息已删除返回 skipped=true */
+    public OfflinePeek peekOfflineFirst(String deviceKey) {
+        String key = BrokerKeys.offline(deviceKey);
+        List<String> values = redis.opsForList().range(key, 0, 0);
+        if (values == null || values.isEmpty()) {
+            return new OfflinePeek(null, false);
+        }
+        try {
+            return new OfflinePeek(objectMapper.readValue(values.get(0), OfflineMessage.class), false);
+        } catch (Exception e) {
+            log.warn("[SessionStore] 丢弃非法离线消息 key={}", deviceKey);
+            removeOfflineFirst(deviceKey);
+            return new OfflinePeek(null, true);
+        }
+    }
+
+    /** 删除离线队列队首（逐条确认投递成功后调用）；LTRIM key 1 -1，拉空即清 key */
+    public void removeOfflineFirst(String deviceKey) {
+        redis.opsForList().trim(BrokerKeys.offline(deviceKey), 1, -1);
+    }
+
+    /** 离线队首窥视结果：message=null 且 skipped=false 表示队列空 */
+    public record OfflinePeek(OfflineMessage message, boolean skipped) {
+    }
+
     /** 会话元数据是否存在（CONNACK sessionPresent 判定） */
     public boolean existsSession(String deviceKey) {
         return Boolean.TRUE.equals(redis.hasKey(BrokerKeys.session(deviceKey)));

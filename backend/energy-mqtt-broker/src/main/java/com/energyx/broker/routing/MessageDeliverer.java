@@ -469,8 +469,19 @@ public class MessageDeliverer {
      * 导致通配订阅下离线消息被静默丢弃的缺陷。
      */
     public void deliverOfflineQueue(Session session) {
-        List<OfflineMessage> queue = sessionStore.popOffline(session.getDeviceKey());
-        for (OfflineMessage m : queue) {
+        String deviceKey = session.getDeviceKey();
+        // 逐条确认投递（可靠性）：先 peek 队首，投递成功（QoS1/2 进入 inflight 由持久化续传兜底，
+        // QoS0 写出）才 LTRIM 删除该条；连接中途断开时未处理消息保留在 Redis 队列，下次重连继续补发，
+        // 替代原先「LRANGE+DEL 整批取走」导致的断连丢消息。
+        while (session.isOnline()) {
+            SessionStore.OfflinePeek peek = sessionStore.peekOfflineFirst(deviceKey);
+            if (peek.message() == null) {
+                if (peek.skipped()) {
+                    continue; // 非法消息已删除，继续处理下一条
+                }
+                break; // 队列已空
+            }
+            OfflineMessage m = peek.message();
             int effQos = -1;
             for (MqttSubscription sub : session.getSubscriptions().values()) {
                 if (TopicMatcher.matches(m.getTopic(), sub.getTopicFilter())) {
@@ -478,11 +489,13 @@ public class MessageDeliverer {
                 }
             }
             if (effQos < 0) {
-                log.debug("[Deliver] 离线消息无匹配订阅，跳过 deviceKey={} topic={}",
-                        session.getDeviceKey(), m.getTopic());
-                continue; // 订阅已变化，跳过
+                log.debug("[Deliver] 离线消息无匹配订阅，删除 deviceKey={} topic={}",
+                        deviceKey, m.getTopic());
+                sessionStore.removeOfflineFirst(deviceKey); // 订阅已变化，直接跳过并删除
+                continue;
             }
             deliverToSession(session, m.getTopic(), m.payload(), effQos, false);
+            sessionStore.removeOfflineFirst(deviceKey); // 投递已接管（inflight/写出），确认删除
         }
     }
 

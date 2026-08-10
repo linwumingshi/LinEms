@@ -121,4 +121,13 @@ public class BrokerProperties {
 
     /** 认证并发上限（P2-8 认证风暴防护）：同时进行中的认证请求数，超限新连接直接拒绝 */
     private int authMaxConcurrent = 2_000;
+
+    /** 会话恢复并发上限（重连风暴防护）：同时执行的订阅恢复/inflight 续传/离线补发任务数，超限延迟重试 */
+    private int sessionRestoreMaxConcurrent = 1_000;
+
+    /** 会话恢复限流重试延迟（秒） */
+    private int sessionRestoreRetryDelaySeconds = 2;
+
+    /** 会话恢复最大重试次数（防止限流期间任务无限堆积） */
+    private int sessionRestoreMaxAttempts = 3;
 }

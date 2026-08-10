@@ -105,6 +105,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private final AtomicInteger rawConnections = new AtomicInteger();
     /** 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴 */
     private final java.util.concurrent.Semaphore authSlots;
+    /** 会话恢复并发信号量（重连风暴防护）：控制同时执行的恢复任务数，超限延迟重试 */
+    private final java.util.concurrent.Semaphore sessionRestoreSlots;
 
     public MqttChannelInboundHandler(DeviceAuthService authService,
                                      SessionRegistry sessionRegistry,
@@ -135,6 +137,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         this.executor = executor;
         this.scheduler = scheduler;
         this.authSlots = new java.util.concurrent.Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
+        this.sessionRestoreSlots = new java.util.concurrent.Semaphore(
+                Math.max(1, properties.getSessionRestoreMaxConcurrent()));
     }
 
     // ---------------- 连接生命周期 ----------------
@@ -489,8 +493,35 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         stats.recordAccepted();
         log.info("[Broker] 设备上线 deviceKey={} version={} remote={}", deviceKey, p.version, p.remoteIp);
 
-        // 异步恢复 + 上线通知：Redis/Kafka 阻塞操作全部走业务线程池
-        executor.execute(() -> {
+        // 异步恢复 + 上线通知：Redis/Kafka 阻塞操作全部走业务线程池。
+        // 重连风暴防护（可靠性）：恢复任务受信号量并发限流，超限延迟重试而非丢弃——
+        // 海量设备同时重连（断电恢复/基站批量上线）时恢复任务排开执行，不把 executor 打满。
+        executor.execute(() -> runSessionRestore(p, session, cred, 0));
+    }
+
+    /**
+     * 会话恢复任务（限流 + 延迟重试）。
+     *
+     * <p>恢复内容包括：clean 会话清理残留 / 持久会话订阅加载、inflight 续传、离线队列补发、
+     * 上线通知。并发超过 {@code session-restore-max-concurrent} 时按配置延迟重试（默认 2s，
+     * 最多 3 次），限流期间不丢弃恢复任务——重连风暴下表现为「连接先建立、会话逐步恢复」，
+     * 而非恢复任务被线程池拒绝策略直接丢弃。</p>
+     */
+    private void runSessionRestore(ConnectParams p, Session session, DeviceCredential cred, int attempt) {
+        if (attempt >= properties.getSessionRestoreMaxAttempts()) {
+            log.warn("[Broker] 会话恢复重试耗尽（限流持续）deviceKey={}，下次重连再恢复", session.getDeviceKey());
+            return;
+        }
+        // 无参 tryAcquire 不抛 InterruptedException，非阻塞快速判定
+        if (!sessionRestoreSlots.tryAcquire()) {
+            log.info("[Broker] 会话恢复并发受限，{}s 后重试 deviceKey={} attempt={}",
+                    properties.getSessionRestoreRetryDelaySeconds(), session.getDeviceKey(), attempt + 1);
+            scheduler.schedule(() -> runSessionRestore(p, session, cred, attempt + 1),
+                    properties.getSessionRestoreRetryDelaySeconds(), TimeUnit.SECONDS);
+            return;
+        }
+        try {
+            String deviceKey = session.getDeviceKey();
             try {
                 if (p.cleanSession) {
                     sessionStore.deleteSession(deviceKey);
@@ -513,7 +544,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             } catch (Exception e) {
                 log.error("[Broker] 上线通知失败 deviceKey={}", deviceKey, e);
             }
-        });
+        } finally {
+            sessionRestoreSlots.release();
+        }
     }
 
     private void kickRemote(String ownerNode, String deviceKey) {
