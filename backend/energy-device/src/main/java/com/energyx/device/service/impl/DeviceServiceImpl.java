@@ -150,6 +150,8 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 					query.getDeviceType())
 			.eq(query.getParentId() != null, Device::getParentId, query.getParentId())
 			.eq(query.getStatus() != null, Device::getStatus, query.getStatus())
+			.eq(query.getProductKey() != null && !query.getProductKey().isBlank(), Device::getProductKey,
+					query.getProductKey())
 			.like(query.getKeyword() != null && !query.getKeyword().isBlank(), Device::getDeviceName,
 					query.getKeyword())
 			.orderByAsc(Device::getSort)

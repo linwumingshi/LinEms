@@ -1,10 +1,40 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { deviceApi } from '@/api/device'
+import { productApi } from '@/api/product'
 import { shadowApi } from '@/api/shadow'
-import type { DesiredResult, ShadowView } from '@/types/models'
+import type { DesiredResult, Device, Product, ShadowView } from '@/types/models'
 
+// ---------------- 产品/设备联动选择 ----------------
+const selectedProductKey = ref('')
+const productOptions = ref<Product[]>([])
+const deviceOptions = ref<Device[]>([])
 const deviceId = ref('')
+
+async function loadProducts(): Promise<void> {
+  try {
+    const page = await productApi.page({ pageNum: 1, pageSize: 200 })
+    productOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`产品加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+async function onProductChange(productKey: string): Promise<void> {
+  deviceId.value = ''
+  deviceOptions.value = []
+  if (!productKey) return
+  try {
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 200, productKey })
+    deviceOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`设备加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+onMounted(() => void loadProducts())
+
 const loading = ref(false)
 const view = ref<ShadowView | null>(null)
 const lastDelta = ref<DesiredResult | null>(null)
@@ -21,9 +51,9 @@ const reportedKeys = computed(() => (view.value ? Object.keys(view.value.reporte
 const desiredKeys = computed(() => (view.value ? Object.keys(view.value.desired) : []))
 
 function parseDeviceId(): string | null {
-  const v = deviceId.value.trim()
+  const v = deviceId.value
   if (!v || !/^\d+$/.test(v)) {
-    ElMessage.warning('请输入合法的设备 ID')
+    ElMessage.warning('请选择设备')
     return null
   }
   return v
@@ -120,13 +150,29 @@ function display(v: unknown): string {
         <p class="ex-sub">设备上报状态（reported）与平台期望状态（desired）的双端比对与期望下发</p>
       </div>
       <el-form inline class="query-bar" @submit.prevent>
-        <el-form-item label="设备 ID" class="qi">
-          <el-input
+        <el-form-item label="产品" class="qi">
+          <el-select
+            v-model="selectedProductKey"
+            placeholder="选择产品"
+            filterable
+            clearable
+            style="width: 180px"
+            @change="onProductChange"
+          >
+            <el-option v-for="p in productOptions" :key="p.productKey" :label="p.productName" :value="p.productKey" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="设备" class="qi">
+          <el-select
             v-model="deviceId"
-            placeholder="请输入设备ID"
+            placeholder="选择设备"
+            filterable
             clearable
             style="width: 220px"
-          />
+            :disabled="!selectedProductKey"
+          >
+            <el-option v-for="d in deviceOptions" :key="d.deviceId" :label="d.deviceName" :value="d.deviceId" />
+          </el-select>
         </el-form-item>
         <el-button type="primary" :loading="loading" @click="query">查询影子</el-button>
       </el-form>

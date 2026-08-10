@@ -3,13 +3,41 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { alarmApi } from '@/api/alarm'
+import { deviceApi } from '@/api/device'
+import { productApi } from '@/api/product'
 import AlarmLevelTag from '@/components/AlarmLevelTag.vue'
 import { useAlarmStore } from '@/stores/alarm'
-import type { AlarmRecord, AlarmRule } from '@/types/models'
+import type { AlarmRecord, AlarmRule, Device, Product } from '@/types/models'
 import { statusTag, statusText, toLocal, tsToLocal, typeText } from '@/utils/alarmFormat'
 
 const alarmStore = useAlarmStore()
 const { liveEvents, connected } = storeToRefs(alarmStore)
+
+// ---------------- 产品/设备联动选择（筛选） ----------------
+const selectedProductKey = ref('')
+const productOptions = ref<Product[]>([])
+const deviceOptions = ref<Device[]>([])
+
+async function loadProducts(): Promise<void> {
+  try {
+    const page = await productApi.page({ pageNum: 1, pageSize: 200 })
+    productOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`产品加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+async function onProductChange(productKey: string): Promise<void> {
+  filters.deviceId = undefined
+  deviceOptions.value = []
+  if (!productKey) return
+  try {
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 200, productKey })
+    deviceOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`设备加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
 
 // ---------------- 查询条件 ----------------
 const filters = reactive<{
@@ -124,7 +152,10 @@ function extText(r: AlarmRecord): string {
     .join('，')
 }
 
-onMounted(() => void load())
+onMounted(() => {
+  void load()
+  void loadProducts()
+})
 </script>
 
 <template>
@@ -199,8 +230,27 @@ onMounted(() => void load())
             <el-option label="已确认" :value="2" />
           </el-select>
         </el-form-item>
-        <el-form-item label="设备ID">
-          <el-input v-model="filters.deviceId" placeholder="全部" clearable style="width: 160px" />
+        <el-form-item label="设备">
+          <el-select
+            v-model="selectedProductKey"
+            placeholder="产品"
+            clearable
+            filterable
+            style="width: 130px"
+            @change="onProductChange"
+          >
+            <el-option v-for="p in productOptions" :key="p.productKey" :label="p.productName" :value="p.productKey" />
+          </el-select>
+          <el-select
+            v-model="filters.deviceId"
+            placeholder="设备"
+            clearable
+            filterable
+            style="width: 150px; margin-left: 6px"
+            :disabled="!selectedProductKey"
+          >
+            <el-option v-for="d in deviceOptions" :key="d.deviceId" :label="d.deviceName" :value="d.deviceId" />
+          </el-select>
         </el-form-item>
         <el-form-item label="触发时间">
           <el-date-picker

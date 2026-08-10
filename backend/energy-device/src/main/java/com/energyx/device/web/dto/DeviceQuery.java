@@ -26,4 +26,7 @@ public class DeviceQuery {
 
 	private Long enterpriseId;
 
+	/** 产品标识过滤（前端产品联动选择） */
+	private String productKey;
+
 }

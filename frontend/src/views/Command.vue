@@ -1,13 +1,53 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { commandApi } from '@/api/command'
-import type { CommandView } from '@/types/models'
+import { deviceApi } from '@/api/device'
+import { productApi } from '@/api/product'
+import type { CommandView, Device, Product } from '@/types/models'
 import { toLocal } from '@/utils/alarmFormat'
+
+// ---------------- 产品/设备联动选择 ----------------
+const productOptions = ref<Product[]>([])
+const deviceOptions = ref<Device[]>([])
+const loadingProduct = ref(false)
+const loadingDevice = ref(false)
+
+async function loadProducts(): Promise<void> {
+  loadingProduct.value = true
+  try {
+    const page = await productApi.page({ pageNum: 1, pageSize: 200 })
+    productOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`产品加载失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    loadingProduct.value = false
+  }
+}
+
+async function onProductChange(productKey: string): Promise<void> {
+  form.value.deviceName = ''
+  deviceOptions.value = []
+  if (!productKey) return
+  loadingDevice.value = true
+  try {
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 200, productKey })
+    deviceOptions.value = page.records ?? []
+  } catch (e) {
+    ElMessage.error(`设备加载失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    loadingDevice.value = false
+  }
+}
+
+onMounted(() => {
+  void loadProducts()
+  if (form.value.productKey) void onProductChange(form.value.productKey)
+})
 
 // ---------------- 下发表单 ----------------
 const form = ref({
-  productKey: 'std-energy-storage',
+  productKey: '',
   deviceName: '',
   command: 'setPower',
   commandType: 2,
@@ -133,11 +173,21 @@ const detailError = computed(() => (detail.value?.errorMsg ? `${detail.value.err
           <h2 class="ex-card-title">指令下发</h2>
         </div>
         <el-form label-width="110px" size="default" class="command-form">
-          <el-form-item label="productKey" required>
-            <el-input v-model="form.productKey" placeholder="产品标识" />
+          <el-form-item label="产品" required>
+            <el-select
+              v-model="form.productKey"
+              placeholder="选择产品"
+              filterable
+              style="width: 100%"
+              @change="onProductChange"
+            >
+              <el-option v-for="p in productOptions" :key="p.productKey" :label="p.productName" :value="p.productKey" />
+            </el-select>
           </el-form-item>
-          <el-form-item label="deviceName" required>
-            <el-input v-model="form.deviceName" placeholder="设备名（设备表 device_name）" />
+          <el-form-item label="设备" required>
+            <el-select v-model="form.deviceName" placeholder="选择设备" filterable style="width: 100%" :disabled="!form.productKey">
+              <el-option v-for="d in deviceOptions" :key="d.deviceName" :label="d.deviceName" :value="d.deviceName" />
+            </el-select>
           </el-form-item>
           <el-form-item label="命令">
             <el-select v-model="form.command" allow-create filterable style="width: 100%">
