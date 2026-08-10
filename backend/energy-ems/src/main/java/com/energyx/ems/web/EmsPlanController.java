@@ -33,8 +33,10 @@ public class EmsPlanController {
 
 	@GetMapping("/page")
 	public Result<PageResult<EmsPlan>> page(@RequestParam(defaultValue = "1") long pageNo,
-			@RequestParam(defaultValue = "10") long pageSize, @RequestParam(required = false) Long stationId) {
-		return Result.ok(PageResult.of(service.page(pageNo, pageSize, stationId)));
+			@RequestParam(defaultValue = "10") long pageSize, @RequestParam(required = false) Long stationId,
+			@RequestParam(required = false) Integer status) {
+		// status 可选：前端状态下拉为空时传 null，查询不过滤
+		return Result.ok(PageResult.of(service.page(pageNo, pageSize, stationId, status)));
 	}
 
 	@GetMapping("/{planId}/points")

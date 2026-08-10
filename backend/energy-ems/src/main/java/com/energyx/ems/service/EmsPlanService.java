@@ -337,9 +337,18 @@ public class EmsPlanService {
 		}
 	}
 
-	public Page<EmsPlan> page(long pageNo, long pageSize, Long stationId) {
+	/**
+	 * 分页查询充放电计划，支持按电站与状态筛选。
+	 * @param pageNo 页码，从 1 开始
+	 * @param pageSize 每页条数
+	 * @param stationId 电站 ID，为 null 时不过滤
+	 * @param status 计划状态，为 null 时不过滤
+	 * @return 计划分页结果
+	 */
+	public Page<EmsPlan> page(long pageNo, long pageSize, Long stationId, Integer status) {
 		return planMapper.selectPage(new Page<>(pageNo, pageSize),
 				new LambdaQueryWrapper<EmsPlan>().eq(stationId != null, EmsPlan::getStationId, stationId)
+					.eq(status != null, EmsPlan::getStatus, status)
 					.orderByDesc(EmsPlan::getPlanDate));
 	}
 
