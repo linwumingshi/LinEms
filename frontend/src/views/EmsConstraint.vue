@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import type { EmsConstraint, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
+
+const route = useRoute()
 
 const stations = ref<Station[]>([])
 const stationId = ref('')
@@ -96,6 +99,12 @@ async function save(): Promise<void> {
 onMounted(async () => {
   try {
     stations.value = await loadStations()
+    // 支持 ?station=xxx 直达（电站管理「安全约束」按钮跳转），自动选中并加载
+    const preset = route.query.station
+    if (preset) {
+      stationId.value = String(preset)
+      void onStationChange(stationId.value)
+    }
   } catch {
     // 电站加载失败由页面空态兜底
   }

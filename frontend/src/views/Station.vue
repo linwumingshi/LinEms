@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { emsApi } from '@/api/ems'
 import { stationApi } from '@/api/station'
 import { enterpriseApi } from '@/api/system'
 import type { Station, StationSaveReq, SysEnterprise } from '@/types/models'
 import { GRID_TYPE_OPTIONS, stationStatusTag, stationStatusText } from '@/utils/dicts'
+
+const router = useRouter()
+
+/** 电站 → 是否已配置安全约束（并行探测当前页电站，供状态列展示） */
+const constraintStatus = ref<Record<string, boolean>>({})
 
 const loading = ref(false)
 const list = ref<Station[]>([])
@@ -31,8 +38,19 @@ async function load() {
     })
     list.value = data.records
     total.value = data.total
+    void loadConstraintStatus()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
   finally { loading.value = false }
+}
+
+/** 并行探测当前页电站约束是否存在（有约束接口成功 / 无约束业务错误） */
+async function loadConstraintStatus(): Promise<void> {
+  const ids = list.value.map((s) => String(s.stationId))
+  if (ids.length === 0) return
+  const results = await Promise.allSettled(ids.map((id) => emsApi.constraintGet(id)))
+  const map: Record<string, boolean> = {}
+  ids.forEach((id, i) => { map[id] = results[i].status === 'fulfilled' })
+  constraintStatus.value = map
 }
 function search() { pageNo.value = 1; void load() }
 function resetQuery() { query.value = { keyword: '', enterpriseId: undefined, status: undefined, gridType: '' }; pageNo.value = 1; void load() }
@@ -154,9 +172,16 @@ onMounted(async () => {
             <el-tag :type="stationStatusTag(row.status)" size="small">{{ stationStatusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column label="安全约束" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="constraintStatus[String(row.stationId)]" type="success" size="small">已配置</el-tag>
+            <el-tag v-else type="warning" size="small">未配置</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="primary" @click="router.push(`/ems/constraint?station=${row.stationId}`)">安全约束</el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
