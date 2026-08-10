@@ -31,3 +31,6 @@ test/stress/results/
 .idea/
 .claude/settings.local.json
 *.iml
+
+# WorkBuddy 会话数据（memory/任务状态等，不入库）
+.workbuddy/
