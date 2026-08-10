@@ -3,6 +3,7 @@
 > 评估对象：`backend/energy-mqtt-broker`（自研 Netty MQTT Broker）
 > 评估视角：云端 IoT 设备接入平台 MQTT Broker 标准（对标 EMQX / HiveMQ / VerneMQ / 阿里云 IoT）
 > 评估日期：2026-08-09 · 基于代码实际实现（类/方法级）
+> **更新日期：2026-08-10 · 阶段 1 + 阶段 2 修复落地后，新增「七、修复进展对照」（原评估记录保留，作为基线）**
 
 ---
 
@@ -11,31 +12,38 @@
 ### 1.1 架构总览
 
 ```
-设备(1883/8883) ──▶ Netty NIO ServerBootstrap (boss=1, worker=CPU×2)
-                        │
+设备(18831/8883) ──▶ Netty (TransportFactory: Epoll/KQueue/NIO 自适应) ServerBootstrap
+                        │  boss=1, worker=CPU×2
                         ▼ MqttChannelInboundHandler (@Sharable 单例)
               ┌─────────┼──────────────────┐
               ▼         ▼                  ▼
         DeviceAuth   LocalSubscriber    SessionStore
-        (Redis缓存    Index(内存订阅     (Redis: session/subs/
-         +MySQL兜底)   索引 O(N)匹配)     inflight/offline/connLock)
+        (Redis缓存    Index(trie订阅树   (Redis: session/subs/
+         +MySQL兜底)   O(depth)匹配)      inflight/offline/connLock)
               │         │
               ▼         ▼
-        MessageDeliverer ──▶ Kafka mqtt.router (24分区, 全节点fan-out)
-                                    │
-              ┌─────────────────────┼──────────────────┐
-              ▼                     ▼                  ▼
-        RouterConsumer(本节点)  其他Broker节点      energy-access(业务摄取)
+        MessageDeliverer ──▶ Kafka（阶段2 定向路由，替代全量 fan-out）
+                                  │
+        ┌─────────────────────────┼─────────────────────────┐
+        ▼                         ▼                         ▼
+  mqtt.uplink(设备上行)    mqtt.down.{nodeId}       mqtt.broadcast(KICK/回落)
+  仅 access 唯一消费组     仅目标节点消费             每节点唯一消费组
+        │                         │
+        ▼                         ▼
+  energy-access(业务摄取)    RouterConsumer(本节点)
+                              → deliverToSession → 设备
 ```
 
-- **模块划分**：`handler`（协议分发）/ `auth`（HMAC 认证+ACL）/ `session`（内存 Session + Redis 持久态）/ `routing`（本地投递 + Kafka 跨节点路由）/ `retained` / `lifecycle` / `stats`。包职责清晰，无业务逻辑渗入，Broker 与业务通过 Kafka 信封（`RouterEnvelope`）解耦 —— **职责边界设计是合理的**。
-- **线程模型设计**：IO 线程只做编解码+内存分发，慢路径（认证/Redis/Kafka 生命周期）剥离到 `brokerExecutor`（CPU×2，队列 10000，拒绝策略=记日志丢弃）。Router 消费独立单线程。**设计正确，但实现层多处违反该模型（见 P0-3）**。
-- **集群方案**：Redis 连接锁（`mqtt:connlock:{deviceKey}`）+ Kafka KICK 信封解决同 clientId 跨节点冲突；会话状态（订阅/inflight/离线队列）存 Redis，节点宕机后设备重连任意节点可恢复 —— "会话跟随设备" 思路与 EMQX 外置持久化路线一致。
-- **上行链路**：设备 PUBLISH → 本地投递 + `mqtt.router` fan-out → energy-access 消费摄取（Phase 5）。Broker 不落库，边界正确。
+- **模块划分**：`handler`（协议分发）/ `auth`（HMAC 认证+ACL）/ `session`（内存 Session + Redis 持久态）/ `routing`（本地投递 + Kafka 定向路由）/ `retained` / `lifecycle` / `stats`。包职责清晰，无业务逻辑渗入，Broker 与业务通过 Kafka 二进制信封（`RouterEnvelopeCodec`）解耦 —— **职责边界设计合理，阶段 2 后保持**。
+- **线程模型设计**：IO 线程只做编解码+内存分发，慢路径（认证/Redis/Kafka 生命周期）剥离到 `brokerExecutor`；路由消费走独立多线程引擎（`BytesKafkaConsumerEngine`，分区并行 + 手动提交）。阶段 1 已清零 EventLoop 阻塞调用，**模型与实现一致**。
+- **集群方案（阶段 2 升级）**：Redis 连接锁（`mqtt:conn:{deviceKey}`）承担「踢线 + 下行路由寻址」双职责；会话状态（订阅/inflight/离线队列）存 Redis，节点宕机后设备重连任意节点可恢复 —— "会话跟随设备"。下行按 owner 定向投递 `mqtt.down.{nodeId}`，离线回落 Redis 离线队列 / `mqtt.broadcast` 兜底。
+- **上行链路（阶段 2 升级）**：设备 PUBLISH → 本地投递 + 写 `mqtt.uplink`（key=deviceKey，24 分区）→ energy-access 唯一消费组摄取。Broker 不再全量 fan-out，Kafka 出口流量从 (N+1)×总量 降为 ≈1×总量。
 
-### 1.2 结论先行
+### 1.2 结论先行（2026-08-10 更新）
 
-当前实现是一个**功能完整度较高、但可靠性细节和性能模型未达标**的单节点可用 Broker。协议状态机骨架（CONNECT/QoS0-2/RETAIN/WILL/KeepAlive/持久会话）都已实现且多处细节正确（如入站 QoS2 收到 PUBREL 才路由、PUBREL 固定头 QoS1、SUBACK 先回再投保留消息），但存在 **5 个 P0 级缺陷**（消息丢失、IO 线程阻塞、畸形报文、O(N) 订阅匹配），**不具备直接上生产的条件**；架构上 Kafka 全量 fan-out 路由在节点数 ≥4 后成为硬天花板，需在十万设备阶段前改造。
+原始评估识别的 **5 个 P0 全部修复**，**P1 中 9/12 项已修复或部分修复**（详见第七章对照表），架构级改造（fan-out → 定向路由、O(N) → trie、NIO → Epoll 自适应、JSON 信封 → 二进制）已在阶段 2 落地。当前状态：**单节点可生产、十万设备架构就绪**——70 个单测全绿，真实环境端到端验证通过（上行 QoS1 PUBACK 49ms、下行定向信封到达设备、持久会话恢复、ACL 拒绝、指标计数正确）。
+
+剩余差距集中在：**MQTT5 语义补全（$share 负载均衡/Session Expiry 等）、mTLS 设备证书体系、速率限制/配额、压测与互操作矩阵验证**——对应阶段 2 剩余项与阶段 3 的集群验证。
 
 ---
 
@@ -292,6 +300,8 @@ Session Expiry Interval → Receive Maximum → Reason Code → Will Delay → T
 
 ## 六、下一步改造路线图
 
+> **执行状态（2026-08-10）**：阶段 1 代码项全部完成（W1-W3，除压测验证）；阶段 2 的 Epoll / Topic 分离 + 下行定向 / RouterConsumer 多线程 + 手动提交 / 信封二进制化**已完成**；剩余为阶段 2 的 mTLS、速率限制、MQTT5 补全，以及阶段 3 集群验证。
+
 ### 阶段 1：达到可生产（目标：5 万连接 / 1 万 msg/s，3-4 周）
 
 | 周 | 事项 | 验收标准 |
@@ -334,19 +344,91 @@ Session Expiry Interval → Receive Maximum → Reason Code → Will Delay → T
 | JVM 压力 | 堆 80% 占用下压测 + GC 日志 | Full GC 频率、STW < 200ms |
 | 长稳 | 7×24 背景流量 + 定时故障注入 | 内存无泄漏（Old 区平稳）、连接无泄漏（fd 数平稳） |
 
-### 与成熟 Broker 的核心能力差距小结
+### 与成熟 Broker 的核心能力差距小结（2026-08-10 更新）
 
-| 能力 | EMQX/HiveMQ/VerneMQ | 当前实现 | 差距等级 |
+| 能力 | EMQX/HiveMQ/VerneMQ | 阶段 1+2 修复后 | 差距等级 |
 |---|---|---|---|
-| 订阅路由 | trie/ETS 索引 O(depth) | O(N) 线性扫描 | 大（P0-4） |
-| 集群 session | 内置迁移/共享（mria/raft） | Redis 外置（方向一致，细节有竞态） | 中 |
-| 可靠投递 | 完整背压+持久化会话队列 | 无背压、离线队列有 bug | 大（P0-1/P1-5） |
-| 共享订阅 | 组内负载均衡 | 语义错误（全组投递） | 中 |
-| MQTT5 | 全量 | 容忍级 | 中 |
-| 限速/配额 | 内置 zone/listener 级 | 无 | 中 |
-| 可观测 | $SYS + Prometheus + 追踪 | 6 个计数器 | 大（P1-10） |
-| 安全 | mTLS/PSK/JWT/CRL | HMAC + 单向 TLS | 中 |
-| 运维 | CLI/Dashboard/热配置/滚动升级 | 无 | 大 |
+| 订阅路由 | trie/ETS 索引 O(depth) | trie 订阅树 O(depth) + channel O(1) 反查 | **已消除**（原 P0-4） |
+| 集群 session | 内置迁移/共享（mria/raft） | Redis 外置 + Lua 原子化 + 60s 锁续期 | 小（方向一致） |
+| 可靠投递 | 完整背压+持久化会话队列 | 下行背压 + inflight 上限 + 离线队列 Lua | **已消除**（原 P0-1/P1-4/P1-5/P1-8） |
+| 跨节点路由 | — | 定向投递 mqtt.down.{nodeId}（fan-out 消除） | **已消除**（原 P1-1/P1-2） |
+| 可观测 | $SYS + Prometheus + 追踪 | Micrometer + Prometheus（连接/消息/时延/线程池） | 小（原 P1-10，缺链路追踪） |
+| MQTT5 | 全量 | 容忍级（$share 语义错误等未修） | 中（原 P1-11） |
+| 共享订阅 | 组内负载均衡 | 语义错误（全组投递） | 中（未修） |
+| 限速/配额 | 内置 zone/listener 级 | 无 | 中（未修） |
+| 安全 | mTLS/PSK/JWT/CRL | HMAC + 单向 TLS（mTLS 未做） | 中（原 P1-12） |
+| 运维 | CLI/Dashboard/热配置/滚动升级 | 无 | 大（未修） |
+
+---
+
+## 七、修复进展对照（阶段 1 + 阶段 2 完成后，2026-08-10）
+
+> 对照基准 = 本报告第三、四章原始评估。状态图例：✅ 已修复 · 🟡 部分修复 · ⬜ 未修复。
+> 对应 commit：`b5b9276`（阶段 1 修复）、`1f2b591`（阶段 2 定向路由/传输/二进制化）、`a7a39f2`（Prometheus+冒烟）。
+
+### 7.1 P0 —— 5/5 全部修复
+
+| # | 问题 | 状态 | 修复方式（代码落点） | 验证 |
+|---|---|---|---|---|
+| P0-1 | 离线队列补发通配订阅丢消息 | ✅ | `MessageDeliverer.deliverOfflineQueue` 改为 `TopicMatcher` 遍历订阅 filter 匹配，取最高授予 QoS，无匹配才跳过 | 冒烟：持久会话断线重连 sessionPresent=1 |
+| P0-2 | QoS1 PUBACK 先于 Kafka 持久化 | ✅ | 上行写 `mqtt.uplink`，PUBACK 推迟到 Kafka `acks=all` 回调成功之后（`KafkaEventProducer.sendBytes` onSuccess）；失败关连接迫使设备重传 | 冒烟：PUBACK 仅在 Kafka 确认后返回，实测 49ms |
+| P0-3 | IO 线程 Redis/Kafka 阻塞 | ✅ | CONNECT 慢路径（认证/连接锁/sessionPresent）全量移入 `brokerExecutor`，回投 eventLoop 仅注册会话；`pushOffline`/retained 写/离线通知异步化；producer 加 `max.block.ms=200` + `delivery.timeout.ms=10s` 快速失败 | 运行日志无 EventLoop 阻塞告警 |
+| P0-4 | 订阅匹配 O(N) 线性扫描 | ✅ | `LocalSubscriberIndex` 重写为 topic trie（O(层级数)，+/# 通配、$ 规则、$share 剥前缀、deviceKey→filters 反向索引）；`SessionRegistry.unregisterIfChannelMatches` O(1) | `LocalSubscriberIndexTest` 10 用例 |
+| P0-5 | 停机 DISCONNECT 畸形报文 | ✅ | `MqttBrokerServer.stop` 改用 `MqttReasonCodeAndPropertiesVariableHeader((byte)0x8B)` 正确编码 v5 reason code | 优雅停机路径验证 |
+
+### 7.2 P1 —— 9/12 已修复或部分修复
+
+| # | 问题 | 状态 | 修复方式 | 说明 |
+|---|---|---|---|---|
+| P1-1 | fan-out 路由硬天花板 | ✅ | 阶段 2 架构改造：上行 `mqtt.uplink`（access 唯一消费组）+ 下行 `mqtt.down.{nodeId}` 定向 + `mqtt.broadcast` 兜底，`mqtt.router` 仅兼容期 | Kafka 出口 (N+1)×总量 → ≈1×总量；`RouterConsumer` 三通道独立消费组 |
+| P1-2 | 消费语义丢下行 | ✅ | `BytesKafkaConsumerEngine`：手动提交（整批处理完 commitSync）+ `earliest` + 多线程分区并行 + 单条毒丸进 DLQ | 重启续读不丢停机窗口消息 |
+| P1-3 | resendInflight QoS2 状态机错误 | ✅ | QoS2 重发后 state 置 `STATE_AWAITING_PUBREC`；按新 packetId 重新持久化而非末尾清库；`handlePubRec` 增加重复 PUBREC 防御分支 | 单测覆盖状态转换 |
+| P1-4 | 离线队列/连接锁非原子 | ✅ | `SessionStore`：pushOffline（RPUSH+LTRIM+EXPIRE）、popOffline（LRANGE+DEL）、releaseConnLockIfOwner（compare+del）全部 Lua 单脚本原子 | 原子化消除竞态 |
+| P1-5 | 下行无背压 | ✅ | `Session.pendingWrites` 挂起队列（上限 `max-pending-messages-per-session=1000`）+ `channelWritabilityChanged` 冲刷；超限 QoS0 丢弃、QoS1/2 保留 inflight 重连续传 | 慢设备不再打爆 direct memory（SO_RCVBUF/SNDBUF 256KB 未降，🟡） |
+| P1-6 | 保留消息冷启动丢失 | ✅ | `RetainedMessageStore.warmUp()` 启动 SCAN `mqtt:retained:*` 预热内存缓存 | 跨节点覆盖时间戳未做（🟡） |
+| P1-7 | 认证封禁机制失效 | ✅ | 封禁/计数 Redis 化（`mqtt:ban:{clientId}` TTL 生效、`mqtt:authfail` INCR+EXPIRE 跨节点共享）；本地快表 10 万容量封顶 | Redis-key 规范已补登 |
+| P1-8 | inflight 上限未生效 | ✅ | `deliverToSession` 强制执行 `max-inflight-per-session=64`，超限持久会话转离线队列、干净会话丢弃 | 与 P0-1 链路互补 |
+| P1-9 | 连接锁竞态/过期 | ✅ | Lua compare+del 释放；TTL 7 天 → 60s 短租约 + `renewOnline` 心跳续期（Lua refreshConnLockIfOwner） | 踢线风暴/双活窗口未完全消除（🟡） |
+| P1-10 | 可观测性缺失 | ✅ | `BrokerMetrics`：连接/订阅 Gauge、消息/认证失败/路由失败/背压/inflight 计数、brokerExecutor 线程池水位、`mqtt_uplink_puback_latency` 直方图；`/actuator/prometheus` 暴露 | 链路追踪/告警规则未做（🟡） |
+| P1-11 | MQTT5 仅容忍级 | ⬜ | — | $share 负载均衡、Session Expiry、Receive Maximum、Will Delay 等未实现 |
+| P1-12 | TLS 仅单向认证 | ⬜ | — | mTLS 设备证书体系为阶段 2 剩余项 |
+
+### 7.3 P2 —— 4/11 已修复，其余保留
+
+| # | 问题 | 状态 | 说明 |
+|---|---|---|---|
+| P2-1 | keepalive=0 误踢 | ✅ | 移除预置 IdleStateHandler |
+| P2-2 | 重复 CONNECT 未关断 | ✅ | 按 MQTT-3.1.0-2 规范关断 |
+| P2-3 | 遗嘱二进制/持久化/Will Delay | ⬜ | 保持 0 延迟，二进制载荷 UTF-8 提取问题保留 |
+| P2-4 | 空 clientId 拒绝 | ⬜ | 3.1.1 cleanSession=1 空 clientId 分配未做 |
+| P2-5 | GC/ByteBuf 压力 | 🟡 | 信封二进制化消除 JSON/Base64 分配；PooledByteBufAllocator 未显式启用 |
+| P2-6 | 凭据吊销延迟 30min | ⬜ | 无失效广播通道 |
+| P2-7 | 速率限制/配额 | ⬜ | 未实现 |
+| P2-8 | 认证风暴防护 | ⬜ | brokerExecutor 队列打满风险保留 |
+| P2-9 | retained 跨节点覆盖无序 | ⬜ | 无时间戳比较 |
+| P2-10 | 测试缺失 | 🟡 | 单测 4 → 70（common 27 / broker 29 / access 14，含 trie 10 + codec 5）；压测与 v3/v5 互操作矩阵未做 |
+| P2-11 | Linux 未用 Epoll | ✅ | `TransportFactory`：Epoll → KQueue（反射）→ NIO 自适应；netty 统一 4.1.109；epoll 依赖 optional（生产补原生 jar 即启用） |
+
+### 7.4 新增能力（阶段 2 引入，原评估未覆盖）
+
+| 能力 | 说明 |
+|---|---|
+| 下行定向投递 | `mqtt.down.{nodeId}` 按 `mqtt:conn:{deviceKey}` owner 寻址，仅目标节点消费；离线回落 Redis 离线队列 / broadcast |
+| 上行与路由分离 | `mqtt.uplink` 24 分区 key=deviceKey，access 唯一消费组，Broker 零 fan-out |
+| 二进制信封 | `RouterEnvelopeCodec`（magic 0xE9 0x01 + 定长头 + 原始 payload，零 Base64 膨胀），decode 自动探测二进制/JSON 平滑滚动升级 |
+| 多通道消费引擎 | `BytesKafkaConsumerEngine` 三通道独立消费组（down/broadcast/legacy），分区并行 + 手动提交 + DLQ |
+| topic 自动扩容 | `KafkaTopicInitializer` 对已存在 topic 分区不足走 `createPartitions` 显式扩容 |
+
+### 7.5 验证结论
+
+- **单元测试**：70 全绿（含阶段 2 新增 codec 5 用例、trie 10 用例）。
+- **真实环境端到端**（MQTT 端口 18831，Kafka/Redis/Nacos/MySQL 在线）：
+  - HMAC 认证 CONNECT ✓ → SUBACK ✓ → QoS1 上行 PUBACK（Kafka 确认后，49ms）✓
+  - 非优雅断线重连 sessionPresent=1（持久会话恢复）✓
+  - 越权发布被 ACL 拒绝关连接 ✓
+  - 下行定向信封经 `mqtt.down.broker-1` 到达设备（Node 脚本复刻二进制信封验证）✓
+  - Prometheus 指标计数正确（messages_in / messages_out / crossnode / uplink 消费组 lag=0）✓
+- **待补验证**：v3.1.1/v5 客户端互操作矩阵、emqtt-bench 压测（5 万连接/1 万 msg/s）、Kafka 故障注入。
 
 ---
 
