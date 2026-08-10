@@ -11,7 +11,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @MapperScan("com.energyx.station.mapper")
 public class EnergyStationApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(EnergyStationApplication.class, args);
-    }
+	public static void main(String[] args) {
+		SpringApplication.run(EnergyStationApplication.class, args);
+	}
+
 }

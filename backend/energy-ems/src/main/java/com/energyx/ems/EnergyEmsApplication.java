@@ -9,7 +9,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @MapperScan("com.energyx.ems.mapper")
 @EnableScheduling
 public class EnergyEmsApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(EnergyEmsApplication.class, args);
-    }
+
+	public static void main(String[] args) {
+		SpringApplication.run(EnergyEmsApplication.class, args);
+	}
+
 }

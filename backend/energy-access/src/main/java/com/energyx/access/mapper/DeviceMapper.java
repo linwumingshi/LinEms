@@ -12,12 +12,12 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface DeviceMapper {
 
-    @Select("""
-            SELECT device_id, tenant_id, enterprise_id, station_id, device_type, status
-            FROM iot_device
-            WHERE product_key = #{productKey} AND device_name = #{deviceName} AND deleted = 0
-            LIMIT 1
-            """)
-    DeviceInfo findByProductAndName(@Param("productKey") String productKey,
-                                    @Param("deviceName") String deviceName);
+	@Select("""
+			SELECT device_id, tenant_id, enterprise_id, station_id, device_type, status
+			FROM iot_device
+			WHERE product_key = #{productKey} AND device_name = #{deviceName} AND deleted = 0
+			LIMIT 1
+			""")
+	DeviceInfo findByProductAndName(@Param("productKey") String productKey, @Param("deviceName") String deviceName);
+
 }

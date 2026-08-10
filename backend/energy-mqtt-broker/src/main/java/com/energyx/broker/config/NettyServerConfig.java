@@ -24,132 +24,140 @@ import java.io.File;
 /**
  * Netty 服务端装配：事件循环组 + Pipeline 骨架（明文 1883 + 可选 TLS 8883）。
  *
- * <p>Pipeline：{@code [ssl] → MqttDecoder → MqttEncoder → IdleStateHandler → MqttChannelInboundHandler}。
- * IdleStateHandler 在 CONNECT 携带 keepalive 后按 1.5× 动态替换（见 handler）。
- * TLS 开启时（{@code energyx.broker.tls.enabled=true}）SslHandler 置于 pipeline 头部，其余与明文完全一致；
- * 两个 acceptor 共享同一 boss/worker 事件循环组与同一 {@code mqttHandler} 单例。</p>
+ * <p>
+ * Pipeline：{@code [ssl] → MqttDecoder → MqttEncoder → IdleStateHandler → MqttChannelInboundHandler}。
+ * IdleStateHandler 在 CONNECT 携带 keepalive 后按 1.5× 动态替换（见 handler）。 TLS
+ * 开启时（{@code energyx.broker.tls.enabled=true}）SslHandler 置于 pipeline 头部，其余与明文完全一致； 两个
+ * acceptor 共享同一 boss/worker 事件循环组与同一 {@code mqttHandler} 单例。
+ * </p>
  *
- * <p>传输层（阶段 2）：经 {@link TransportFactory} 自适应——Linux 有
- * netty-transport-native-epoll 时启用 Epoll（SO_REUSEPORT/零拷贝/批量唤醒），macOS 反射 KQueue，
- * 其余回退 NIO（Windows 开发机恒为 NIO）。TLS 用 JDK 默认 provider（RSA 自签），无 tcnative/BouncyCastle 依赖。</p>
+ * <p>
+ * 传输层（阶段 2）：经 {@link TransportFactory} 自适应——Linux 有 netty-transport-native-epoll 时启用
+ * Epoll（SO_REUSEPORT/零拷贝/批量唤醒），macOS 反射 KQueue， 其余回退 NIO（Windows 开发机恒为 NIO）。TLS 用 JDK 默认
+ * provider（RSA 自签），无 tcnative/BouncyCastle 依赖。
+ * </p>
  */
 @Configuration
 public class NettyServerConfig {
 
-    private static final Logger log = LoggerFactory.getLogger(NettyServerConfig.class);
+	private static final Logger log = LoggerFactory.getLogger(NettyServerConfig.class);
 
-    public static final String SSL_HANDLER_NAME = "ssl";
-    public static final String IDLE_HANDLER_NAME = "mqttIdleState";
-    public static final String MQTT_HANDLER_NAME = "mqttHandler";
+	public static final String SSL_HANDLER_NAME = "ssl";
 
-    private final BrokerProperties brokerProperties;
-    private final MqttChannelInboundHandler mqttHandler;
+	public static final String IDLE_HANDLER_NAME = "mqttIdleState";
 
-    public NettyServerConfig(BrokerProperties brokerProperties,
-                             MqttChannelInboundHandler mqttHandler) {
-        this.brokerProperties = brokerProperties;
-        this.mqttHandler = mqttHandler;
-    }
+	public static final String MQTT_HANDLER_NAME = "mqttHandler";
 
-    /** boss：accept 连接；worker：读/写事件循环（原生传输自适应） */
-    @Bean(name = "bossGroup", destroyMethod = "shutdownGracefully")
-    public EventLoopGroup bossGroup() {
-        return TransportFactory.newEventLoopGroup(1);
-    }
+	private final BrokerProperties brokerProperties;
 
-    @Bean(name = "workerGroup", destroyMethod = "shutdownGracefully")
-    public EventLoopGroup workerGroup() {
-        int threads = brokerProperties.getWorkerThreads();
-        if (threads <= 0) {
-            threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
-        }
-        log.info("[Broker] worker 线程数 = {}（传输={}）", threads, TransportFactory.detect());
-        return TransportFactory.newEventLoopGroup(threads);
-    }
+	private final MqttChannelInboundHandler mqttHandler;
 
-    /**
-     * 明文 1883 acceptor（共享配置骨架 + 无 SSL pipeline）。
-     * TLS 开启时与 {@link #mqttTlsServerBootstrap} 并存，构成双监听。
-     */
-    @Bean(destroyMethod = "config")
-    public ServerBootstrap mqttServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
-        return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(null));
-    }
+	public NettyServerConfig(BrokerProperties brokerProperties, MqttChannelInboundHandler mqttHandler) {
+		this.brokerProperties = brokerProperties;
+		this.mqttHandler = mqttHandler;
+	}
 
-    /**
-     * TLS 8883 服务端 SSLContext（仅 {@code energyx.broker.tls.enabled=true} 时存在）。
-     * 证书缺失/损坏在 Bean 创建期即 fail-fast（早于任何端口绑定）。
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "energyx.broker.tls", name = "enabled", havingValue = "true")
-    public SslContext brokerSslContext() throws Exception {
-        BrokerProperties.Tls tls = brokerProperties.getTls();
-        File cert = new File(tls.getCertChainFile());
-        File key = new File(tls.getPrivateKeyFile());
-        if (!cert.isFile() || !key.isFile()) {
-            throw new IllegalStateException("MQTT TLS 证书缺失: cert=" + cert.getAbsolutePath()
-                    + " key=" + key.getAbsolutePath() + "（先运行 deploy/scripts/gen-mqtt-certs.sh）");
-        }
-        SslContextBuilder builder = SslContextBuilder.forServer(cert, key);
-        // P1-12 mTLS：要求设备证书 + 校验其信任链；CN=clientId 绑定在 handler 握手后校验
-        if (tls.isClientAuth()) {
-            File trust = new File(tls.getTrustCertFile());
-            if (!trust.isFile()) {
-                throw new IllegalStateException("mTLS 设备 CA 证书缺失: " + trust.getAbsolutePath()
-                        + "（clientAuth=true 必须提供 trust-cert-file，见 gen-mqtt-certs.sh -c）");
-            }
-            builder.clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE).trustManager(trust);
-            log.info("[Broker] MQTT mTLS 双向认证已启用，设备 CA={}", trust);
-        }
-        log.info("[Broker] MQTT TLS 证书加载 {} / {}", cert, key);
-        return builder.build();
-    }
+	/** boss：accept 连接；worker：读/写事件循环（原生传输自适应） */
+	@Bean(name = "bossGroup", destroyMethod = "shutdownGracefully")
+	public EventLoopGroup bossGroup() {
+		return TransportFactory.newEventLoopGroup(1);
+	}
 
-    /**
-     * TLS 8883 acceptor（与明文共享 boss/worker 与 mqttHandler，仅 pipeline 头部多 SslHandler）。
-     */
-    @Bean(destroyMethod = "")
-    @ConditionalOnProperty(prefix = "energyx.broker.tls", name = "enabled", havingValue = "true")
-    public ServerBootstrap mqttTlsServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup,
-                                                  SslContext brokerSslContext) {
-        return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(brokerSslContext));
-    }
+	@Bean(name = "workerGroup", destroyMethod = "shutdownGracefully")
+	public EventLoopGroup workerGroup() {
+		int threads = brokerProperties.getWorkerThreads();
+		if (threads <= 0) {
+			threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
+		}
+		log.info("[Broker] worker 线程数 = {}（传输={}）", threads, TransportFactory.detect());
+		return TransportFactory.newEventLoopGroup(threads);
+	}
 
-    /** 共享 acceptor 骨架：event loop / channel / socket 选项 / 水位线（明文与 TLS 完全一致）。 */
-    private ServerBootstrap baseBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
-        return new ServerBootstrap()
-                .group(bossGroup, workerGroup)
-                .channel(TransportFactory.serverChannelClass())
-                .option(ChannelOption.SO_BACKLOG, 8192)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childOption(ChannelOption.SO_KEEPALIVE, true)
-                .childOption(ChannelOption.SO_RCVBUF, 262_144)
-                .childOption(ChannelOption.SO_SNDBUF, 262_144)
-                // P2-5：显式启用池化 ByteBuf 分配器，减少高并发下堆外内存分配与 GC 压力
-                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK,
-                        new io.netty.channel.WriteBufferWaterMark(32 * 1024, 256 * 1024));
-    }
+	/**
+	 * 明文 1883 acceptor（共享配置骨架 + 无 SSL pipeline）。 TLS 开启时与 {@link #mqttTlsServerBootstrap}
+	 * 并存，构成双监听。
+	 */
+	@Bean(destroyMethod = "config")
+	public ServerBootstrap mqttServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
+		return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(null));
+	}
 
-    /**
-     * 共享 pipeline 工厂：sslContext 非 null 时先加 SslHandler（必须位于 decoder 之前），
-     * 其余解码/空闲/业务处理器与明文 1883 完全一致。
-     */
-    private ChannelInitializer<SocketChannel> mqttChannelInitializer(SslContext sslContext) {
-        return new ChannelInitializer<>() {
-            @Override
-            protected void initChannel(SocketChannel ch) {
-                if (sslContext != null) {
-                    ch.pipeline().addLast(SSL_HANDLER_NAME, sslContext.newHandler(ch.alloc()));
-                }
-                ch.pipeline()
-                        .addLast("decoder", new MqttDecoder(1024 * 1024)) // 单报文 ≤ 1MB
-                        .addLast("encoder", MqttEncoder.INSTANCE)
-                        .addLast(IDLE_HANDLER_NAME,
-                                new IdleStateHandler(90, 0, 0)) // 预置，CONNECT 后按 keepalive 重设
-                        .addLast(MQTT_HANDLER_NAME, mqttHandler);
-            }
-        };
-    }
+	/**
+	 * TLS 8883 服务端 SSLContext（仅 {@code energyx.broker.tls.enabled=true} 时存在）。 证书缺失/损坏在
+	 * Bean 创建期即 fail-fast（早于任何端口绑定）。
+	 */
+	@Bean
+	@ConditionalOnProperty(prefix = "energyx.broker.tls", name = "enabled", havingValue = "true")
+	public SslContext brokerSslContext() throws Exception {
+		BrokerProperties.Tls tls = brokerProperties.getTls();
+		File cert = new File(tls.getCertChainFile());
+		File key = new File(tls.getPrivateKeyFile());
+		if (!cert.isFile() || !key.isFile()) {
+			throw new IllegalStateException("MQTT TLS 证书缺失: cert=" + cert.getAbsolutePath() + " key="
+					+ key.getAbsolutePath() + "（先运行 deploy/scripts/gen-mqtt-certs.sh）");
+		}
+		SslContextBuilder builder = SslContextBuilder.forServer(cert, key);
+		// P1-12 mTLS：要求设备证书 + 校验其信任链；CN=clientId 绑定在 handler 握手后校验
+		if (tls.isClientAuth()) {
+			File trust = new File(tls.getTrustCertFile());
+			if (!trust.isFile()) {
+				throw new IllegalStateException("mTLS 设备 CA 证书缺失: " + trust.getAbsolutePath()
+						+ "（clientAuth=true 必须提供 trust-cert-file，见 gen-mqtt-certs.sh -c）");
+			}
+			builder.clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE).trustManager(trust);
+			log.info("[Broker] MQTT mTLS 双向认证已启用，设备 CA={}", trust);
+		}
+		log.info("[Broker] MQTT TLS 证书加载 {} / {}", cert, key);
+		return builder.build();
+	}
+
+	/**
+	 * TLS 8883 acceptor（与明文共享 boss/worker 与 mqttHandler，仅 pipeline 头部多 SslHandler）。
+	 */
+	@Bean(destroyMethod = "")
+	@ConditionalOnProperty(prefix = "energyx.broker.tls", name = "enabled", havingValue = "true")
+	public ServerBootstrap mqttTlsServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup,
+			SslContext brokerSslContext) {
+		return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(brokerSslContext));
+	}
+
+	/** 共享 acceptor 骨架：event loop / channel / socket 选项 / 水位线（明文与 TLS 完全一致）。 */
+	private ServerBootstrap baseBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
+		return new ServerBootstrap().group(bossGroup, workerGroup)
+			.channel(TransportFactory.serverChannelClass())
+			.option(ChannelOption.SO_BACKLOG, 8192)
+			.option(ChannelOption.SO_REUSEADDR, true)
+			.childOption(ChannelOption.TCP_NODELAY, true)
+			.childOption(ChannelOption.SO_KEEPALIVE, true)
+			.childOption(ChannelOption.SO_RCVBUF, 262_144)
+			.childOption(ChannelOption.SO_SNDBUF, 262_144)
+			// P2-5：显式启用池化 ByteBuf 分配器，减少高并发下堆外内存分配与 GC 压力
+			.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+			.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK,
+					new io.netty.channel.WriteBufferWaterMark(32 * 1024, 256 * 1024));
+	}
+
+	/**
+	 * 共享 pipeline 工厂：sslContext 非 null 时先加 SslHandler（必须位于 decoder 之前）， 其余解码/空闲/业务处理器与明文
+	 * 1883 完全一致。
+	 */
+	private ChannelInitializer<SocketChannel> mqttChannelInitializer(SslContext sslContext) {
+		return new ChannelInitializer<>() {
+			@Override
+			protected void initChannel(SocketChannel ch) {
+				if (sslContext != null) {
+					ch.pipeline().addLast(SSL_HANDLER_NAME, sslContext.newHandler(ch.alloc()));
+				}
+				ch.pipeline()
+					.addLast("decoder", new MqttDecoder(1024 * 1024)) // 单报文 ≤ 1MB
+					.addLast("encoder", MqttEncoder.INSTANCE)
+					.addLast(IDLE_HANDLER_NAME, new IdleStateHandler(90, 0, 0)) // 预置，CONNECT
+																				// 后按
+																				// keepalive
+																				// 重设
+					.addLast(MQTT_HANDLER_NAME, mqttHandler);
+			}
+		};
+	}
+
 }

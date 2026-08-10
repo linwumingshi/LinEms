@@ -11,23 +11,27 @@ import org.springframework.stereotype.Component;
 /**
  * 影子 delta 消费者：消费 iot-shadow-delta（key=deviceId）→ 物化为 setProperties 指令。
  *
- * <p>setProperties 天然幂等（重复下发同一期望收敛），叠加「同设备在途合并」去重，无需消息级 dedup。</p>
+ * <p>
+ * setProperties 天然幂等（重复下发同一期望收敛），叠加「同设备在途合并」去重，无需消息级 dedup。
+ * </p>
  */
 @Slf4j
 @Component
 public class DeltaCommandConsumer implements KafkaRecordHandler {
 
-    private final ObjectMapper objectMapper;
-    private final CommandService commandService;
+	private final ObjectMapper objectMapper;
 
-    public DeltaCommandConsumer(ObjectMapper objectMapper, CommandService commandService) {
-        this.objectMapper = objectMapper;
-        this.commandService = commandService;
-    }
+	private final CommandService commandService;
 
-    @Override
-    public void handle(ConsumerRecord<String, String> record) throws Exception {
-        ShadowDeltaMessage delta = objectMapper.readValue(record.value(), ShadowDeltaMessage.class);
-        commandService.materializeDelta(delta);
-    }
+	public DeltaCommandConsumer(ObjectMapper objectMapper, CommandService commandService) {
+		this.objectMapper = objectMapper;
+		this.commandService = commandService;
+	}
+
+	@Override
+	public void handle(ConsumerRecord<String, String> record) throws Exception {
+		ShadowDeltaMessage delta = objectMapper.readValue(record.value(), ShadowDeltaMessage.class);
+		commandService.materializeDelta(delta);
+	}
+
 }

@@ -10,20 +10,23 @@ import java.util.Base64;
 @Data
 public class OfflineMessage {
 
-    private String topic;
-    private String payloadBase64;
-    private int qos;
+	private String topic;
 
-    public OfflineMessage() {
-    }
+	private String payloadBase64;
 
-    public OfflineMessage(String topic, byte[] payload, int qos) {
-        this.topic = topic;
-        this.payloadBase64 = Base64.getEncoder().encodeToString(payload);
-        this.qos = qos;
-    }
+	private int qos;
 
-    public byte[] payload() {
-        return Base64.getDecoder().decode(payloadBase64);
-    }
+	public OfflineMessage() {
+	}
+
+	public OfflineMessage(String topic, byte[] payload, int qos) {
+		this.topic = topic;
+		this.payloadBase64 = Base64.getEncoder().encodeToString(payload);
+		this.qos = qos;
+	}
+
+	public byte[] payload() {
+		return Base64.getDecoder().decode(payloadBase64);
+	}
+
 }

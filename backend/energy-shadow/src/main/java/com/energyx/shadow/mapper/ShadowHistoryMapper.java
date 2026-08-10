@@ -10,10 +10,11 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface ShadowHistoryMapper {
 
-    @Insert("""
-            INSERT INTO iot_shadow_history (device_id, version, snapshot, operator_type)
-            VALUES (#{deviceId}, #{version}, #{snapshot}, #{operatorType})
-            """)
-    int insert(@Param("deviceId") long deviceId, @Param("version") int version,
-               @Param("snapshot") String snapshot, @Param("operatorType") int operatorType);
+	@Insert("""
+			INSERT INTO iot_shadow_history (device_id, version, snapshot, operator_type)
+			VALUES (#{deviceId}, #{version}, #{snapshot}, #{operatorType})
+			""")
+	int insert(@Param("deviceId") long deviceId, @Param("version") int version, @Param("snapshot") String snapshot,
+			@Param("operatorType") int operatorType);
+
 }

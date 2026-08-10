@@ -13,33 +13,34 @@ import java.time.Duration;
 import java.util.Properties;
 
 /**
- * 影子侧 Kafka 生产者：发布 iot-shadow-delta（影子差异）。
- * idempotent producer（enable.idempotence + acks=all），与 access/tsdb 参数一致。
+ * 影子侧 Kafka 生产者：发布 iot-shadow-delta（影子差异）。 idempotent producer（enable.idempotence +
+ * acks=all），与 access/tsdb 参数一致。
  */
 @Slf4j
 @Component
 public class ShadowKafkaProducer {
 
-    private final KafkaProducer<String, String> producer;
+	private final KafkaProducer<String, String> producer;
 
-    public ShadowKafkaProducer(ShadowProperties props) {
-        Properties p = new Properties();
-        p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, props.getKafkaBootstrapServers());
-        p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        p.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
-        p.put(ProducerConfig.ACKS_CONFIG, "all");
-        p.put(ProducerConfig.LINGER_MS_CONFIG, 5);
-        p.put(ProducerConfig.BATCH_SIZE_CONFIG, 64 * 1024);
-        this.producer = new KafkaProducer<>(p);
-    }
+	public ShadowKafkaProducer(ShadowProperties props) {
+		Properties p = new Properties();
+		p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, props.getKafkaBootstrapServers());
+		p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+		p.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+		p.put(ProducerConfig.ACKS_CONFIG, "all");
+		p.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+		p.put(ProducerConfig.BATCH_SIZE_CONFIG, 64 * 1024);
+		this.producer = new KafkaProducer<>(p);
+	}
 
-    public void send(String topic, String key, String value) {
-        producer.send(new ProducerRecord<>(topic, key, value));
-    }
+	public void send(String topic, String key, String value) {
+		producer.send(new ProducerRecord<>(topic, key, value));
+	}
 
-    @PreDestroy
-    public void close() {
-        producer.close(Duration.ofSeconds(5));
-    }
+	@PreDestroy
+	public void close() {
+		producer.close(Duration.ofSeconds(5));
+	}
+
 }

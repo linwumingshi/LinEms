@@ -10,9 +10,13 @@ import java.util.List;
 @Data
 public class PropertyHistoryView {
 
-    private String deviceId;
-    private String productKey;
-    /** 命中行总数（分页 total） */
-    private long total;
-    private List<PropertyHistoryRecord> records;
+	private String deviceId;
+
+	private String productKey;
+
+	/** 命中行总数（分页 total） */
+	private long total;
+
+	private List<PropertyHistoryRecord> records;
+
 }

@@ -21,11 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
  * 电站资产 API。
  *
  * <ul>
- *   <li>POST   /api/station       创建电站；</li>
- *   <li>GET    /api/station/page  分页查询；</li>
- *   <li>GET    /api/station/{id}  详情；</li>
- *   <li>PUT    /api/station/{id}  更新；</li>
- *   <li>DELETE /api/station/{id}  逻辑删除。</li>
+ * <li>POST /api/station 创建电站；</li>
+ * <li>GET /api/station/page 分页查询；</li>
+ * <li>GET /api/station/{id} 详情；</li>
+ * <li>PUT /api/station/{id} 更新；</li>
+ * <li>DELETE /api/station/{id} 逻辑删除。</li>
  * </ul>
  */
 @Slf4j
@@ -33,36 +33,37 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/station")
 public class StationController {
 
-    private final StationService stationService;
+	private final StationService stationService;
 
-    public StationController(StationService stationService) {
-        this.stationService = stationService;
-    }
+	public StationController(StationService stationService) {
+		this.stationService = stationService;
+	}
 
-    @PostMapping
-    public Result<Long> create(@Valid @RequestBody StationSaveReq req) {
-        return Result.ok(stationService.create(req));
-    }
+	@PostMapping
+	public Result<Long> create(@Valid @RequestBody StationSaveReq req) {
+		return Result.ok(stationService.create(req));
+	}
 
-    @GetMapping("/page")
-    public Result<PageResult<Station>> page(StationQuery query) {
-        return Result.ok(PageResult.of(stationService.page(query)));
-    }
+	@GetMapping("/page")
+	public Result<PageResult<Station>> page(StationQuery query) {
+		return Result.ok(PageResult.of(stationService.page(query)));
+	}
 
-    @GetMapping("/{stationId}")
-    public Result<Station> detail(@PathVariable Long stationId) {
-        return Result.ok(stationService.detail(stationId));
-    }
+	@GetMapping("/{stationId}")
+	public Result<Station> detail(@PathVariable Long stationId) {
+		return Result.ok(stationService.detail(stationId));
+	}
 
-    @PutMapping("/{stationId}")
-    public Result<Void> update(@PathVariable Long stationId, @Valid @RequestBody StationSaveReq req) {
-        stationService.update(stationId, req);
-        return Result.ok();
-    }
+	@PutMapping("/{stationId}")
+	public Result<Void> update(@PathVariable Long stationId, @Valid @RequestBody StationSaveReq req) {
+		stationService.update(stationId, req);
+		return Result.ok();
+	}
 
-    @DeleteMapping("/{stationId}")
-    public Result<Void> delete(@PathVariable Long stationId) {
-        stationService.delete(stationId);
-        return Result.ok();
-    }
+	@DeleteMapping("/{stationId}")
+	public Result<Void> delete(@PathVariable Long stationId) {
+		stationService.delete(stationId);
+		return Result.ok();
+	}
+
 }

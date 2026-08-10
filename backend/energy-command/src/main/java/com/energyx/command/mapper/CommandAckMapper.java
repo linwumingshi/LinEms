@@ -10,10 +10,11 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface CommandAckMapper {
 
-    @Insert("""
-            INSERT INTO iot_command_ack (ack_id, command_id, device_id, ack_payload)
-            VALUES (#{ackId}, #{commandId}, #{deviceId}, #{ackPayload})
-            """)
-    int insertAck(@Param("ackId") long ackId, @Param("commandId") String commandId,
-                  @Param("deviceId") long deviceId, @Param("ackPayload") String ackPayload);
+	@Insert("""
+			INSERT INTO iot_command_ack (ack_id, command_id, device_id, ack_payload)
+			VALUES (#{ackId}, #{commandId}, #{deviceId}, #{ackPayload})
+			""")
+	int insertAck(@Param("ackId") long ackId, @Param("commandId") String commandId, @Param("deviceId") long deviceId,
+			@Param("ackPayload") String ackPayload);
+
 }

@@ -11,11 +11,16 @@ import java.util.Map;
 @Data
 public class ShadowView {
 
-    private Long deviceId;
-    private Map<String, Object> reported = new LinkedHashMap<>();
-    private Map<String, Object> desired = new LinkedHashMap<>();
-    /** 乐观锁版本；行不存在时为 null */
-    private Integer version;
-    /** 最后上报时间（ISO 本地时间字符串，如 2026-08-09T11:56:00）；行不存在时为 null */
-    private String lastReportedTime;
+	private Long deviceId;
+
+	private Map<String, Object> reported = new LinkedHashMap<>();
+
+	private Map<String, Object> desired = new LinkedHashMap<>();
+
+	/** 乐观锁版本；行不存在时为 null */
+	private Integer version;
+
+	/** 最后上报时间（ISO 本地时间字符串，如 2026-08-09T11:56:00）；行不存在时为 null */
+	private String lastReportedTime;
+
 }

@@ -19,51 +19,52 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(BusinessException.class)
-    public Result<Void> handleBusiness(BusinessException e) {
-        log.warn("business exception code={} msg={}", e.getCode(), e.getMessage());
-        return Result.fail(e.getCode(), e.getMessage());
-    }
+	@ExceptionHandler(BusinessException.class)
+	public Result<Void> handleBusiness(BusinessException e) {
+		log.warn("business exception code={} msg={}", e.getCode(), e.getMessage());
+		return Result.fail(e.getCode(), e.getMessage());
+	}
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public Result<Void> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
-        FieldError fieldError = e.getBindingResult().getFieldError();
-        String msg = fieldError == null ? ErrorCode.PARAM_INVALID.getMessage()
-                : fieldError.getField() + " " + fieldError.getDefaultMessage();
-        return Result.fail(ErrorCode.PARAM_INVALID, msg);
-    }
+	@ExceptionHandler(MethodArgumentNotValidException.class)
+	public Result<Void> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
+		FieldError fieldError = e.getBindingResult().getFieldError();
+		String msg = fieldError == null ? ErrorCode.PARAM_INVALID.getMessage()
+				: fieldError.getField() + " " + fieldError.getDefaultMessage();
+		return Result.fail(ErrorCode.PARAM_INVALID, msg);
+	}
 
-    @ExceptionHandler(BindException.class)
-    public Result<Void> handleBind(BindException e) {
-        FieldError fieldError = e.getBindingResult().getFieldError();
-        String msg = fieldError == null ? ErrorCode.PARAM_INVALID.getMessage()
-                : fieldError.getField() + " " + fieldError.getDefaultMessage();
-        return Result.fail(ErrorCode.PARAM_INVALID, msg);
-    }
+	@ExceptionHandler(BindException.class)
+	public Result<Void> handleBind(BindException e) {
+		FieldError fieldError = e.getBindingResult().getFieldError();
+		String msg = fieldError == null ? ErrorCode.PARAM_INVALID.getMessage()
+				: fieldError.getField() + " " + fieldError.getDefaultMessage();
+		return Result.fail(ErrorCode.PARAM_INVALID, msg);
+	}
 
-    @ExceptionHandler(ConstraintViolationException.class)
-    public Result<Void> handleConstraintViolation(ConstraintViolationException e) {
-        return Result.fail(ErrorCode.PARAM_INVALID, e.getMessage());
-    }
+	@ExceptionHandler(ConstraintViolationException.class)
+	public Result<Void> handleConstraintViolation(ConstraintViolationException e) {
+		return Result.fail(ErrorCode.PARAM_INVALID, e.getMessage());
+	}
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public Result<Void> handleNotReadable(HttpMessageNotReadableException e) {
-        return Result.fail(ErrorCode.BAD_REQUEST, "请求体格式错误");
-    }
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public Result<Void> handleNotReadable(HttpMessageNotReadableException e) {
+		return Result.fail(ErrorCode.BAD_REQUEST, "请求体格式错误");
+	}
 
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public Result<Void> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
-        return Result.fail(ErrorCode.METHOD_NOT_ALLOWED);
-    }
+	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+	public Result<Void> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+		return Result.fail(ErrorCode.METHOD_NOT_ALLOWED);
+	}
 
-    @ExceptionHandler(NoResourceFoundException.class)
-    public Result<Void> handleNoResource(NoResourceFoundException e) {
-        return Result.fail(ErrorCode.NOT_FOUND);
-    }
+	@ExceptionHandler(NoResourceFoundException.class)
+	public Result<Void> handleNoResource(NoResourceFoundException e) {
+		return Result.fail(ErrorCode.NOT_FOUND);
+	}
 
-    @ExceptionHandler(Throwable.class)
-    public Result<Void> handleThrowable(Throwable e) {
-        log.error("unhandled exception", e);
-        return Result.fail(ErrorCode.SYSTEM_ERROR);
-    }
+	@ExceptionHandler(Throwable.class)
+	public Result<Void> handleThrowable(Throwable e) {
+		log.error("unhandled exception", e);
+		return Result.fail(ErrorCode.SYSTEM_ERROR);
+	}
+
 }

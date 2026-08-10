@@ -27,77 +27,82 @@ import static org.mockito.Mockito.when;
  */
 class WsAuthInterceptorTest {
 
-    private WsAuthInterceptor interceptor;
-    private JwtProperties props;
-    private ServerHttpRequest request;
-    private ServerHttpResponse response;
-    private Map<String, Object> attributes;
+	private WsAuthInterceptor interceptor;
 
-    private static final String SECRET = "test-secret-key-0123456789abcdefghijklmnopqrstuv";
-    private static final JwtClaims ADMIN =
-            new JwtClaims(1L, "admin", 1L, 1L, "系统管理员", "test-sid");
+	private JwtProperties props;
 
-    @BeforeEach
-    void setUp() {
-        props = new JwtProperties();
-        props.setSecret(SECRET);
-        props.setIssuer("energyx-ems");
-        interceptor = new WsAuthInterceptor(props);
-        request = mock(ServerHttpRequest.class);
-        response = mock(ServerHttpResponse.class);
-        attributes = new HashMap<>();
-    }
+	private ServerHttpRequest request;
 
-    @Test
-    void validToken_allowed_attributesFilled() {
-        String token = JwtTokenUtil.sign(props, ADMIN);
-        when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
+	private ServerHttpResponse response;
 
-        boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+	private Map<String, Object> attributes;
 
-        assertTrue(allowed);
-        assertEquals(1L, attributes.get(WsAuthInterceptor.ATTR_USER_ID));
-        assertEquals("admin", attributes.get(WsAuthInterceptor.ATTR_USERNAME));
-        assertEquals(1L, attributes.get(WsAuthInterceptor.ATTR_TENANT_ID));
-        verify(response, never()).setStatusCode(any());
-    }
+	private static final String SECRET = "test-secret-key-0123456789abcdefghijklmnopqrstuv";
 
-    @Test
-    void missingToken_rejected_401() {
-        when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm"));
+	private static final JwtClaims ADMIN = new JwtClaims(1L, "admin", 1L, 1L, "系统管理员", "test-sid");
 
-        boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+	@BeforeEach
+	void setUp() {
+		props = new JwtProperties();
+		props.setSecret(SECRET);
+		props.setIssuer("energyx-ems");
+		interceptor = new WsAuthInterceptor(props);
+		request = mock(ServerHttpRequest.class);
+		response = mock(ServerHttpResponse.class);
+		attributes = new HashMap<>();
+	}
 
-        assertFalse(allowed);
-        verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
-        assertTrue(attributes.isEmpty());
-    }
+	@Test
+	void validToken_allowed_attributesFilled() {
+		String token = JwtTokenUtil.sign(props, ADMIN);
+		when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
 
-    @Test
-    void wrongSecretToken_rejected_401() {
-        JwtProperties other = new JwtProperties();
-        other.setSecret("another-dev-secret-0123456789abcdefghijklmno");
-        String token = JwtTokenUtil.sign(other, ADMIN);
-        when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
+		boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
 
-        boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+		assertTrue(allowed);
+		assertEquals(1L, attributes.get(WsAuthInterceptor.ATTR_USER_ID));
+		assertEquals("admin", attributes.get(WsAuthInterceptor.ATTR_USERNAME));
+		assertEquals(1L, attributes.get(WsAuthInterceptor.ATTR_TENANT_ID));
+		verify(response, never()).setStatusCode(any());
+	}
 
-        assertFalse(allowed);
-        verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
-    }
+	@Test
+	void missingToken_rejected_401() {
+		when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm"));
 
-    @Test
-    void expiredToken_rejected_401() {
-        JwtProperties expired = new JwtProperties();
-        expired.setSecret(SECRET);
-        expired.setIssuer("energyx-ems");
-        expired.setExpireSeconds(-1); // 过期时间落在过去，签出即过期
-        String token = JwtTokenUtil.sign(expired, ADMIN);
-        when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
+		boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
 
-        boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+		assertFalse(allowed);
+		verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
+		assertTrue(attributes.isEmpty());
+	}
 
-        assertFalse(allowed);
-        verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
-    }
+	@Test
+	void wrongSecretToken_rejected_401() {
+		JwtProperties other = new JwtProperties();
+		other.setSecret("another-dev-secret-0123456789abcdefghijklmno");
+		String token = JwtTokenUtil.sign(other, ADMIN);
+		when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
+
+		boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+
+		assertFalse(allowed);
+		verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
+	}
+
+	@Test
+	void expiredToken_rejected_401() {
+		JwtProperties expired = new JwtProperties();
+		expired.setSecret(SECRET);
+		expired.setIssuer("energyx-ems");
+		expired.setExpireSeconds(-1); // 过期时间落在过去，签出即过期
+		String token = JwtTokenUtil.sign(expired, ADMIN);
+		when(request.getURI()).thenReturn(URI.create("ws://127.0.0.1:8115/ws/alarm?token=" + token));
+
+		boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
+
+		assertFalse(allowed);
+		verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
+	}
+
 }

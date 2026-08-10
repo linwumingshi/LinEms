@@ -13,38 +13,39 @@ import java.math.BigDecimal;
 @Data
 public class StationSaveReq {
 
-    @NotBlank(message = "电站编码不能为空")
-    @Size(max = 64, message = "电站编码长度不能超过 64")
-    private String stationCode;
+	@NotBlank(message = "电站编码不能为空")
+	@Size(max = 64, message = "电站编码长度不能超过 64")
+	private String stationCode;
 
-    @NotBlank(message = "电站名称不能为空")
-    @Size(max = 128, message = "电站名称长度不能超过 128")
-    private String stationName;
+	@NotBlank(message = "电站名称不能为空")
+	@Size(max = 128, message = "电站名称长度不能超过 128")
+	private String stationName;
 
-    /** 所属企业（iot_station.enterprise_id NOT NULL） */
-    @NotNull(message = "所属企业不能为空")
-    private Long enterpriseId;
+	/** 所属企业（iot_station.enterprise_id NOT NULL） */
+	@NotNull(message = "所属企业不能为空")
+	private Long enterpriseId;
 
-    @Size(max = 256, message = "地址长度不能超过 256")
-    private String address;
+	@Size(max = 256, message = "地址长度不能超过 256")
+	private String address;
 
-    private BigDecimal longitude;
+	private BigDecimal longitude;
 
-    private BigDecimal latitude;
+	private BigDecimal latitude;
 
-    /** 装机容量 kWh */
-    private BigDecimal installCapacity;
+	/** 装机容量 kWh */
+	private BigDecimal installCapacity;
 
-    /** PCS 容量 kW */
-    private BigDecimal pcsCapacity;
+	/** PCS 容量 kW */
+	private BigDecimal pcsCapacity;
 
-    /** 电池容量 kWh */
-    private BigDecimal batteryCapacity;
+	/** 电池容量 kWh */
+	private BigDecimal batteryCapacity;
 
-    /** 工商业/园区/电网侧 */
-    @Size(max = 16, message = "电网类型长度不能超过 16")
-    private String gridType;
+	/** 工商业/园区/电网侧 */
+	@Size(max = 16, message = "电网类型长度不能超过 16")
+	private String gridType;
 
-    /** 默认 1 运行 */
-    private Integer status;
+	/** 默认 1 运行 */
+	private Integer status;
+
 }

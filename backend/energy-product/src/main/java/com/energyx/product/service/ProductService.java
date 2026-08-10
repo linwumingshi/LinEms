@@ -12,22 +12,23 @@ import com.energyx.product.web.dto.ThingModelView;
  */
 public interface ProductService {
 
-    Long create(ProductSaveReq req);
+	Long create(ProductSaveReq req);
 
-    void update(Long productId, ProductSaveReq req);
+	void update(Long productId, ProductSaveReq req);
 
-    void delete(Long productId);
+	void delete(Long productId);
 
-    IPage<Product> page(ProductQuery query);
+	IPage<Product> page(ProductQuery query);
 
-    Product detail(Long productId);
+	Product detail(Long productId);
 
-    /** 当前生效物模型；未发布返回 null */
-    ThingModelView getThingModel(Long productId);
+	/** 当前生效物模型；未发布返回 null */
+	ThingModelView getThingModel(Long productId);
 
-    /** 按 productKey 查当前生效物模型（设备仅有 productKey）；产品不存在或未发布返回 null */
-    ThingModelView getThingModelByProductKey(String productKey);
+	/** 按 productKey 查当前生效物模型（设备仅有 productKey）；产品不存在或未发布返回 null */
+	ThingModelView getThingModelByProductKey(String productKey);
 
-    /** 校验 JSON、发布物模型版本并置为当前生效，同步产品 model_version */
-    ThingModelView saveThingModel(Long productId, ThingModelSaveReq req);
+	/** 校验 JSON、发布物模型版本并置为当前生效，同步产品 model_version */
+	ThingModelView saveThingModel(Long productId, ThingModelSaveReq req);
+
 }

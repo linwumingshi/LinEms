@@ -11,6 +11,7 @@ import java.util.Map;
 @Data
 public class DesiredRequest {
 
-    @NotEmpty(message = "desired 不能为空")
-    private Map<String, Object> desired;
+	@NotEmpty(message = "desired 不能为空")
+	private Map<String, Object> desired;
+
 }

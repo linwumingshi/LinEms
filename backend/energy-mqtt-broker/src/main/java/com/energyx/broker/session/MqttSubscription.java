@@ -10,20 +10,21 @@ import lombok.Data;
 @AllArgsConstructor
 public class MqttSubscription {
 
-    private String topicFilter;
+	private String topicFilter;
 
-    private int qos;
+	private int qos;
 
-    /** 序列化契约：topicFilter@qos，用于 Redis mqtt:subs SET 成员 */
-    public String encode() {
-        return topicFilter + "@" + qos;
-    }
+	/** 序列化契约：topicFilter@qos，用于 Redis mqtt:subs SET 成员 */
+	public String encode() {
+		return topicFilter + "@" + qos;
+	}
 
-    public static MqttSubscription decode(String member) {
-        int idx = member.lastIndexOf('@');
-        if (idx < 0) {
-            throw new IllegalArgumentException("非法订阅序列化格式: " + member);
-        }
-        return new MqttSubscription(member.substring(0, idx), Integer.parseInt(member.substring(idx + 1)));
-    }
+	public static MqttSubscription decode(String member) {
+		int idx = member.lastIndexOf('@');
+		if (idx < 0) {
+			throw new IllegalArgumentException("非法订阅序列化格式: " + member);
+		}
+		return new MqttSubscription(member.substring(0, idx), Integer.parseInt(member.substring(idx + 1)));
+	}
+
 }

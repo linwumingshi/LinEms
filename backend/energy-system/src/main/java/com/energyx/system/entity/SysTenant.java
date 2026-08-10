@@ -8,28 +8,28 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 租户（=集团）。
- * 对应表 sys_tenant；quota 为 JSON 资源配额（以 String 承载 JSON 文本）。
+ * 租户（=集团）。 对应表 sys_tenant；quota 为 JSON 资源配额（以 String 承载 JSON 文本）。
  */
 @Getter
 @Setter
 @TableName("sys_tenant")
 public class SysTenant extends BaseEntity {
 
-    @TableId(type = IdType.AUTO)
-    private Long tenantId;
+	@TableId(type = IdType.AUTO)
+	private Long tenantId;
 
-    private String tenantCode;
+	private String tenantCode;
 
-    private String tenantName;
+	private String tenantName;
 
-    private String contact;
+	private String contact;
 
-    private String phone;
+	private String phone;
 
-    /** JSON 资源配额，如 {"deviceLimit":100000,"ingestRate":500} */
-    private String quota;
+	/** JSON 资源配额，如 {"deviceLimit":100000,"ingestRate":500} */
+	private String quota;
 
-    /** 状态：0 禁用 1 启用 */
-    private Integer status;
+	/** 状态：0 禁用 1 启用 */
+	private Integer status;
+
 }

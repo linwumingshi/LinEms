@@ -13,9 +13,9 @@ import java.util.List;
 @Mapper
 public interface SysRoleMapper extends BaseMapper<SysRole> {
 
-    /** 查询用户在启用的角色编码集合（登录时装配 LoginUser）。 */
-    @Select("SELECT r.role_code FROM sys_role r " +
-            "INNER JOIN sys_user_role ur ON ur.role_id = r.role_id " +
-            "WHERE ur.user_id = #{userId} AND r.status = 1")
-    List<String> selectRoleCodesByUserId(Long userId);
+	/** 查询用户在启用的角色编码集合（登录时装配 LoginUser）。 */
+	@Select("SELECT r.role_code FROM sys_role r " + "INNER JOIN sys_user_role ur ON ur.role_id = r.role_id "
+			+ "WHERE ur.user_id = #{userId} AND r.status = 1")
+	List<String> selectRoleCodesByUserId(Long userId);
+
 }

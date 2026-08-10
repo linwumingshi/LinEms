@@ -10,12 +10,13 @@ import lombok.Data;
 @AllArgsConstructor
 public class CredentialView {
 
-    private Long deviceId;
+	private Long deviceId;
 
-    private String deviceName;
+	private String deviceName;
 
-    private String deviceSecret;
+	private String deviceSecret;
 
-    /** 1正常 2吊销 */
-    private Integer authStatus;
+	/** 1正常 2吊销 */
+	private Integer authStatus;
+
 }

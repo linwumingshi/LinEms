@@ -36,155 +36,160 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 认证服务单元测试（Mockito，无 Spring 上下文）。
- * 认证委托 AuthenticationManager，登出委托 TokenService；本类聚焦异常映射与响应组装。
+ * 认证服务单元测试（Mockito，无 Spring 上下文）。 认证委托 AuthenticationManager，登出委托
+ * TokenService；本类聚焦异常映射与响应组装。
  */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceImplTest {
 
-    private static final long LOGIN_TIME = 1_000L;
-    private static final long EXPIRE_TIME = 7_200_000L + LOGIN_TIME;
+	private static final long LOGIN_TIME = 1_000L;
 
-    @Mock
-    private AuthenticationManager authenticationManager;
-    @Mock
-    private TokenService tokenService;
-    @Mock
-    private SysUserMapper userMapper;
-    @Mock
-    private Authentication authentication;
+	private static final long EXPIRE_TIME = 7_200_000L + LOGIN_TIME;
 
-    private AuthService authService;
+	@Mock
+	private AuthenticationManager authenticationManager;
 
-    @BeforeEach
-    void setUp() {
-        authService = new AuthServiceImpl(authenticationManager, tokenService, userMapper);
-    }
+	@Mock
+	private TokenService tokenService;
 
-    private LoginUser loginUser() {
-        LoginUser user = new LoginUser(1L, 1L, 1L, "系统管理员", "admin",
-                Set.of("system:user:list", "*:*:*"), Set.of("SUPER_ADMIN"), "{noop}admin123", 1);
-        user.setLoginTime(LOGIN_TIME);
-        user.setExpireTime(EXPIRE_TIME);
-        return user;
-    }
+	@Mock
+	private SysUserMapper userMapper;
 
-    private LoginRequest validRequest() {
-        LoginRequest req = new LoginRequest();
-        req.setUsername("admin");
-        req.setPassword("admin123");
-        return req;
-    }
+	@Mock
+	private Authentication authentication;
 
-    private void mockAuthenticateSuccess() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(loginUser());
-    }
+	private AuthService authService;
 
-    @Test
-    void loginSuccess_returnsTokenPermissionsAndUpdatesLastLogin() {
-        mockAuthenticateSuccess();
-        when(tokenService.createToken(any(LoginUser.class))).thenReturn("jwt-token");
+	@BeforeEach
+	void setUp() {
+		authService = new AuthServiceImpl(authenticationManager, tokenService, userMapper);
+	}
 
-        LoginResponse resp = authService.login(validRequest());
+	private LoginUser loginUser() {
+		LoginUser user = new LoginUser(1L, 1L, 1L, "系统管理员", "admin", Set.of("system:user:list", "*:*:*"),
+				Set.of("SUPER_ADMIN"), "{noop}admin123", 1);
+		user.setLoginTime(LOGIN_TIME);
+		user.setExpireTime(EXPIRE_TIME);
+		return user;
+	}
 
-        assertEquals("jwt-token", resp.getToken());
-        assertEquals("Bearer", resp.getTokenType());
-        assertEquals(7200, resp.getExpiresIn());
-        assertEquals(1L, resp.getUserId());
-        assertEquals("admin", resp.getUsername());
-        assertEquals("系统管理员", resp.getRealName());
-        assertEquals(List.of("*:*:*", "system:user:list"), resp.getPermissions());
-        assertEquals(List.of("SUPER_ADMIN"), resp.getRoles());
+	private LoginRequest validRequest() {
+		LoginRequest req = new LoginRequest();
+		req.setUsername("admin");
+		req.setPassword("admin123");
+		return req;
+	}
 
-        // 更新最后登录时间
-        ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
-        verify(userMapper).updateById(captor.capture());
-        assertEquals(1L, captor.getValue().getUserId());
-        assertNotNull(captor.getValue().getLastLoginTime());
-    }
+	private void mockAuthenticateSuccess() {
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenReturn(authentication);
+		when(authentication.getPrincipal()).thenReturn(loginUser());
+	}
 
-    @Test
-    void loginWrongPassword_throwsUnauthorized() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new BadCredentialsException("Bad credentials"));
+	@Test
+	void loginSuccess_returnsTokenPermissionsAndUpdatesLastLogin() {
+		mockAuthenticateSuccess();
+		when(tokenService.createToken(any(LoginUser.class))).thenReturn("jwt-token");
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(validRequest()));
-        assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
-    }
+		LoginResponse resp = authService.login(validRequest());
 
-    @Test
-    void loginUserNotExist_throwsUnauthorized() {
-        // Provider hideUserNotFoundExceptions=true：不存在与密码错误统一 BadCredentialsException
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new BadCredentialsException("Bad credentials"));
+		assertEquals("jwt-token", resp.getToken());
+		assertEquals("Bearer", resp.getTokenType());
+		assertEquals(7200, resp.getExpiresIn());
+		assertEquals(1L, resp.getUserId());
+		assertEquals("admin", resp.getUsername());
+		assertEquals("系统管理员", resp.getRealName());
+		assertEquals(List.of("*:*:*", "system:user:list"), resp.getPermissions());
+		assertEquals(List.of("SUPER_ADMIN"), resp.getRoles());
 
-        LoginRequest req = validRequest();
-        req.setUsername("ghost");
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
-        assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
-    }
+		// 更新最后登录时间
+		ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
+		verify(userMapper).updateById(captor.capture());
+		assertEquals(1L, captor.getValue().getUserId());
+		assertNotNull(captor.getValue().getLastLoginTime());
+	}
 
-    @Test
-    void loginDisabledUser_throwsForbidden() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new DisabledException("User is disabled"));
+	@Test
+	void loginWrongPassword_throwsUnauthorized() {
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenThrow(new BadCredentialsException("Bad credentials"));
 
-        LoginRequest req = validRequest();
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
-        assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
-    }
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(validRequest()));
+		assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
+	}
 
-    @Test
-    void loginLockedUser_throwsForbidden() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new LockedException("User account is locked"));
+	@Test
+	void loginUserNotExist_throwsUnauthorized() {
+		// Provider hideUserNotFoundExceptions=true：不存在与密码错误统一 BadCredentialsException
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenThrow(new BadCredentialsException("Bad credentials"));
 
-        LoginRequest req = validRequest();
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
-        assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
-    }
+		LoginRequest req = validRequest();
+		req.setUsername("ghost");
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
+		assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
+	}
 
-    @Test
-    void loginBlankUsername_throwsParamMissing() {
-        LoginRequest req = validRequest();
-        req.setUsername("  ");
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
-        assertEquals(ErrorCode.PARAM_MISSING.getCode(), ex.getCode());
-    }
+	@Test
+	void loginDisabledUser_throwsForbidden() {
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenThrow(new DisabledException("User is disabled"));
 
-    @Test
-    void loginBlankPassword_throwsParamMissing() {
-        LoginRequest req = validRequest();
-        req.setPassword(null);
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
-        assertEquals(ErrorCode.PARAM_MISSING.getCode(), ex.getCode());
-    }
+		LoginRequest req = validRequest();
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
+		assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
+	}
 
-    @Test
-    void logout_delegatesToTokenService() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        authService.logout(request);
-        verify(tokenService).logout(request);
-    }
+	@Test
+	void loginLockedUser_throwsForbidden() {
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenThrow(new LockedException("User account is locked"));
 
-    @Test
-    void loginUsesTenantCompositePrincipal() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(loginUser());
-        when(tokenService.createToken(any(LoginUser.class))).thenReturn("jwt-token");
+		LoginRequest req = validRequest();
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
+		assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
+	}
 
-        LoginRequest req = validRequest();
-        req.setTenantId(1L);
-        authService.login(req);
+	@Test
+	void loginBlankUsername_throwsParamMissing() {
+		LoginRequest req = validRequest();
+		req.setUsername("  ");
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
+		assertEquals(ErrorCode.PARAM_MISSING.getCode(), ex.getCode());
+	}
 
-        // 复合主键 "tenantId:username"
-        ArgumentCaptor<UsernamePasswordAuthenticationToken> captor =
-                ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
-        verify(authenticationManager).authenticate(captor.capture());
-        assertEquals("1:admin", captor.getValue().getPrincipal());
-        assertEquals("admin123", captor.getValue().getCredentials());
-    }
+	@Test
+	void loginBlankPassword_throwsParamMissing() {
+		LoginRequest req = validRequest();
+		req.setPassword(null);
+		BusinessException ex = assertThrows(BusinessException.class, () -> authService.login(req));
+		assertEquals(ErrorCode.PARAM_MISSING.getCode(), ex.getCode());
+	}
+
+	@Test
+	void logout_delegatesToTokenService() {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		authService.logout(request);
+		verify(tokenService).logout(request);
+	}
+
+	@Test
+	void loginUsesTenantCompositePrincipal() {
+		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+			.thenReturn(authentication);
+		when(authentication.getPrincipal()).thenReturn(loginUser());
+		when(tokenService.createToken(any(LoginUser.class))).thenReturn("jwt-token");
+
+		LoginRequest req = validRequest();
+		req.setTenantId(1L);
+		authService.login(req);
+
+		// 复合主键 "tenantId:username"
+		ArgumentCaptor<UsernamePasswordAuthenticationToken> captor = ArgumentCaptor
+			.forClass(UsernamePasswordAuthenticationToken.class);
+		verify(authenticationManager).authenticate(captor.capture());
+		assertEquals("1:admin", captor.getValue().getPrincipal());
+		assertEquals("admin123", captor.getValue().getCredentials());
+	}
+
 }

@@ -14,10 +14,11 @@ import lombok.Setter;
 @TableName("sys_role_permission")
 public class SysRolePermission {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+	@TableId(type = IdType.AUTO)
+	private Long id;
 
-    private Long roleId;
+	private Long roleId;
 
-    private Long permId;
+	private Long permId;
+
 }

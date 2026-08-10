@@ -10,11 +10,18 @@ import java.time.LocalDateTime;
 @Data
 public class ShadowRow {
 
-    private Long deviceId;
-    private Long tenantId;
-    private String reported;
-    private String desired;
-    private Integer version;
-    private LocalDateTime lastReportedTime;
-    private LocalDateTime lastDesiredTime;
+	private Long deviceId;
+
+	private Long tenantId;
+
+	private String reported;
+
+	private String desired;
+
+	private Integer version;
+
+	private LocalDateTime lastReportedTime;
+
+	private LocalDateTime lastDesiredTime;
+
 }

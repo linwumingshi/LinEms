@@ -20,58 +20,60 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ProductServiceImplTest {
 
-    @Mock
-    private ProductMapper productMapper;
-    @Mock
-    private ThingModelMapper thingModelMapper;
+	@Mock
+	private ProductMapper productMapper;
 
-    private ProductServiceImpl service;
+	@Mock
+	private ThingModelMapper thingModelMapper;
 
-    @BeforeEach
-    void setup() {
-        service = new ProductServiceImpl(thingModelMapper);
-        // ServiceImpl 的 baseMapper 由 MyBatis-Plus 运行期注入，单测里反射塞 mock
-        ReflectionTestUtils.setField(service, "baseMapper", productMapper);
-    }
+	private ProductServiceImpl service;
 
-    @Test
-    void byKey_productNotFound_returnsNull() {
-        when(productMapper.selectOne(any())).thenReturn(null);
-        assertNull(service.getThingModelByProductKey("no-such-key"));
-    }
+	@BeforeEach
+	void setup() {
+		service = new ProductServiceImpl(thingModelMapper);
+		// ServiceImpl 的 baseMapper 由 MyBatis-Plus 运行期注入，单测里反射塞 mock
+		ReflectionTestUtils.setField(service, "baseMapper", productMapper);
+	}
 
-    @Test
-    void byKey_noCurrentModel_returnsNull() {
-        Product p = new Product();
-        p.setProductId(1L);
-        when(productMapper.selectOne(any())).thenReturn(p);
-        when(thingModelMapper.selectOne(any())).thenReturn(null);
-        assertNull(service.getThingModelByProductKey("snd_ess_pcs"));
-    }
+	@Test
+	void byKey_productNotFound_returnsNull() {
+		when(productMapper.selectOne(any())).thenReturn(null);
+		assertNull(service.getThingModelByProductKey("no-such-key"));
+	}
 
-    @Test
-    void byKey_found_returnsView() {
-        Product p = new Product();
-        p.setProductId(1L);
-        p.setProductKey("snd_ess_pcs");
-        ThingModel m = new ThingModel();
-        m.setModelId(9L);
-        m.setProductId(1L);
-        m.setVersion("v1");
-        m.setSchemaJson("{}");
-        m.setStatus(1);
-        m.setIsCurrent(1);
-        when(productMapper.selectOne(any())).thenReturn(p);
-        when(thingModelMapper.selectOne(any())).thenReturn(m);
+	@Test
+	void byKey_noCurrentModel_returnsNull() {
+		Product p = new Product();
+		p.setProductId(1L);
+		when(productMapper.selectOne(any())).thenReturn(p);
+		when(thingModelMapper.selectOne(any())).thenReturn(null);
+		assertNull(service.getThingModelByProductKey("snd_ess_pcs"));
+	}
 
-        ThingModelView view = service.getThingModelByProductKey("snd_ess_pcs");
-        assertEquals("v1", view.getVersion());
-        assertEquals(1L, view.getProductId().longValue());
-    }
+	@Test
+	void byKey_found_returnsView() {
+		Product p = new Product();
+		p.setProductId(1L);
+		p.setProductKey("snd_ess_pcs");
+		ThingModel m = new ThingModel();
+		m.setModelId(9L);
+		m.setProductId(1L);
+		m.setVersion("v1");
+		m.setSchemaJson("{}");
+		m.setStatus(1);
+		m.setIsCurrent(1);
+		when(productMapper.selectOne(any())).thenReturn(p);
+		when(thingModelMapper.selectOne(any())).thenReturn(m);
 
-    @Test
-    void byKey_blank_returnsNull() {
-        assertNull(service.getThingModelByProductKey(""));
-        assertNull(service.getThingModelByProductKey(null));
-    }
+		ThingModelView view = service.getThingModelByProductKey("snd_ess_pcs");
+		assertEquals("v1", view.getVersion());
+		assertEquals(1L, view.getProductId().longValue());
+	}
+
+	@Test
+	void byKey_blank_returnsNull() {
+		assertNull(service.getThingModelByProductKey(""));
+		assertNull(service.getThingModelByProductKey(null));
+	}
+
 }

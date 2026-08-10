@@ -16,23 +16,24 @@ import java.time.LocalDateTime;
 @TableName("sys_role")
 public class SysRole {
 
-    @TableId(type = IdType.AUTO)
-    private Long roleId;
+	@TableId(type = IdType.AUTO)
+	private Long roleId;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    /** 角色编码，如 SUPER_ADMIN / OPERATOR */
-    private String roleCode;
+	/** 角色编码，如 SUPER_ADMIN / OPERATOR */
+	private String roleCode;
 
-    private String roleName;
+	private String roleName;
 
-    /** 数据范围：1本人 2本企业 3本租户 4全部 */
-    private Integer dataScope;
+	/** 数据范围：1本人 2本企业 3本租户 4全部 */
+	private Integer dataScope;
 
-    /** 状态：0 禁用 1 启用 */
-    private Integer status;
+	/** 状态：0 禁用 1 启用 */
+	private Integer status;
 
-    private LocalDateTime createTime;
+	private LocalDateTime createTime;
 
-    private LocalDateTime updateTime;
+	private LocalDateTime updateTime;
+
 }

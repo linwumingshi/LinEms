@@ -132,6 +132,29 @@
           </excludes>
         </configuration>
       </plugin>
+      <!-- spring java格式化 插件 -->
+      <!-- 建议安装IDEA 插件,替换IDEA默认格式化.插件下载地址  -->
+      <!--https://repo1.maven.org/maven2/io/spring/javaformat/spring-javaformat-intellij-idea-plugin/ -->
+      <plugin>
+        <groupId>io.spring.javaformat</groupId>
+        <artifactId>spring-javaformat-maven-plugin</artifactId>
+        <version>0.0.47</version>
+        <executions>
+          <execution>
+            <!-- 执行ID-->
+            <id>spring-format-validate</id>
+            <!-- 校验阶段-->
+            <phase>validate</phase>
+            <!-- 全局操作 -->
+            <inherited>true</inherited>
+            <!-- 全局操作 -->
+            <goals>
+              <!-- 执行validate命令-->
+              <goal>validate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

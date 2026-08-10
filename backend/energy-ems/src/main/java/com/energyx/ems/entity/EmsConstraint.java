@@ -15,35 +15,36 @@ import java.time.LocalDateTime;
 @TableName("ems_constraint")
 public class EmsConstraint {
 
-    @TableId(type = IdType.AUTO)
-    private Long constraintId;
+	@TableId(type = IdType.AUTO)
+	private Long constraintId;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    private Long stationId;
+	private Long stationId;
 
-    private BigDecimal socMin;
+	private BigDecimal socMin;
 
-    private BigDecimal socMax;
+	private BigDecimal socMax;
 
-    private BigDecimal chargePowerMax;
+	private BigDecimal chargePowerMax;
 
-    private BigDecimal dischargePowerMax;
+	private BigDecimal dischargePowerMax;
 
-    private BigDecimal tempMax;
+	private BigDecimal tempMax;
 
-    private BigDecimal voltageMax;
+	private BigDecimal voltageMax;
 
-    private BigDecimal currentMax;
+	private BigDecimal currentMax;
 
-    /** 扩展安全包络 JSON */
-    private String safetyEnvelope;
+	/** 扩展安全包络 JSON */
+	private String safetyEnvelope;
 
-    private Integer status;
+	private Integer status;
 
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
+	@TableField(value = "create_time", fill = FieldFill.INSERT)
+	private LocalDateTime createTime;
 
-    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updateTime;
+	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
+	private LocalDateTime updateTime;
+
 }

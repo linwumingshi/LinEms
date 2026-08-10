@@ -16,23 +16,25 @@ import java.util.Map;
 @RequestMapping("/internal/broker")
 public class BrokerStatsController {
 
-    private final BrokerStats stats;
-    private final BrokerProperties properties;
+	private final BrokerStats stats;
 
-    public BrokerStatsController(BrokerStats stats, BrokerProperties properties) {
-        this.stats = stats;
-        this.properties = properties;
-    }
+	private final BrokerProperties properties;
 
-    @GetMapping("/stats")
-    public Result<Map<String, Object>> stats() {
-        Map<String, Object> data = new LinkedHashMap<>(stats.snapshot());
-        data.put("nodeId", properties.getNodeId());
-        data.put("mqttPort", properties.getPort());
-        data.put("maxConnections", properties.getMaxConnections());
-        data.put("uptimeMillis", System.currentTimeMillis() - startAtMillis);
-        return Result.ok(data);
-    }
+	public BrokerStatsController(BrokerStats stats, BrokerProperties properties) {
+		this.stats = stats;
+		this.properties = properties;
+	}
 
-    private static final long startAtMillis = System.currentTimeMillis();
+	@GetMapping("/stats")
+	public Result<Map<String, Object>> stats() {
+		Map<String, Object> data = new LinkedHashMap<>(stats.snapshot());
+		data.put("nodeId", properties.getNodeId());
+		data.put("mqttPort", properties.getPort());
+		data.put("maxConnections", properties.getMaxConnections());
+		data.put("uptimeMillis", System.currentTimeMillis() - startAtMillis);
+		return Result.ok(data);
+	}
+
+	private static final long startAtMillis = System.currentTimeMillis();
+
 }

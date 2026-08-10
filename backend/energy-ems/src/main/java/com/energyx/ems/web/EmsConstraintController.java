@@ -9,20 +9,21 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/ems/constraint")
 public class EmsConstraintController {
 
-    private final EmsConstraintService service;
+	private final EmsConstraintService service;
 
-    public EmsConstraintController(EmsConstraintService service) {
-        this.service = service;
-    }
+	public EmsConstraintController(EmsConstraintService service) {
+		this.service = service;
+	}
 
-    @GetMapping
-    public Result<EmsConstraint> getByStation(@RequestParam Long stationId) {
-        return Result.ok(service.getByStation(stationId));
-    }
+	@GetMapping
+	public Result<EmsConstraint> getByStation(@RequestParam Long stationId) {
+		return Result.ok(service.getByStation(stationId));
+	}
 
-    /** 保存安全约束（一电站一条 upsert）。 */
-    @PutMapping
-    public Result<EmsConstraint> save(@RequestBody EmsConstraint constraint) {
-        return Result.ok(service.saveConstraint(constraint));
-    }
+	/** 保存安全约束（一电站一条 upsert）。 */
+	@PutMapping
+	public Result<EmsConstraint> save(@RequestBody EmsConstraint constraint) {
+		return Result.ok(service.saveConstraint(constraint));
+	}
+
 }

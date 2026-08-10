@@ -8,6 +8,8 @@ import lombok.Data;
 @Data
 public class EnumValue {
 
-    private Object value;
-    private String desc;
+	private Object value;
+
+	private String desc;
+
 }

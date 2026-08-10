@@ -14,10 +14,11 @@ import lombok.Setter;
 @TableName("sys_user_role")
 public class SysUserRole {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+	@TableId(type = IdType.AUTO)
+	private Long id;
 
-    private Long userId;
+	private Long userId;
 
-    private Long roleId;
+	private Long roleId;
+
 }

@@ -26,42 +26,43 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/tenant")
 public class SysTenantController {
 
-    private final SysTenantService tenantService;
+	private final SysTenantService tenantService;
 
-    public SysTenantController(SysTenantService tenantService) {
-        this.tenantService = tenantService;
-    }
+	public SysTenantController(SysTenantService tenantService) {
+		this.tenantService = tenantService;
+	}
 
-    @GetMapping("/page")
-    public Result<PageResult<SysTenant>> page(SysTenantQuery query) {
-        return Result.ok(tenantService.pageQuery(query));
-    }
+	@GetMapping("/page")
+	public Result<PageResult<SysTenant>> page(SysTenantQuery query) {
+		return Result.ok(tenantService.pageQuery(query));
+	}
 
-    @GetMapping("/{tenantId}")
-    public Result<SysTenant> detail(@PathVariable Long tenantId) {
-        return Result.ok(tenantService.getById(tenantId));
-    }
+	@GetMapping("/{tenantId}")
+	public Result<SysTenant> detail(@PathVariable Long tenantId) {
+		return Result.ok(tenantService.getById(tenantId));
+	}
 
-    @PostMapping
-    public Result<Long> create(@Valid @RequestBody SysTenantSaveReq req) {
-        return Result.ok(tenantService.createTenant(req));
-    }
+	@PostMapping
+	public Result<Long> create(@Valid @RequestBody SysTenantSaveReq req) {
+		return Result.ok(tenantService.createTenant(req));
+	}
 
-    @PutMapping("/{tenantId}")
-    public Result<Void> update(@PathVariable Long tenantId, @Valid @RequestBody SysTenantSaveReq req) {
-        tenantService.updateTenant(tenantId, req);
-        return Result.ok();
-    }
+	@PutMapping("/{tenantId}")
+	public Result<Void> update(@PathVariable Long tenantId, @Valid @RequestBody SysTenantSaveReq req) {
+		tenantService.updateTenant(tenantId, req);
+		return Result.ok();
+	}
 
-    @DeleteMapping("/{tenantId}")
-    public Result<Void> delete(@PathVariable Long tenantId) {
-        tenantService.removeById(tenantId);
-        return Result.ok();
-    }
+	@DeleteMapping("/{tenantId}")
+	public Result<Void> delete(@PathVariable Long tenantId) {
+		tenantService.removeById(tenantId);
+		return Result.ok();
+	}
 
-    @PutMapping("/{tenantId}/status")
-    public Result<Void> changeStatus(@PathVariable Long tenantId, @RequestParam Integer status) {
-        tenantService.changeStatus(tenantId, status);
-        return Result.ok();
-    }
+	@PutMapping("/{tenantId}/status")
+	public Result<Void> changeStatus(@PathVariable Long tenantId, @RequestParam Integer status) {
+		tenantService.changeStatus(tenantId, status);
+		return Result.ok();
+	}
+
 }

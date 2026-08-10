@@ -19,130 +19,135 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class RedisUtils {
 
-    private final StringRedisTemplate redis;
-    private final ObjectMapper objectMapper;
+	private final StringRedisTemplate redis;
 
-    public RedisUtils(StringRedisTemplate redis, ObjectMapper objectMapper) {
-        this.redis = redis;
-        this.objectMapper = objectMapper;
-    }
+	private final ObjectMapper objectMapper;
 
-    // ---------- String / JSON ----------
+	public RedisUtils(StringRedisTemplate redis, ObjectMapper objectMapper) {
+		this.redis = redis;
+		this.objectMapper = objectMapper;
+	}
 
-    public void set(String key, String value, Duration ttl) {
-        redis.opsForValue().set(key, value, ttl);
-    }
+	// ---------- String / JSON ----------
 
-    public void set(String key, String value) {
-        redis.opsForValue().set(key, value);
-    }
+	public void set(String key, String value, Duration ttl) {
+		redis.opsForValue().set(key, value, ttl);
+	}
 
-    public String get(String key) {
-        return redis.opsForValue().get(key);
-    }
+	public void set(String key, String value) {
+		redis.opsForValue().set(key, value);
+	}
 
-    public void setJson(String key, Object value, Duration ttl) {
-        try {
-            redis.opsForValue().set(key, objectMapper.writeValueAsString(value), ttl);
-        } catch (Exception e) {
-            throw new IllegalStateException("serialize value error: " + e.getMessage(), e);
-        }
-    }
+	public String get(String key) {
+		return redis.opsForValue().get(key);
+	}
 
-    public <T> T getJson(String key, Class<T> clazz) {
-        String json = get(key);
-        if (json == null) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, clazz);
-        } catch (Exception e) {
-            log.warn("deserialize redis value error, key={}", key, e);
-            return null;
-        }
-    }
+	public void setJson(String key, Object value, Duration ttl) {
+		try {
+			redis.opsForValue().set(key, objectMapper.writeValueAsString(value), ttl);
+		}
+		catch (Exception e) {
+			throw new IllegalStateException("serialize value error: " + e.getMessage(), e);
+		}
+	}
 
-    public <T> T getJson(String key, TypeReference<T> typeReference) {
-        String json = get(key);
-        if (json == null) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, typeReference);
-        } catch (Exception e) {
-            log.warn("deserialize redis value error, key={}", key, e);
-            return null;
-        }
-    }
+	public <T> T getJson(String key, Class<T> clazz) {
+		String json = get(key);
+		if (json == null) {
+			return null;
+		}
+		try {
+			return objectMapper.readValue(json, clazz);
+		}
+		catch (Exception e) {
+			log.warn("deserialize redis value error, key={}", key, e);
+			return null;
+		}
+	}
 
-    // ---------- key 操作 ----------
+	public <T> T getJson(String key, TypeReference<T> typeReference) {
+		String json = get(key);
+		if (json == null) {
+			return null;
+		}
+		try {
+			return objectMapper.readValue(json, typeReference);
+		}
+		catch (Exception e) {
+			log.warn("deserialize redis value error, key={}", key, e);
+			return null;
+		}
+	}
 
-    public boolean delete(String key) {
-        return Boolean.TRUE.equals(redis.delete(key));
-    }
+	// ---------- key 操作 ----------
 
-    public boolean expire(String key, long seconds) {
-        return Boolean.TRUE.equals(redis.expire(key, seconds, TimeUnit.SECONDS));
-    }
+	public boolean delete(String key) {
+		return Boolean.TRUE.equals(redis.delete(key));
+	}
 
-    public boolean hasKey(String key) {
-        return Boolean.TRUE.equals(redis.hasKey(key));
-    }
+	public boolean expire(String key, long seconds) {
+		return Boolean.TRUE.equals(redis.expire(key, seconds, TimeUnit.SECONDS));
+	}
 
-    public Set<String> keys(String pattern) {
-        return redis.keys(pattern);
-    }
+	public boolean hasKey(String key) {
+		return Boolean.TRUE.equals(redis.hasKey(key));
+	}
 
-    // ---------- 原子操作 ----------
+	public Set<String> keys(String pattern) {
+		return redis.keys(pattern);
+	}
 
-    /** SETNX：仅当不存在时写入 */
-    public boolean setNx(String key, String value, Duration ttl) {
-        return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, value, ttl));
-    }
+	// ---------- 原子操作 ----------
 
-    public Long incr(String key) {
-        return redis.opsForValue().increment(key);
-    }
+	/** SETNX：仅当不存在时写入 */
+	public boolean setNx(String key, String value, Duration ttl) {
+		return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, value, ttl));
+	}
 
-    // ---------- Hash ----------
+	public Long incr(String key) {
+		return redis.opsForValue().increment(key);
+	}
 
-    public void hSet(String key, String field, String value) {
-        redis.opsForHash().put(key, field, value);
-    }
+	// ---------- Hash ----------
 
-    public void hSetAll(String key, Map<String, String> map) {
-        redis.opsForHash().putAll(key, map);
-    }
+	public void hSet(String key, String field, String value) {
+		redis.opsForHash().put(key, field, value);
+	}
 
-    public String hGet(String key, String field) {
-        Object value = redis.opsForHash().get(key, field);
-        return value == null ? null : value.toString();
-    }
+	public void hSetAll(String key, Map<String, String> map) {
+		redis.opsForHash().putAll(key, map);
+	}
 
-    public Map<Object, Object> hGetAll(String key) {
-        return redis.opsForHash().entries(key);
-    }
+	public String hGet(String key, String field) {
+		Object value = redis.opsForHash().get(key, field);
+		return value == null ? null : value.toString();
+	}
 
-    public boolean hDel(String key, Object... fields) {
-        return redis.opsForHash().delete(key, fields) > 0;
-    }
+	public Map<Object, Object> hGetAll(String key) {
+		return redis.opsForHash().entries(key);
+	}
 
-    // ---------- List ----------
+	public boolean hDel(String key, Object... fields) {
+		return redis.opsForHash().delete(key, fields) > 0;
+	}
 
-    public long lPush(String key, String... values) {
-        return redis.opsForList().leftPushAll(key, values);
-    }
+	// ---------- List ----------
 
-    public String rPop(String key) {
-        return redis.opsForList().rightPop(key);
-    }
+	public long lPush(String key, String... values) {
+		return redis.opsForList().leftPushAll(key, values);
+	}
 
-    public List<String> lRange(String key, long start, long end) {
-        return redis.opsForList().range(key, start, end);
-    }
+	public String rPop(String key) {
+		return redis.opsForList().rightPop(key);
+	}
 
-    public long lSize(String key) {
-        Long size = redis.opsForList().size(key);
-        return size == null ? 0 : size;
-    }
+	public List<String> lRange(String key, long start, long end) {
+		return redis.opsForList().range(key, start, end);
+	}
+
+	public long lSize(String key) {
+		Long size = redis.opsForList().size(key);
+		return size == null ? 0 : size;
+	}
+
 }

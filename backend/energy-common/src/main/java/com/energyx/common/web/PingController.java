@@ -11,22 +11,22 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 通用存活探针：所有依赖 energy-common 的 Servlet 服务自动获得 /ping。
- * 用于网关连通性与健康检查（Phase 3 起）。
+ * 通用存活探针：所有依赖 energy-common 的 Servlet 服务自动获得 /ping。 用于网关连通性与健康检查（Phase 3 起）。
  */
 @RestController
 @RequestMapping("/ping")
 public class PingController {
 
-    @Value("${spring.application.name:unknown}")
-    private String appName;
+	@Value("${spring.application.name:unknown}")
+	private String appName;
 
-    @GetMapping
-    public Result<Map<String, Object>> ping() {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("service", appName);
-        data.put("version", "1.0.0-SNAPSHOT");
-        data.put("time", LocalDateTime.now().toString());
-        return Result.ok(data);
-    }
+	@GetMapping
+	public Result<Map<String, Object>> ping() {
+		Map<String, Object> data = new LinkedHashMap<>();
+		data.put("service", appName);
+		data.put("version", "1.0.0-SNAPSHOT");
+		data.put("time", LocalDateTime.now().toString());
+		return Result.ok(data);
+	}
+
 }

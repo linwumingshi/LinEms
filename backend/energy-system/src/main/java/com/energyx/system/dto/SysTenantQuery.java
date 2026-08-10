@@ -8,10 +8,11 @@ import lombok.Data;
 @Data
 public class SysTenantQuery {
 
-    private long current = 1;
+	private long current = 1;
 
-    private long size = 10;
+	private long size = 10;
 
-    /** 编码/名称模糊搜索 */
-    private String keyword;
+	/** 编码/名称模糊搜索 */
+	private String keyword;
+
 }

@@ -21,65 +21,70 @@ import java.util.List;
 @RequestMapping("/tsdb")
 public class TsdbController {
 
-    private static final int MAX_IDENTIFIERS = 10;
-    private static final long HOUR_MS = 3_600_000L;
-    private static final long DAY_MS = 24L * HOUR_MS;
+	private static final int MAX_IDENTIFIERS = 10;
 
-    private final TdengineQueryService queryService;
+	private static final long HOUR_MS = 3_600_000L;
 
-    public TsdbController(TdengineQueryService queryService) {
-        this.queryService = queryService;
-    }
+	private static final long DAY_MS = 24L * HOUR_MS;
 
-    @GetMapping("/property/history")
-    public Result<PropertyHistoryView> propertyHistory(
-            @RequestParam("deviceId") String deviceId,
-            @RequestParam("productKey") String productKey,
-            @RequestParam("identifiers") String identifiers,
-            @RequestParam(value = "startTime", required = false) Long startTime,
-            @RequestParam(value = "endTime", required = false) Long endTime,
-            @RequestParam(value = "order", defaultValue = "desc") String order,
-            @RequestParam(value = "page", defaultValue = "1") Integer page,
-            @RequestParam(value = "size", defaultValue = "20") Integer size) throws Exception {
+	private final TdengineQueryService queryService;
 
-        if (!TdengineSqlBuilder.isSafeKey(productKey)) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "productKey 非法");
-        }
-        List<String> ids = Arrays.stream(identifiers.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .distinct()
-                .toList();
-        if (ids.isEmpty() || ids.size() > MAX_IDENTIFIERS) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "identifiers 须为 1~10 个");
-        }
-        if (page == null || page < 1) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "page 须 ≥1");
-        }
-        if (size == null || size < 1 || size > 1000) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "size 须为 1~1000");
-        }
-        boolean asc;
-        if ("asc".equalsIgnoreCase(order)) {
-            asc = true;
-        } else if ("desc".equalsIgnoreCase(order)) {
-            asc = false;
-        } else {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "order 仅支持 asc|desc");
-        }
+	public TsdbController(TdengineQueryService queryService) {
+		this.queryService = queryService;
+	}
 
-        long now = System.currentTimeMillis();
-        long start = startTime != null ? startTime : now - DAY_MS;
-        long end = endTime != null ? endTime : now;
-        if (start >= end) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "时间范围非法：startTime 须早于 endTime");
-        }
+	@GetMapping("/property/history")
+	public Result<PropertyHistoryView> propertyHistory(@RequestParam("deviceId") String deviceId,
+			@RequestParam("productKey") String productKey, @RequestParam("identifiers") String identifiers,
+			@RequestParam(value = "startTime", required = false) Long startTime,
+			@RequestParam(value = "endTime", required = false) Long endTime,
+			@RequestParam(value = "order", defaultValue = "desc") String order,
+			@RequestParam(value = "page", defaultValue = "1") Integer page,
+			@RequestParam(value = "size", defaultValue = "20") Integer size) throws Exception {
 
-        try {
-            PropertyHistoryView view = queryService.queryHistory(deviceId, productKey, ids, start, end, asc, page, size);
-            return Result.ok(view);
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, e.getMessage());
-        }
-    }
+		if (!TdengineSqlBuilder.isSafeKey(productKey)) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "productKey 非法");
+		}
+		List<String> ids = Arrays.stream(identifiers.split(","))
+			.map(String::trim)
+			.filter(s -> !s.isEmpty())
+			.distinct()
+			.toList();
+		if (ids.isEmpty() || ids.size() > MAX_IDENTIFIERS) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "identifiers 须为 1~10 个");
+		}
+		if (page == null || page < 1) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "page 须 ≥1");
+		}
+		if (size == null || size < 1 || size > 1000) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "size 须为 1~1000");
+		}
+		boolean asc;
+		if ("asc".equalsIgnoreCase(order)) {
+			asc = true;
+		}
+		else if ("desc".equalsIgnoreCase(order)) {
+			asc = false;
+		}
+		else {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "order 仅支持 asc|desc");
+		}
+
+		long now = System.currentTimeMillis();
+		long start = startTime != null ? startTime : now - DAY_MS;
+		long end = endTime != null ? endTime : now;
+		if (start >= end) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "时间范围非法：startTime 须早于 endTime");
+		}
+
+		try {
+			PropertyHistoryView view = queryService.queryHistory(deviceId, productKey, ids, start, end, asc, page,
+					size);
+			return Result.ok(view);
+		}
+		catch (IllegalArgumentException e) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, e.getMessage());
+		}
+	}
+
 }

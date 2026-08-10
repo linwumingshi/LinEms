@@ -16,31 +16,32 @@ import java.time.LocalDateTime;
 @TableName("ems_plan")
 public class EmsPlan {
 
-    @TableId(type = IdType.AUTO)
-    private Long planId;
+	@TableId(type = IdType.AUTO)
+	private Long planId;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    private Long stationId;
+	private Long stationId;
 
-    private Long strategyId;
+	private Long strategyId;
 
-    private LocalDate planDate;
+	private LocalDate planDate;
 
-    /** 1充电 2放电 3混合 */
-    private Integer planType;
+	/** 1充电 2放电 3混合 */
+	private Integer planType;
 
-    private BigDecimal totalEnergy;
+	private BigDecimal totalEnergy;
 
-    /** 计划参数快照 JSON */
-    private String planParam;
+	/** 计划参数快照 JSON */
+	private String planParam;
 
-    /** 0待执行 1执行中 2完成 3已取消 */
-    private Integer status;
+	/** 0待执行 1执行中 2完成 3已取消 */
+	private Integer status;
 
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
+	@TableField(value = "create_time", fill = FieldFill.INSERT)
+	private LocalDateTime createTime;
 
-    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updateTime;
+	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
+	private LocalDateTime updateTime;
+
 }

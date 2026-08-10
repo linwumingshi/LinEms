@@ -19,24 +19,24 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
-    private final ObjectMapper objectMapper;
+	private final ObjectMapper objectMapper;
 
-    public JsonAuthenticationEntryPoint(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
+	public JsonAuthenticationEntryPoint(ObjectMapper objectMapper) {
+		this.objectMapper = objectMapper;
+	}
 
-    @Override
-    public void commence(HttpServletRequest request, HttpServletResponse response,
-                         AuthenticationException authException) throws IOException {
-        write(response, HttpServletResponse.SC_UNAUTHORIZED,
-                ErrorCode.UNAUTHORIZED, "未认证或 Token 无效");
-    }
+	@Override
+	public void commence(HttpServletRequest request, HttpServletResponse response,
+			AuthenticationException authException) throws IOException {
+		write(response, HttpServletResponse.SC_UNAUTHORIZED, ErrorCode.UNAUTHORIZED, "未认证或 Token 无效");
+	}
 
-    protected void write(HttpServletResponse response, int httpStatus, ErrorCode errorCode, String message)
-            throws IOException {
-        response.setStatus(httpStatus);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        objectMapper.writeValue(response.getWriter(), Result.fail(errorCode, message));
-    }
+	protected void write(HttpServletResponse response, int httpStatus, ErrorCode errorCode, String message)
+			throws IOException {
+		response.setStatus(httpStatus);
+		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+		response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		objectMapper.writeValue(response.getWriter(), Result.fail(errorCode, message));
+	}
+
 }

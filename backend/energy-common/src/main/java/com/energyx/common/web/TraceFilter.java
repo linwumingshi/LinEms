@@ -22,21 +22,23 @@ import java.io.IOException;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class TraceFilter extends OncePerRequestFilter {
 
-    @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
-        String traceId = request.getHeader(Constants.TRACE_ID_HEADER);
-        if (traceId == null || traceId.isBlank()) {
-            traceId = TraceContext.generate();
-        }
-        TraceContext.setTraceId(traceId);
-        MDC.put(Constants.TRACE_ID_HEADER, traceId);
-        response.setHeader(Constants.TRACE_ID_HEADER, traceId);
-        try {
-            filterChain.doFilter(request, response);
-        } finally {
-            MDC.remove(Constants.TRACE_ID_HEADER);
-            TraceContext.clear();
-        }
-    }
+	@Override
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+		String traceId = request.getHeader(Constants.TRACE_ID_HEADER);
+		if (traceId == null || traceId.isBlank()) {
+			traceId = TraceContext.generate();
+		}
+		TraceContext.setTraceId(traceId);
+		MDC.put(Constants.TRACE_ID_HEADER, traceId);
+		response.setHeader(Constants.TRACE_ID_HEADER, traceId);
+		try {
+			filterChain.doFilter(request, response);
+		}
+		finally {
+			MDC.remove(Constants.TRACE_ID_HEADER);
+			TraceContext.clear();
+		}
+	}
+
 }

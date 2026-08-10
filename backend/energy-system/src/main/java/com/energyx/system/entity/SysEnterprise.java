@@ -11,38 +11,38 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * 企业组织树（单位管理，等价若依 sys_dept）。
- * 邻接表（parent_id）+ 物化路径（path）表达层级，供子树查询。
+ * 企业组织树（单位管理，等价若依 sys_dept）。 邻接表（parent_id）+ 物化路径（path）表达层级，供子树查询。
  */
 @Getter
 @Setter
 @TableName("sys_enterprise")
 public class SysEnterprise extends BaseEntity {
 
-    @TableId(type = IdType.AUTO)
-    private Long enterpriseId;
+	@TableId(type = IdType.AUTO)
+	private Long enterpriseId;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    /** 父企业 ID（0=顶级） */
-    private Long parentId;
+	/** 父企业 ID（0=顶级） */
+	private Long parentId;
 
-    /** 物化路径，如 /1/3/ 便于子树查询 */
-    private String path;
+	/** 物化路径，如 /1/3/ 便于子树查询 */
+	private String path;
 
-    /** 层级：1 集团直属 2 子企业 */
-    private Integer level;
+	/** 层级：1 集团直属 2 子企业 */
+	private Integer level;
 
-    private String enterpriseCode;
+	private String enterpriseCode;
 
-    private String enterpriseName;
+	private String enterpriseName;
 
-    private Integer sort;
+	private Integer sort;
 
-    /** 状态：0 禁用 1 启用 */
-    private Integer status;
+	/** 状态：0 禁用 1 启用 */
+	private Integer status;
 
-    /** 子节点（仅树形接口填充，非表字段） */
-    @TableField(exist = false)
-    private List<SysEnterprise> children;
+	/** 子节点（仅树形接口填充，非表字段） */
+	@TableField(exist = false)
+	private List<SysEnterprise> children;
+
 }

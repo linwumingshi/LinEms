@@ -10,13 +10,14 @@ import com.energyx.station.web.dto.StationSaveReq;
  */
 public interface StationService {
 
-    Long create(StationSaveReq req);
+	Long create(StationSaveReq req);
 
-    void update(Long stationId, StationSaveReq req);
+	void update(Long stationId, StationSaveReq req);
 
-    void delete(Long stationId);
+	void delete(Long stationId);
 
-    IPage<Station> page(StationQuery query);
+	IPage<Station> page(StationQuery query);
 
-    Station detail(Long stationId);
+	Station detail(Long stationId);
+
 }

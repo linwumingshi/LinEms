@@ -13,30 +13,31 @@ import java.util.List;
 @Setter
 public class LoginResponse implements Serializable {
 
-    private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = 1L;
 
-    /** JWT（调用方按 Authorization: Bearer <token> 携带） */
-    private String token;
+	/** JWT（调用方按 Authorization: Bearer <token> 携带） */
+	private String token;
 
-    /** 固定 Bearer */
-    private String tokenType;
+	/** 固定 Bearer */
+	private String tokenType;
 
-    /** 有效期（秒） */
-    private int expiresIn;
+	/** 有效期（秒） */
+	private int expiresIn;
 
-    private Long userId;
+	private Long userId;
 
-    private String username;
+	private String username;
 
-    private String realName;
+	private String realName;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    private Long enterpriseId;
+	private Long enterpriseId;
 
-    /** 权限标识集合（含 *:*:* 表示超级管理员全部权限） */
-    private List<String> permissions;
+	/** 权限标识集合（含 *:*:* 表示超级管理员全部权限） */
+	private List<String> permissions;
 
-    /** 角色编码集合 */
-    private List<String> roles;
+	/** 角色编码集合 */
+	private List<String> roles;
+
 }

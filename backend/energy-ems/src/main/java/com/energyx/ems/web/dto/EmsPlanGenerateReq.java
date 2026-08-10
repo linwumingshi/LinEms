@@ -7,9 +7,10 @@ import java.time.LocalDate;
 @Data
 public class EmsPlanGenerateReq {
 
-    private Long stationId;
+	private Long stationId;
 
-    private Long strategyId;
+	private Long strategyId;
 
-    private LocalDate planDate;
+	private LocalDate planDate;
+
 }

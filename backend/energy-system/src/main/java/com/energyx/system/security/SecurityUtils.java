@@ -8,25 +8,26 @@ import org.springframework.security.core.context.SecurityContextHolder;
  */
 public final class SecurityUtils {
 
-    private SecurityUtils() {
-    }
+	private SecurityUtils() {
+	}
 
-    /** 从 SecurityContext 取当前登录用户，未认证返回 null。 */
-    public static LoginUser getLoginUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof LoginUser loginUser) {
-            return loginUser;
-        }
-        return null;
-    }
+	/** 从 SecurityContext 取当前登录用户，未认证返回 null。 */
+	public static LoginUser getLoginUser() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof LoginUser loginUser) {
+			return loginUser;
+		}
+		return null;
+	}
 
-    public static Long getUserId() {
-        LoginUser loginUser = getLoginUser();
-        return loginUser == null ? null : loginUser.getUserId();
-    }
+	public static Long getUserId() {
+		LoginUser loginUser = getLoginUser();
+		return loginUser == null ? null : loginUser.getUserId();
+	}
 
-    public static Long getTenantId() {
-        LoginUser loginUser = getLoginUser();
-        return loginUser == null ? null : loginUser.getTenantId();
-    }
+	public static Long getTenantId() {
+		LoginUser loginUser = getLoginUser();
+		return loginUser == null ? null : loginUser.getTenantId();
+	}
+
 }

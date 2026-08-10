@@ -14,7 +14,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties(ShadowProperties.class)
 public class ShadowApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(ShadowApplication.class, args);
-    }
+	public static void main(String[] args) {
+		SpringApplication.run(ShadowApplication.class, args);
+	}
+
 }

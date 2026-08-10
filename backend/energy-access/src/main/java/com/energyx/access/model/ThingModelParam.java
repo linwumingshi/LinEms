@@ -8,7 +8,10 @@ import lombok.Data;
 @Data
 public class ThingModelParam {
 
-    private String identifier;
-    private String dataType;
-    private String unit;
+	private String identifier;
+
+	private String dataType;
+
+	private String unit;
+
 }

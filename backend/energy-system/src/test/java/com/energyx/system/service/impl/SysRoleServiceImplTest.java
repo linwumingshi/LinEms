@@ -35,141 +35,146 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SysRoleServiceImplTest {
 
-    @Mock
-    private SysRoleMapper roleMapper;
-    @Mock
-    private SysRolePermissionMapper rolePermissionMapper;
-    @Mock
-    private SysUserRoleMapper userRoleMapper;
-    @Mock
-    private SysPermissionMapper permissionMapper;
-    @Mock
-    private TokenService tokenService;
-    @Mock
-    private PermissionResolver permissionResolver;
+	@Mock
+	private SysRoleMapper roleMapper;
 
-    private SysRoleService service;
+	@Mock
+	private SysRolePermissionMapper rolePermissionMapper;
 
-    @BeforeEach
-    void setUp() {
-        SysRoleServiceImpl impl = new SysRoleServiceImpl(rolePermissionMapper, userRoleMapper,
-                permissionMapper, tokenService, permissionResolver);
-        ReflectionTestUtils.setField(impl, "baseMapper", roleMapper);
-        service = impl;
-    }
+	@Mock
+	private SysUserRoleMapper userRoleMapper;
 
-    private SysRole role(Long id, String code) {
-        SysRole role = new SysRole();
-        role.setRoleId(id);
-        role.setTenantId(1L);
-        role.setRoleCode(code);
-        role.setRoleName("角色" + code);
-        role.setStatus(1);
-        return role;
-    }
+	@Mock
+	private SysPermissionMapper permissionMapper;
 
-    private SysRoleSaveReq req(String code) {
-        SysRoleSaveReq req = new SysRoleSaveReq();
-        req.setRoleCode(code);
-        req.setRoleName("角色" + code);
-        return req;
-    }
+	@Mock
+	private TokenService tokenService;
 
-    @Test
-    void createRole_success_setsDefaults() {
-        when(roleMapper.selectCount(any())).thenReturn(0L);
-        when(roleMapper.insert(any(SysRole.class))).thenReturn(1);
+	@Mock
+	private PermissionResolver permissionResolver;
 
-        service.createRole(req("OPERATOR"));
+	private SysRoleService service;
 
-        ArgumentCaptor<SysRole> captor = ArgumentCaptor.forClass(SysRole.class);
-        verify(roleMapper).insert(captor.capture());
-        assertEquals("OPERATOR", captor.getValue().getRoleCode());
-        assertEquals(1L, captor.getValue().getTenantId());
-        assertEquals(1, captor.getValue().getStatus());
-        assertEquals(3, captor.getValue().getDataScope());
-    }
+	@BeforeEach
+	void setUp() {
+		SysRoleServiceImpl impl = new SysRoleServiceImpl(rolePermissionMapper, userRoleMapper, permissionMapper,
+				tokenService, permissionResolver);
+		ReflectionTestUtils.setField(impl, "baseMapper", roleMapper);
+		service = impl;
+	}
 
-    @Test
-    void createRole_duplicateCode_conflict() {
-        when(roleMapper.selectCount(any())).thenReturn(1L);
+	private SysRole role(Long id, String code) {
+		SysRole role = new SysRole();
+		role.setRoleId(id);
+		role.setTenantId(1L);
+		role.setRoleCode(code);
+		role.setRoleName("角色" + code);
+		role.setStatus(1);
+		return role;
+	}
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.createRole(req("DUP")));
-        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
-        verify(roleMapper, never()).insert(any(SysRole.class));
-    }
+	private SysRoleSaveReq req(String code) {
+		SysRoleSaveReq req = new SysRoleSaveReq();
+		req.setRoleCode(code);
+		req.setRoleName("角色" + code);
+		return req;
+	}
 
-    @Test
-    void deleteRole_superAdmin_conflict() {
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.deleteRole(1L));
-        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
-        verify(roleMapper, never()).deleteById(anyLong());
-    }
+	@Test
+	void createRole_success_setsDefaults() {
+		when(roleMapper.selectCount(any())).thenReturn(0L);
+		when(roleMapper.insert(any(SysRole.class))).thenReturn(1);
 
-    @Test
-    void deleteRole_assignedUsers_conflict() {
-        when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
-        when(userRoleMapper.selectCount(any())).thenReturn(1L);
+		service.createRole(req("OPERATOR"));
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.deleteRole(2L));
-        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
-    }
+		ArgumentCaptor<SysRole> captor = ArgumentCaptor.forClass(SysRole.class);
+		verify(roleMapper).insert(captor.capture());
+		assertEquals("OPERATOR", captor.getValue().getRoleCode());
+		assertEquals(1L, captor.getValue().getTenantId());
+		assertEquals(1, captor.getValue().getStatus());
+		assertEquals(3, captor.getValue().getDataScope());
+	}
 
-    @Test
-    void deleteRole_empty_cleansAssociations() {
-        when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
-        when(userRoleMapper.selectCount(any())).thenReturn(0L);
-        when(roleMapper.deleteById(2L)).thenReturn(1);
+	@Test
+	void createRole_duplicateCode_conflict() {
+		when(roleMapper.selectCount(any())).thenReturn(1L);
 
-        service.deleteRole(2L);
+		BusinessException ex = assertThrows(BusinessException.class, () -> service.createRole(req("DUP")));
+		assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+		verify(roleMapper, never()).insert(any(SysRole.class));
+	}
 
-        verify(rolePermissionMapper).delete(any());
-        verify(roleMapper).deleteById(2L);
-    }
+	@Test
+	void deleteRole_superAdmin_conflict() {
+		BusinessException ex = assertThrows(BusinessException.class, () -> service.deleteRole(1L));
+		assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+		verify(roleMapper, never()).deleteById(anyLong());
+	}
 
-    @Test
-    void changeStatus_superAdminDisable_conflict() {
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.changeStatus(1L, 0));
-        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
-    }
+	@Test
+	void deleteRole_assignedUsers_conflict() {
+		when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
+		when(userRoleMapper.selectCount(any())).thenReturn(1L);
 
-    @Test
-    void assignPerms_validatesThenRefreshesSessions() {
-        when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
-        SysPermission perm = new SysPermission();
-        perm.setPermId(10L);
-        perm.setPermCode("system:user:list");
-        when(permissionMapper.selectById(10L)).thenReturn(perm);
+		BusinessException ex = assertThrows(BusinessException.class, () -> service.deleteRole(2L));
+		assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+	}
 
-        service.assignPerms(2L, java.util.List.of(10L));
+	@Test
+	void deleteRole_empty_cleansAssociations() {
+		when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
+		when(userRoleMapper.selectCount(any())).thenReturn(0L);
+		when(roleMapper.deleteById(2L)).thenReturn(1);
 
-        verify(rolePermissionMapper).delete(any());
-        ArgumentCaptor<SysRolePermission> captor = ArgumentCaptor.forClass(SysRolePermission.class);
-        verify(rolePermissionMapper).insert(captor.capture());
-        assertEquals(2L, captor.getValue().getRoleId());
-        assertEquals(10L, captor.getValue().getPermId());
-        verify(tokenService).refreshPermissionByRoleCode("OPERATOR", permissionResolver);
-    }
+		service.deleteRole(2L);
 
-    @Test
-    void assignPerms_invalidPerm_notFound() {
-        when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
-        when(permissionMapper.selectById(99L)).thenReturn(null);
+		verify(rolePermissionMapper).delete(any());
+		verify(roleMapper).deleteById(2L);
+	}
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.assignPerms(2L, java.util.List.of(99L)));
-        assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
-        verify(rolePermissionMapper, never()).delete(any());
-    }
+	@Test
+	void changeStatus_superAdminDisable_conflict() {
+		BusinessException ex = assertThrows(BusinessException.class, () -> service.changeStatus(1L, 0));
+		assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+	}
 
-    @Test
-    void updateRole_duplicateCode_conflict() {
-        SysRole existing = role(2L, "OPERATOR");
-        when(roleMapper.selectById(2L)).thenReturn(existing);
-        when(roleMapper.selectCount(any())).thenReturn(1L);
+	@Test
+	void assignPerms_validatesThenRefreshesSessions() {
+		when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
+		SysPermission perm = new SysPermission();
+		perm.setPermId(10L);
+		perm.setPermCode("system:user:list");
+		when(permissionMapper.selectById(10L)).thenReturn(perm);
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.updateRole(2L, req("NEWCODE")));
-        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
-    }
+		service.assignPerms(2L, java.util.List.of(10L));
+
+		verify(rolePermissionMapper).delete(any());
+		ArgumentCaptor<SysRolePermission> captor = ArgumentCaptor.forClass(SysRolePermission.class);
+		verify(rolePermissionMapper).insert(captor.capture());
+		assertEquals(2L, captor.getValue().getRoleId());
+		assertEquals(10L, captor.getValue().getPermId());
+		verify(tokenService).refreshPermissionByRoleCode("OPERATOR", permissionResolver);
+	}
+
+	@Test
+	void assignPerms_invalidPerm_notFound() {
+		when(roleMapper.selectById(2L)).thenReturn(role(2L, "OPERATOR"));
+		when(permissionMapper.selectById(99L)).thenReturn(null);
+
+		BusinessException ex = assertThrows(BusinessException.class,
+				() -> service.assignPerms(2L, java.util.List.of(99L)));
+		assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
+		verify(rolePermissionMapper, never()).delete(any());
+	}
+
+	@Test
+	void updateRole_duplicateCode_conflict() {
+		SysRole existing = role(2L, "OPERATOR");
+		when(roleMapper.selectById(2L)).thenReturn(existing);
+		when(roleMapper.selectCount(any())).thenReturn(1L);
+
+		BusinessException ex = assertThrows(BusinessException.class, () -> service.updateRole(2L, req("NEWCODE")));
+		assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+	}
+
 }

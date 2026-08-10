@@ -17,30 +17,31 @@ import java.time.LocalTime;
 @TableName("ems_electricity_price")
 public class EmsElectricityPrice {
 
-    @TableId(type = IdType.AUTO)
-    private Long priceId;
+	@TableId(type = IdType.AUTO)
+	private Long priceId;
 
-    private Long tenantId;
+	private Long tenantId;
 
-    private Long stationId;
+	private Long stationId;
 
-    private String region;
+	private String region;
 
-    /** DEEP/PEEK/PEAK/FLAT/VALLEY */
-    private String priceType;
+	/** DEEP/PEEK/PEAK/FLAT/VALLEY */
+	private String priceType;
 
-    private LocalTime startTime;
+	private LocalTime startTime;
 
-    private LocalTime endTime;
+	private LocalTime endTime;
 
-    private BigDecimal price;
+	private BigDecimal price;
 
-    private LocalDate validFrom;
+	private LocalDate validFrom;
 
-    private LocalDate validTo;
+	private LocalDate validTo;
 
-    private Integer status;
+	private Integer status;
 
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
+	@TableField(value = "create_time", fill = FieldFill.INSERT)
+	private LocalDateTime createTime;
+
 }

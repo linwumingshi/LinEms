@@ -22,63 +22,66 @@ import java.util.List;
 /**
  * 单位管理接口（组织树）。
  *
- * <p>权限标识见 V3 种子：system:enterprise:list / add / edit / remove。</p>
+ * <p>
+ * 权限标识见 V3 种子：system:enterprise:list / add / edit / remove。
+ * </p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/system/enterprise")
 public class SysEnterpriseController {
 
-    private final SysEnterpriseService enterpriseService;
+	private final SysEnterpriseService enterpriseService;
 
-    public SysEnterpriseController(SysEnterpriseService enterpriseService) {
-        this.enterpriseService = enterpriseService;
-    }
+	public SysEnterpriseController(SysEnterpriseService enterpriseService) {
+		this.enterpriseService = enterpriseService;
+	}
 
-    /** 组织树（管理页渲染）。 */
-    @GetMapping("/tree")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:list')")
-    public Result<List<SysEnterprise>> tree() {
-        return Result.ok(enterpriseService.tree());
-    }
+	/** 组织树（管理页渲染）。 */
+	@GetMapping("/tree")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:list')")
+	public Result<List<SysEnterprise>> tree() {
+		return Result.ok(enterpriseService.tree());
+	}
 
-    /** 扁平列表（父级下拉选择）。 */
-    @GetMapping("/list")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:list')")
-    public Result<List<SysEnterprise>> list() {
-        return Result.ok(enterpriseService.listAll());
-    }
+	/** 扁平列表（父级下拉选择）。 */
+	@GetMapping("/list")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:list')")
+	public Result<List<SysEnterprise>> list() {
+		return Result.ok(enterpriseService.listAll());
+	}
 
-    @GetMapping("/{enterpriseId}")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:list')")
-    public Result<SysEnterprise> detail(@PathVariable Long enterpriseId) {
-        return Result.ok(enterpriseService.getById(enterpriseId));
-    }
+	@GetMapping("/{enterpriseId}")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:list')")
+	public Result<SysEnterprise> detail(@PathVariable Long enterpriseId) {
+		return Result.ok(enterpriseService.getById(enterpriseId));
+	}
 
-    @PostMapping
-    @PreAuthorize("@ss.hasPermi('system:enterprise:add')")
-    public Result<Long> create(@Valid @RequestBody SysEnterpriseSaveReq req) {
-        return Result.ok(enterpriseService.createEnterprise(req));
-    }
+	@PostMapping
+	@PreAuthorize("@ss.hasPermi('system:enterprise:add')")
+	public Result<Long> create(@Valid @RequestBody SysEnterpriseSaveReq req) {
+		return Result.ok(enterpriseService.createEnterprise(req));
+	}
 
-    @PutMapping("/{enterpriseId}")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:edit')")
-    public Result<Void> update(@PathVariable Long enterpriseId, @Valid @RequestBody SysEnterpriseSaveReq req) {
-        enterpriseService.updateEnterprise(enterpriseId, req);
-        return Result.ok();
-    }
+	@PutMapping("/{enterpriseId}")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:edit')")
+	public Result<Void> update(@PathVariable Long enterpriseId, @Valid @RequestBody SysEnterpriseSaveReq req) {
+		enterpriseService.updateEnterprise(enterpriseId, req);
+		return Result.ok();
+	}
 
-    @DeleteMapping("/{enterpriseId}")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:remove')")
-    public Result<Void> delete(@PathVariable Long enterpriseId) {
-        enterpriseService.deleteEnterprise(enterpriseId);
-        return Result.ok();
-    }
+	@DeleteMapping("/{enterpriseId}")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:remove')")
+	public Result<Void> delete(@PathVariable Long enterpriseId) {
+		enterpriseService.deleteEnterprise(enterpriseId);
+		return Result.ok();
+	}
 
-    @PutMapping("/{enterpriseId}/status")
-    @PreAuthorize("@ss.hasPermi('system:enterprise:edit')")
-    public Result<Void> changeStatus(@PathVariable Long enterpriseId, @RequestParam Integer status) {
-        enterpriseService.changeStatus(enterpriseId, status);
-        return Result.ok();
-    }
+	@PutMapping("/{enterpriseId}/status")
+	@PreAuthorize("@ss.hasPermi('system:enterprise:edit')")
+	public Result<Void> changeStatus(@PathVariable Long enterpriseId, @RequestParam Integer status) {
+		enterpriseService.changeStatus(enterpriseId, status);
+		return Result.ok();
+	}
+
 }

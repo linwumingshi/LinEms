@@ -8,11 +8,12 @@ import com.energyx.system.entity.SysTenant;
 
 public interface SysTenantService extends IService<SysTenant> {
 
-    PageResult<SysTenant> pageQuery(SysTenantQuery query);
+	PageResult<SysTenant> pageQuery(SysTenantQuery query);
 
-    Long createTenant(SysTenantSaveReq req);
+	Long createTenant(SysTenantSaveReq req);
 
-    void updateTenant(Long tenantId, SysTenantSaveReq req);
+	void updateTenant(Long tenantId, SysTenantSaveReq req);
 
-    void changeStatus(Long tenantId, Integer status);
+	void changeStatus(Long tenantId, Integer status);
+
 }

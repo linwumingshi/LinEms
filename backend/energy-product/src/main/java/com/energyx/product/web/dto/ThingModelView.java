@@ -8,19 +8,20 @@ import lombok.Data;
 @Data
 public class ThingModelView {
 
-    private Long modelId;
+	private Long modelId;
 
-    private Long productId;
+	private Long productId;
 
-    /** 物模型版本 */
-    private String version;
+	/** 物模型版本 */
+	private String version;
 
-    /** 完整物模型 JSON Schema */
-    private String schemaJson;
+	/** 完整物模型 JSON Schema */
+	private String schemaJson;
 
-    /** 0草稿 1已发布 2已废弃 */
-    private Integer status;
+	/** 0草稿 1已发布 2已废弃 */
+	private Integer status;
 
-    /** 当前生效版本 */
-    private Integer isCurrent;
+	/** 当前生效版本 */
+	private Integer isCurrent;
+
 }

@@ -12,13 +12,14 @@ import java.util.List;
 @Mapper
 public interface AlarmRuleMapper {
 
-    /** 加载全部启用规则（缓存刷新源） */
-    @Select("""
-            SELECT rule_id, tenant_id, rule_code, rule_name, product_id, device_id, trigger_type,
-                   `condition`, severity, silence_seconds, recovery, status, description, create_by,
-                   create_time, update_time
-            FROM iot_alarm_rule
-            WHERE status = 1
-            """)
-    List<AlarmRuleRow> selectEnabledRules();
+	/** 加载全部启用规则（缓存刷新源） */
+	@Select("""
+			SELECT rule_id, tenant_id, rule_code, rule_name, product_id, device_id, trigger_type,
+			       `condition`, severity, silence_seconds, recovery, status, description, create_by,
+			       create_time, update_time
+			FROM iot_alarm_rule
+			WHERE status = 1
+			""")
+	List<AlarmRuleRow> selectEnabledRules();
+
 }

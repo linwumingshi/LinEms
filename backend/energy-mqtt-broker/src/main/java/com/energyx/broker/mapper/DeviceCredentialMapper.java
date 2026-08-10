@@ -9,7 +9,8 @@ import org.apache.ibatis.annotations.Select;
  */
 public interface DeviceCredentialMapper {
 
-    @Select("SELECT device_id, device_secret, auth_status, expire_time " +
-            "FROM iot_device_credential WHERE device_id = #{deviceId} LIMIT 1")
-    CredentialRow selectByDeviceId(@Param("deviceId") Long deviceId);
+	@Select("SELECT device_id, device_secret, auth_status, expire_time "
+			+ "FROM iot_device_credential WHERE device_id = #{deviceId} LIMIT 1")
+	CredentialRow selectByDeviceId(@Param("deviceId") Long deviceId);
+
 }

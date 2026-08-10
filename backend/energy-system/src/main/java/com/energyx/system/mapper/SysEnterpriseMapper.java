@@ -9,4 +9,5 @@ import org.apache.ibatis.annotations.Mapper;
  */
 @Mapper
 public interface SysEnterpriseMapper extends BaseMapper<SysEnterprise> {
+
 }
