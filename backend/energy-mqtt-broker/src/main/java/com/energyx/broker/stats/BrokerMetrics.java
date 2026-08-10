@@ -57,6 +57,7 @@ public class BrokerMetrics {
         counter(registry, "mqtt.backpressure.parked", stats.backpressureParked, "背压挂起总数");
         counter(registry, "mqtt.backpressure.dropped", stats.backpressureDropped, "背压丢弃总数");
         counter(registry, "mqtt.inflight.overflow", stats.inflightOverflow, "inflight 超限总数");
+        counter(registry, "mqtt.executor.rejected", stats.executorRejected, "业务线程池拒绝任务总数");
 
         if (brokerExecutor instanceof ThreadPoolExecutor tpe) {
             Gauge.builder("broker.executor.queue.size", tpe, e -> e.getQueue().size())

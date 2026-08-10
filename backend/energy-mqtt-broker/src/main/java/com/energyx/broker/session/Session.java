@@ -82,6 +82,21 @@ public class Session {
 
     private volatile long lastRenewNanos;
 
+    /**
+     * 会话过期时间（秒，P1-11 MQTT5 Session Expiry Interval）：
+     * 0 = 断开即过期（等同 clean 会话）；&gt;0 为 Redis 会话 TTL；v3.1.1 持久会话用配置默认值。
+     */
+    @Setter
+    private long sessionExpirySeconds;
+
+    /**
+     * 客户端声明的 Receive Maximum（P1-11 MQTT5，CONNECT 属性 0x21）：
+     * 本节点可同时发送的 QoS1/2 未确认报文上限；配合 max-inflight-per-session 取较小者。
+     * 默认 65535（协议上限，未声明时）。
+     */
+    @Setter
+    private int receiveMaximum = 65_535;
+
     public Session(String deviceKey, Channel channel, int mqttVersion, boolean cleanSession) {
         this.deviceKey = deviceKey;
         this.channel = channel;

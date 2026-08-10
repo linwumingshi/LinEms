@@ -89,8 +89,19 @@ public class NettyServerConfig {
             throw new IllegalStateException("MQTT TLS 证书缺失: cert=" + cert.getAbsolutePath()
                     + " key=" + key.getAbsolutePath() + "（先运行 deploy/scripts/gen-mqtt-certs.sh）");
         }
+        SslContextBuilder builder = SslContextBuilder.forServer(cert, key);
+        // P1-12 mTLS：要求设备证书 + 校验其信任链；CN=clientId 绑定在 handler 握手后校验
+        if (tls.isClientAuth()) {
+            File trust = new File(tls.getTrustCertFile());
+            if (!trust.isFile()) {
+                throw new IllegalStateException("mTLS 设备 CA 证书缺失: " + trust.getAbsolutePath()
+                        + "（clientAuth=true 必须提供 trust-cert-file，见 gen-mqtt-certs.sh -c）");
+            }
+            builder.clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE).trustManager(trust);
+            log.info("[Broker] MQTT mTLS 双向认证已启用，设备 CA={}", trust);
+        }
         log.info("[Broker] MQTT TLS 证书加载 {} / {}", cert, key);
-        return SslContextBuilder.forServer(cert, key).build();
+        return builder.build();
     }
 
     /**

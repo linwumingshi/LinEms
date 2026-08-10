@@ -300,8 +300,9 @@ public class MessageDeliverer {
             stats.recordOutgoing();
             return;
         }
-        // inflight 上限（max-inflight-per-session 落地）：超限持久会话转离线队列，干净会话丢弃
-        if (session.getOutboundInflight().size() >= properties.getMaxInflightPerSession()) {
+        // inflight 上限：配置值 与 v5 Receive Maximum（客户端声明）取较小者（P1-11）
+        int inflightLimit = Math.min(properties.getMaxInflightPerSession(), session.getReceiveMaximum());
+        if (session.getOutboundInflight().size() >= inflightLimit) {
             stats.recordInflightOverflow();
             if (!session.isCleanSession()) {
                 String deviceKey = session.getDeviceKey();

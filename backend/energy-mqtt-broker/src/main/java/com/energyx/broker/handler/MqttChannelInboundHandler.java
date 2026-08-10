@@ -59,6 +59,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -97,6 +99,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private final BrokerMetrics metrics;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
+    private final ScheduledExecutorService scheduler;
     private final AtomicInteger rawConnections = new AtomicInteger();
 
     public MqttChannelInboundHandler(DeviceAuthService authService,
@@ -110,7 +113,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                                      BrokerStats stats,
                                      BrokerMetrics metrics,
                                      ObjectMapper objectMapper,
-                                     @Qualifier("brokerExecutor") ExecutorService executor) {
+                                     @Qualifier("brokerExecutor") ExecutorService executor,
+                                     @Qualifier("brokerScheduler") ScheduledExecutorService scheduler) {
         this.authService = authService;
         this.sessionRegistry = sessionRegistry;
         this.sessionStore = sessionStore;
@@ -123,6 +127,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         this.metrics = metrics;
         this.objectMapper = objectMapper;
         this.executor = executor;
+        this.scheduler = scheduler;
     }
 
     // ---------------- 连接生命周期 ----------------
@@ -158,7 +163,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
 
         boolean graceful = session.isDisconnectedGracefully();
-        if (session.isCleanSession()) {
+        // P1-11：v5 Session Expiry Interval=0（或 clean 会话）→ 断开即删；>0 → 按过期时间持久化
+        long expiry = session.getSessionExpirySeconds();
+        boolean transientSession = session.isCleanSession() || expiry <= 0;
+        if (transientSession) {
             subscriberIndex.removeAll(deviceKey);
             executor.execute(() -> {
                 sessionStore.deleteSession(deviceKey);
@@ -167,10 +175,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 sessionStore.releaseConnLockIfOwner(deviceKey, properties.getNodeId());
             });
         } else {
-            // 持久会话：幽灵订阅保留（支撑离线队列），持久化会话元数据 + 订阅
+            // 持久会话：幽灵订阅保留（支撑离线队列），持久化会话元数据（含过期时间）+ 订阅
             executor.execute(() -> {
                 try {
-                    sessionStore.saveSession(deviceKey, properties.getNodeId(), false);
+                    sessionStore.saveSession(deviceKey, properties.getNodeId(), false, expiry);
                     sessionStore.saveSubscriptions(deviceKey,
                             new HashSet<>(session.getSubscriptions().values()));
                 } catch (Exception e) {
@@ -186,11 +194,24 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             String remoteIp = session.getRemoteIp();
             // 离线通知含 Redis 删除，剥离到业务线程
             executor.execute(() -> lifecycleNotifier.notifyOffline(cred, reason, remoteIp));
-            // 遗嘱投递（非优雅断开，delay=0 立即投递；延迟遗嘱为 Phase 6 增强）
-            // deliver 内部全内存操作 + Kafka 异步发送 + Redis 异步，可在 eventLoop 直接调用
+            // 遗嘱投递（非优雅断开）：delay=0 立即投递；delay>0 按 P1-11 Will Delay 调度，
+            // 投递前若设备已重连上线则取消（规范：延迟窗口内重连不投遗嘱）
             Session.MqttWill will = session.getWill();
-            if (!graceful && will != null && will.getDelaySeconds() == 0) {
-                deliverer.deliver(will.getTopic(), will.getPayload(), will.getQos(), will.isRetain(), null);
+            if (!graceful && will != null) {
+                if (will.getDelaySeconds() <= 0) {
+                    deliverer.deliver(will.getTopic(), will.getPayload(), will.getQos(), will.isRetain(), null);
+                } else {
+                    String willDeviceKey = deviceKey;
+                    scheduler.schedule(() -> {
+                        Session current = sessionRegistry.get(willDeviceKey);
+                        if (current != null && current.isOnline()) {
+                            log.info("[Broker] Will Delay 窗口内设备已重连，取消遗嘱 deviceKey={}", willDeviceKey);
+                            return;
+                        }
+                        deliverer.deliver(will.getTopic(), will.getPayload(),
+                                will.getQos(), will.isRetain(), null);
+                    }, will.getDelaySeconds(), TimeUnit.SECONDS);
+                }
             }
         }
         log.info("[Broker] 连接关闭 deviceKey={} reason={}", deviceKey, graceful ? "NORMAL" : "ABNORMAL");
@@ -283,21 +304,54 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         String password = msg.payload().passwordInBytes() == null
                 ? "" : new String(msg.payload().passwordInBytes(), StandardCharsets.UTF_8);
 
-        // 遗嘱（v3 从 payload 提取；v5 will delay 读取属性，0 则立即投递）
+        // ---- v5 连接属性（P1-11）：Session Expiry Interval / Receive Maximum ----
+        long sessionExpirySeconds = -1; // -1 = 未指定，沿用默认
+        int receiveMaximum = -1;        // -1 = 未指定，用协议上限
+        if (version == 5) {
+            io.netty.handler.codec.mqtt.MqttProperties props = msg.variableHeader().properties();
+            io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty expiry =
+                    (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty) props.getProperty(
+                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+                                    .SESSION_EXPIRY_INTERVAL.value());
+            if (expiry != null) {
+                sessionExpirySeconds = expiry.value();
+            }
+            io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty recvMax =
+                    (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty) props.getProperty(
+                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+                                    .RECEIVE_MAXIMUM.value());
+            if (recvMax != null) {
+                receiveMaximum = Math.max(1, recvMax.value());
+            }
+        }
+
+        // 遗嘱（v3 从 payload 提取；v5 will delay 读取 will properties，0 则立即投递）
         Session.MqttWill will = null;
         if (vh.isWillFlag()) {
             String willTopic = msg.payload().willTopic();
             String willMessage = msg.payload().willMessage();
             if (willTopic != null && !willTopic.isEmpty()) {
+                int willDelay = 0;
+                if (version == 5 && msg.payload().willProperties() != null) {
+                    io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty delay =
+                            (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty)
+                                    msg.payload().willProperties().getProperty(
+                                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+                                                    .WILL_DELAY_INTERVAL.value());
+                    if (delay != null) {
+                        willDelay = Math.max(0, delay.value());
+                    }
+                }
                 will = new Session.MqttWill(willTopic,
                         willMessage == null ? new byte[0] : willMessage.getBytes(StandardCharsets.UTF_8),
-                        vh.willQos(), vh.isWillRetain(), 0);
+                        vh.willQos(), vh.isWillRetain(), willDelay);
             }
         }
 
         ConnectParams params = new ConnectParams(version, clientId,
                 vh.keepAliveTimeSeconds(), vh.isCleanSession(),
-                username, password, will, remoteIp(channel));
+                username, password, will, remoteIp(channel),
+                sessionExpirySeconds, receiveMaximum);
 
         // 慢路径全部在业务线程：认证（Redis/MySQL）→ 连接锁（Redis）→ sessionPresent 判定（Redis），
         // 仅最终会话注册与 CONNACK 回投 eventLoop（IO 线程零阻塞）
@@ -320,6 +374,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             }
             DeviceCredential cred = result.getCredential();
             String deviceKey = cred.getDeviceKey();
+
+            // P1-12 mTLS：设备证书 CN 必须等于 clientId（身份绑定；信任链由 TLS 握手层校验）
+            if (properties.getTls().isClientAuth() && !verifyClientCert(channel, clientId)) {
+                stats.recordAuthFailure();
+                channel.eventLoop().execute(() -> {
+                    sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED, false);
+                    channel.close();
+                });
+                return;
+            }
 
             // 跨节点连接锁：被远端占用 → 通知远端踢线，本节点接管
             if (!sessionStore.tryAcquireConnLock(deviceKey, properties.getNodeId())) {
@@ -359,6 +423,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         session.putAttr(Session.SessionAttr.DEVICE_STATUS, cred.getDeviceStatus());
         session.setWill(p.will);
         session.setRemoteIp(p.remoteIp);
+        // P1-11 v5 属性：Session Expiry Interval（-1 未指定 → 默认 7 天；0 → 断开即过期）
+        if (p.sessionExpirySeconds >= 0) {
+            session.setSessionExpirySeconds(p.sessionExpirySeconds);
+        } else {
+            session.setSessionExpirySeconds(p.cleanSession ? 0 : properties.getSessionTtlSeconds());
+        }
+        // P1-11 v5 Receive Maximum（-1 未指定 → 协议上限 65535，由 inflight 配置再收敛）
+        if (p.receiveMaximum > 0) {
+            session.setReceiveMaximum(p.receiveMaximum);
+        }
         channel.attr(SESSION_ATTR).set(session);
         channel.attr(DEVICE_KEY_ATTR).set(deviceKey);
         sessionRegistry.register(session);
@@ -420,6 +494,53 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
+    /**
+     * mTLS 设备证书校验（P1-12）：TLS 握手完成后（CONNECT 报文到达即已握手），读取对端证书
+     * 链，校验叶子证书 subject CN 与 clientId 一致（证书签发/吊销由 CA 体系负责，见
+     * deploy/scripts/gen-mqtt-certs.sh -c）。握手未完成/证书缺失一律拒绝。
+     */
+    private boolean verifyClientCert(Channel channel, String clientId) {
+        try {
+            io.netty.handler.ssl.SslHandler sslHandler = channel.pipeline().get(io.netty.handler.ssl.SslHandler.class);
+            if (sslHandler == null) {
+                log.warn("[mTLS] 非 TLS 连接尝试设备接入，拒绝 clientId={}", clientId);
+                return false;
+            }
+            java.security.cert.Certificate[] chain =
+                    sslHandler.engine().getSession().getPeerCertificates();
+            if (chain == null || chain.length == 0) {
+                log.warn("[mTLS] 对端未提供证书 clientId={}", clientId);
+                return false;
+            }
+            if (!(chain[0] instanceof java.security.cert.X509Certificate leaf)) {
+                return false;
+            }
+            String cn = extractCn(leaf.getSubjectX500Principal().getName());
+            boolean ok = clientId.equals(cn);
+            if (!ok) {
+                log.warn("[mTLS] 证书 CN={} 与 clientId={} 不匹配，拒绝接入", cn, clientId);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.warn("[mTLS] 证书校验异常 clientId={} err={}", clientId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 从 X500 名称提取 CN（LDAP 序，兼容 "CN=xx,O=yy" 与 RFC2253 "O=yy,CN=xx"） */
+    private String extractCn(String dn) {
+        try {
+            for (javax.naming.ldap.Rdn rdn : new javax.naming.ldap.LdapName(dn).getRdns()) {
+                if ("CN".equalsIgnoreCase(rdn.getType())) {
+                    return String.valueOf(rdn.getValue());
+                }
+            }
+        } catch (Exception ignore) {
+            // 空
+        }
+        return null;
+    }
+
     // ---------------- PUBLISH（设备上行） ----------------
 
     private void handlePublish(ChannelHandlerContext ctx, MqttPublishMessage msg) {
@@ -446,6 +567,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         session.touch();
         maybeRenewOnline(session, cred);
         Channel channel = ctx.channel();
+        // P1-10 链路追踪：同一上报报文的处理链日志共用 traceId（deviceKey+毫秒+序号）
+        String traceId = deviceKeyOf(session) + "-" + (System.currentTimeMillis() & 0xFFFFF)
+                + "-" + Integer.toHexString(System.identityHashCode(msg));
         switch (qos) {
             case 0 -> deliverer.deliver(topic, payload, 0, retain, null);
             case 1 -> {
@@ -461,8 +585,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                             });
                         },
                         () -> channel.eventLoop().execute(() -> {
-                            log.error("[Deliver] 路由失败关连接迫使重传 deviceKey={} topic={}",
-                                    session.getDeviceKey(), topic);
+                            log.error("[Deliver] 路由失败关连接迫使重传 traceId={} deviceKey={} topic={}",
+                                    traceId, session.getDeviceKey(), topic);
                             channel.close();
                         }));
             }
@@ -474,6 +598,11 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             default -> log.warn("[Broker] 非法 QoS={} deviceKey={}", qos, session.getDeviceKey());
         }
         stats.recordIncoming();
+    }
+
+    /** 会话 deviceKey（工具方法，避免重复 get） */
+    private String deviceKeyOf(Session session) {
+        return session.getDeviceKey();
     }
 
     private void handlePubAck(ChannelHandlerContext ctx, MqttPubAckMessage msg) {
@@ -751,6 +880,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     /** CONNECT 解析结果（认证回调使用，跨线程传递） */
     private record ConnectParams(int version, String clientId, int keepAliveSeconds,
                                  boolean cleanSession, String username, String password,
-                                 Session.MqttWill will, String remoteIp) {
+                                 Session.MqttWill will, String remoteIp,
+                                 long sessionExpirySeconds, int receiveMaximum) {
     }
 }

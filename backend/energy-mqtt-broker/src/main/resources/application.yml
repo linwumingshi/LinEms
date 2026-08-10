@@ -93,6 +93,9 @@ energyx:
       port: ${BROKER_TLS_PORT:8883}
       cert-chain-file: ${BROKER_TLS_CERT:deploy/certs/server-cert.pem}
       private-key-file: ${BROKER_TLS_KEY:deploy/certs/server-key.pem}
+      # P1-12 mTLS 双向认证：要求设备证书且 CN=clientId（trust-cert-file 为设备 CA 根证书）
+      client-auth: ${BROKER_TLS_CLIENT_AUTH:false}
+      trust-cert-file: ${BROKER_TLS_TRUST_CERT:deploy/certs/ca-cert.pem}
 
 logging:
   level:

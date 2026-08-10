@@ -1,0 +1,106 @@
+# EnergyX MQTT Broker Prometheus 告警规则（P1-10 可观测性补完）
+#
+# 部署：挂载到 Prometheus rules 目录，如
+#   prometheus.yml:
+#     rule_files:
+#       - "alerts.yml"
+#
+# 指标来源：broker /actuator/prometheus（management.port=8082）。
+# Micrometer 命名映射：mqtt.messages.in → mqtt_messages_in_total；Gauge 无 _total 后缀。
+# 告警阈值按「十万设备 / 5 万 msg/s」目标设定，上线后按实测基线校准。
+groups:
+  - name: mqtt-broker-availability
+    rules:
+      # 连接面突发下降：节点宕机 / 网络分区 / 拒绝服务
+      - alert: MqttBrokerConnectionsDropped
+        expr: |
+          sum(mqtt_broker_connections) by (instance)
+            / clamp_min(sum(mqtt_broker_connections) by (instance) offset 5m, 1) < 0.8
+        for: 1m
+        labels:
+          severity: critical
+          team: iot-platform
+        annotations:
+          summary: "Broker 连接数 5 分钟内下降超过 20%（instance={{ $labels.instance }}）"
+          description: "连接数从 5 分钟前基线骤降，检查 Broker 进程/网络/负载均衡。"
+
+      - alert: MqttBrokerConnectionsNearLimit
+        expr: sum(mqtt_broker_connections) by (instance) / 500000 > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Broker 连接数接近单节点上限（instance={{ $labels.instance }}）"
+          description: "已达 max-connections 的 90%，需扩容节点或检查连接泄漏。"
+
+  - name: mqtt-broker-latency
+    rules:
+      # PUBACK 端到端时延（PUBLISH → Kafka 持久化 → PUBACK）P99 劣化
+      - alert: MqttPubAckP99High
+        expr: |
+          histogram_quantile(0.99,
+            sum by (instance, le) (rate(mqtt_uplink_puback_latency_seconds_bucket[5m])))
+            > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PUBACK P99 超过 500ms（instance={{ $labels.instance }}）"
+          description: "Kafka 延迟/积压或 producer buffer 打满，检查 Kafka 健康与 max.block.ms 快速失败计数。"
+
+  - name: mqtt-broker-reliability
+    rules:
+      # 路由持久化失败（Kafka 不可用/缓冲满）——QoS1 可靠性的直接告警
+      - alert: MqttRouteFailures
+        expr: increase(mqtt_route_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "跨节点路由持久化失败（instance={{ $labels.instance }}）"
+          description: "5 分钟内有路由失败，设备已被迫关连接重传（at-least-once 兜底），检查 Kafka。"
+
+      # 下行背压挂起 / inflight 超限丢弃：慢设备或下行风暴
+      - alert: MqttBackpressureParked
+        expr: increase(mqtt_backpressure_parked_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "下行背压挂起消息激增（instance={{ $labels.instance }}）"
+          description: "慢消费者导致 pendingWrites 大量堆积，检查弱网设备/下行风暴。"
+
+      - alert: MqttInflightOverflow
+        expr: increase(mqtt_inflight_overflow_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "inflight 超限丢弃（instance={{ $labels.instance }}）"
+          description: "QoS1/2 下行超过 Receive Maximum/配置上限被转离线或丢弃。"
+
+  - name: mqtt-broker-capacity
+    rules:
+      # brokerExecutor 业务线程池任务拒绝（认证/持久化被丢弃）
+      - alert: MqttExecutorRejected
+        expr: increase(mqtt_executor_rejected_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "brokerExecutor 队列已满，任务被丢弃（instance={{ $labels.instance }}）"
+          description: "认证风暴或持久化洪峰打满线程池，检查 CONNECT 洪峰/Redis 延迟。"
+
+  - name: mqtt-broker-auth
+    rules:
+      # 认证失败率突增：暴力破解 / 凭据批量吊销
+      - alert: MqttAuthFailureSpike
+        expr: |
+          sum(rate(mqtt_auth_failures_total[5m])) by (instance)
+            / clamp_min(sum(rate(mqtt_connections_accepted_total[5m])) by (instance), 0.1) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "认证失败率超过 50%（instance={{ $labels.instance }}）"
+          description: "疑似凭据暴力破解或设备批量凭据失效，检查封禁计数 mqtt:ban:*。"

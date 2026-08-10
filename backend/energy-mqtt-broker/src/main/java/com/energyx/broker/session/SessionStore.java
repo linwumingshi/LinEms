@@ -77,15 +77,28 @@ public class SessionStore {
 
     /** 保存持久会话元数据；返回是否成功（EXISTS=0 且 SET=1 才成功，防止被同 clientId 新连接覆盖） */
     public boolean saveSession(String deviceKey, String nodeId, boolean cleanSession) {
+        // 未指定过期时间：沿用配置默认（7 天）
+        return saveSession(deviceKey, nodeId, cleanSession, properties.getSessionTtlSeconds());
+    }
+
+    /**
+     * 保存持久会话元数据（P1-11 支持 v5 Session Expiry Interval）。
+     *
+     * @param expirySeconds 会话 TTL（秒）；&lt;=0 视为断开即过期，不持久化会话（等同 clean 语义）
+     */
+    public boolean saveSession(String deviceKey, String nodeId, boolean cleanSession, long expirySeconds) {
         String key = BrokerKeys.session(deviceKey);
         Map<String, String> hash = Map.of(
                 "node", nodeId,
                 "clean", String.valueOf(cleanSession),
+                "expiry", String.valueOf(expirySeconds),
                 "ts", String.valueOf(System.currentTimeMillis()));
         boolean ok = Boolean.TRUE.equals(redis.opsForHash().putIfAbsent(key, "node", nodeId));
         // putIfAbsent 只保证首字段；其余字段 upsert
         redis.opsForHash().putAll(key, hash);
-        redis.expire(key, Duration.ofSeconds(properties.getSessionTtlSeconds()));
+        if (expirySeconds > 0) {
+            redis.expire(key, Duration.ofSeconds(expirySeconds));
+        }
         return ok;
     }
 

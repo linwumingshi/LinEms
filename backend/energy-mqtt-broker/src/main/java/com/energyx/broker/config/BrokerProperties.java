@@ -32,6 +32,10 @@ public class BrokerProperties {
         private String certChainFile;
         /** 服务端私钥 PEM 文件路径 */
         private String privateKeyFile;
+        /** 是否启用 mTLS 双向认证（P1-12）：要求客户端提供设备证书并校验 CN=clientId */
+        private boolean clientAuth = false;
+        /** 设备 CA 根证书 PEM 文件路径（clientAuth=true 时必填，用于校验设备证书链） */
+        private String trustCertFile;
     }
 
     /** 单节点最大连接数（准入控制，超过后新连接拒绝） */

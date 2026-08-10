@@ -1,12 +1,15 @@
 package com.energyx.broker.config;
 
+import com.energyx.broker.stats.BrokerStats;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +36,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Configuration
 public class BrokerExecutorConfig {
 
+    private final BrokerStats brokerStats;
+
+    public BrokerExecutorConfig(BrokerStats brokerStats) {
+        this.brokerStats = brokerStats;
+    }
+
     @Bean(name = "brokerExecutor", destroyMethod = "shutdown")
     public ExecutorService brokerExecutor() {
         int threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
@@ -42,13 +51,29 @@ public class BrokerExecutorConfig {
             t.setDaemon(true);
             return t;
         };
-        RejectedExecutionHandler handler = (r, executor) ->
-                log.error("[Broker] 业务线程池队列已满，丢弃任务 {}", r.getClass().getSimpleName());
+        RejectedExecutionHandler handler = (r, executor) -> {
+            brokerStats.recordExecutorRejected(); // P1-10 拒绝打点，Prometheus 告警可见
+            log.error("[Broker] 业务线程池队列已满，丢弃任务 {}", r.getClass().getSimpleName());
+        };
         return new ThreadPoolExecutor(
                 threads, threads,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(10_000),
                 factory,
                 handler);
+    }
+
+    /**
+     * 延迟任务调度线程（P1-11 Will Delay 延迟遗嘱投递等）。
+     * 独立单线程，避免延迟任务长时间 sleep 占用 brokerExecutor 工作线程。
+     */
+    @Bean(name = "brokerScheduler", destroyMethod = "shutdownNow")
+    public ScheduledExecutorService brokerScheduler() {
+        ThreadFactory factory = r -> {
+            Thread t = new Thread(r, "broker-scheduler");
+            t.setDaemon(true);
+            return t;
+        };
+        return Executors.newSingleThreadScheduledExecutor(factory);
     }
 }

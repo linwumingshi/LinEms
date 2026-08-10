@@ -28,6 +28,8 @@ public class BrokerStats {
     public final AtomicLong backpressureDropped = new AtomicLong();
     /** inflight 超限次数（max-inflight-per-session 生效） */
     public final AtomicLong inflightOverflow = new AtomicLong();
+    /** brokerExecutor 业务线程池拒绝次数（任务被丢弃，认证/持久化降级） */
+    public final AtomicLong executorRejected = new AtomicLong();
 
     private final SessionRegistry sessionRegistry;
     private final LocalSubscriberIndex subscriberIndex;
@@ -77,6 +79,11 @@ public class BrokerStats {
         inflightOverflow.incrementAndGet();
     }
 
+    /** 业务线程池拒绝任务（P1-10 可观测性：认证风暴/持久化洪峰直接可见） */
+    public void recordExecutorRejected() {
+        executorRejected.incrementAndGet();
+    }
+
     public Map<String, Object> snapshot() {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("connections", sessionRegistry.connectionCount());
@@ -91,6 +98,7 @@ public class BrokerStats {
         map.put("backpressureParked", backpressureParked.get());
         map.put("backpressureDropped", backpressureDropped.get());
         map.put("inflightOverflow", inflightOverflow.get());
+        map.put("executorRejected", executorRejected.get());
         return map;
     }
 }

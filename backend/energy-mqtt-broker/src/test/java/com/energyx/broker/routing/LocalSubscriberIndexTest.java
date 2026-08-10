@@ -121,4 +121,52 @@ class LocalSubscriberIndexTest {
         assertEquals(1, index.match("pk/dev500/down/command").size());
         assertEquals(1000, index.size());
     }
+
+    @Test
+    void sharedSubscriptionDeliversToSingleMember() {
+        // P1-11：$share 共享订阅组内每次只投一个成员（轮询负载均衡）
+        Session d1 = session("d1");
+        Session d2 = session("d2");
+        index.add(d1, "$share/g1/a/b", 1);
+        index.add(d2, "$share/g1/a/b", 2);
+        // 连续匹配 6 次，组内两个成员应交替被选中（轮询），且 QoS 取组内最大 2
+        java.util.Set<Session> seen = new java.util.HashSet<>();
+        for (int i = 0; i < 6; i++) {
+            List<LocalSubscriberIndex.SubscriberMatch> matches = index.match("a/b");
+            assertEquals(1, matches.size(), "共享组一次只投一个成员");
+            assertEquals(2, matches.get(0).qos(), "共享订阅 QoS 取组内最大");
+            seen.add(matches.get(0).session());
+        }
+        assertEquals(2, seen.size(), "轮询应覆盖组内全部成员");
+    }
+
+    @Test
+    void sharedAndNormalSubscriptionsCoexist() {
+        Session d1 = session("d1");
+        Session d2 = session("d2");
+        index.add(d1, "$share/g1/a/b", 1);
+        index.add(d2, "a/b", 0);
+        // 普通订阅 d2 恒命中；共享组 g1 选一个（这里 d1 是唯一成员）→ 共 2 个
+        List<LocalSubscriberIndex.SubscriberMatch> matches = index.match("a/b");
+        assertEquals(2, matches.size());
+    }
+
+    @Test
+    void distinctShareGroupsAreIndependent() {
+        Session d1 = session("d1");
+        Session d2 = session("d2");
+        index.add(d1, "$share/g1/a/b", 1);
+        index.add(d2, "$share/g2/a/b", 1);
+        // g1、g2 是独立负载均衡组：一次匹配应同时命中两个组各一个成员
+        assertEquals(2, index.match("a/b").size());
+    }
+
+    @Test
+    void removeShareSubscription() {
+        Session d1 = session("d1");
+        index.add(d1, "$share/g1/a/#", 1);
+        assertEquals(1, index.match("a/b/c").size());
+        index.remove("d1", "$share/g1/a/#");
+        assertTrue(index.match("a/b/c").isEmpty());
+    }
 }
