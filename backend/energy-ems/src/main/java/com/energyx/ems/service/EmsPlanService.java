@@ -284,7 +284,7 @@ public class EmsPlanService {
 				rec.setDeviceId(0L);
 				rec.setAction(p.action());
 				rec.setState(4); // 超时（错过下发窗口）
-				rec.setParams("");
+				rec.setParams(null); // 未实际下发，无参数（JSON 列不允许空串，null 合法）
 				execMapper.insert(rec);
 			}
 			records = execMapper.selectByPlanId(planId);
