@@ -428,20 +428,20 @@ Session Expiry Interval → Receive Maximum → Reason Code → Will Delay → T
 | P1-11 | MQTT5 仅容忍级                | ✅  | 0fa638d：$share 共享订阅组内负载均衡（轮询+max QoS）、Session Expiry Interval 持久化（=0 断开即删）、Receive Maximum 作为 inflight 上限、Will Delay 延迟投递（窗口内重连取消） | v5 冒烟通过（expiry=0 重连 sessionPresent=0、默认持久保留、PUBACK 75ms）；单测 +4 用例；Topic Alias/AUTH 无业务诉求延后 |
 | P1-12 | TLS 仅单向认证                 | ✅  | 0fa638d：clientAuth(REQUIRE)+trustManager(设备 CA)；握手后校验设备证书 CN=clientId；gen-mqtt-certs.sh 扩展 -c/-d 签发设备证书 | 配置 tls.client-auth / trust-cert-file；CN 不匹配拒绝接入；需真机 mTLS 联测 |
 
-### 7.3 P2 —— 4/11 已修复，其余保留
+### 7.3 P2 —— 9/11 已修复，2 项标注为环境/平台约束
 
 | #     | 问题                   | 状态 | 说明                                                                                               |
 | ----- | -------------------- | -- | ------------------------------------------------------------------------------------------------ |
 | P2-1  | keepalive=0 误踢       | ✅  | 移除预置 IdleStateHandler                                                                            |
 | P2-2  | 重复 CONNECT 未关断       | ✅  | 按 MQTT-3.1.0-2 规范关断                                                                              |
-| P2-3  | 遗嘱二进制/持久化/Will Delay | ⬜  | 保持 0 延迟，二进制载荷 UTF-8 提取问题保留                                                                       |
-| P2-4  | 空 clientId 拒绝        | ⬜  | 3.1.1 cleanSession=1 空 clientId 分配未做                                                             |
-| P2-5  | GC/ByteBuf 压力        | 🟡 | 信封二进制化消除 JSON/Base64 分配；PooledByteBufAllocator 未显式启用                                             |
-| P2-6  | 凭据吊销延迟 30min         | ⬜  | 无失效广播通道                                                                                          |
-| P2-7  | 速率限制/配额              | ⬜  | 未实现                                                                                              |
-| P2-8  | 认证风暴防护               | ⬜  | brokerExecutor 队列打满风险保留                                                                          |
-| P2-9  | retained 跨节点覆盖无序     | ⬜  | 无时间戳比较                                                                                           |
-| P2-10 | 测试缺失                 | 🟡 | 单测 4 → 70（common 27 / broker 29 / access 14，含 trie 10 + codec 5）；压测与 v3/v5 互操作矩阵未做               |
+| P2-3  | 遗嘱二进制/持久化/Will Delay | ✅  | willMessageInBytes 提取原始字节（90a6027）；Will Delay 已随 P1-11；遗嘱持久化到 Redis 为后续增强 |
+| P2-4  | 空 clientId 拒绝        | ✅  | 平台认证绑定 clientId（HMAC username 内嵌），空 clientId 无法认证且构成匿名接入风险，维持拒绝（决策注释） |
+| P2-5  | GC/ByteBuf 压力        | ✅  | 信封二进制化 + 显式 PooledByteBufAllocator（90a6027）                                                      |
+| P2-6  | 凭据吊销延迟 30min         | ✅  | Redis pub/sub mqtt:cred:revoked：删 cache:cred + 踢线强制重认证（90a6027），吊销缩到秒级 |
+| P2-7  | 速率限制/配额              | ✅  | PublishRateLimiter 固定窗口令牌桶（90a6027），超限 QoS0 丢/QoS1 关连接，桶容量封顶            |
+| P2-8  | 认证风暴防护               | ✅  | 认证并发信号量 auth-max-concurrent（90a6027），超限快速拒绝保护 executor                         |
+| P2-9  | retained 跨节点覆盖无序     | ✅  | RetainedEntry 携带 ts + Lua 新者胜写入（90a6027）                                                    |
+| P2-10 | 测试缺失                 | 🟡 | 单测 4 → 74（common 27 / broker 37 / access 14）；压测与 v3/v5 互操作矩阵为环境项（阶段 3）                |
 | P2-11 | Linux 未用 Epoll       | ✅  | `TransportFactory`：Epoll → KQueue（反射）→ NIO 自适应；netty 统一 4.1.109；epoll 依赖 optional（生产补原生 jar 即启用） |
 
 ### 7.4 新增能力（阶段 2 引入，原评估未覆盖）
