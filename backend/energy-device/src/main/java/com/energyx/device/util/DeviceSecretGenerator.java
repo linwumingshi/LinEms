@@ -20,7 +20,8 @@ public final class DeviceSecretGenerator {
 	}
 
 	/**
-	 * @return 64 位 hex 字符串 */
+	 * @return 64 位 hex 字符串
+	 */
 	public static String generate() {
 		byte[] bytes = new byte[32];
 		RANDOM.nextBytes(bytes);
