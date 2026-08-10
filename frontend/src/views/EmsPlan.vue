@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
 import type { EmsElectricityPrice, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
 import { constraintReady } from '@/utils/planGate'
+
+const router = useRouter()
 
 const list = ref<EmsPlan[]>([])
 const total = ref(0)
@@ -272,7 +275,16 @@ async function generate() {
   if (!stationId) e.stationId = '请选择电站'
   if (Object.keys(e).length) { genErrs.value = e; return }
   if (!(await constraintReady(stationId!))) {
-    ElMessage.warning('该电站安全约束未就绪（未配置或 SOC/功率上下限缺失），无法生成计划')
+    try {
+      await ElMessageBox.confirm(
+        `该电站「${stationName(stationId!, stations.value)}」未配置安全约束（或 SOC/功率上下限缺失），无法生成计划。是否前往安全约束页面配置？`,
+        '安全约束未就绪',
+        { confirmButtonText: '去配置', cancelButtonText: '取消', type: 'warning' },
+      )
+      void router.push('/ems/constraint')
+    } catch {
+      // 用户取消跳转
+    }
     return
   }
   generating.value = true

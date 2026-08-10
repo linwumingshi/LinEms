@@ -50,6 +50,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '充放电计划', icon: 'TrendCharts' },
       },
       {
+        path: 'ems/constraint',
+        name: 'EmsConstraint',
+        component: () => import('@/views/EmsConstraint.vue'),
+        meta: { title: '安全约束', icon: 'Lock' },
+      },
+      {
         path: 'archive/enterprise',
         name: 'Enterprise',
         component: () => import('@/views/Enterprise.vue'),
