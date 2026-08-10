@@ -2,11 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { deviceApi } from '@/api/device'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
 import type { EmsElectricityPrice, EmsExecutionRecord, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
 import { constraintReady } from '@/utils/planGate'
+import { fetchActualCurve } from '@/utils/planCurve'
 
 const router = useRouter()
 
@@ -24,6 +26,11 @@ const points = ref<EmsPlanPoint[]>([])
 const execRecords = ref<EmsExecutionRecord[]>([])
 const chartEl = ref<HTMLElement>()
 const { chart, render } = useEChart(chartEl)
+
+/** 实际功率曲线（TSDB 采样点）；未匹配下发设备或拉取失败为 null，波形正常渲染但不叠加实际系列 */
+const actualCurve = ref<{ times: string[]; power: number[] } | null>(null)
+/** 下发设备名：与后端 energyx.ems.device-name 对齐（缺省 ess-dev-01），按 deviceName 反查设备 */
+const PCS_DEVICE_NAME = 'ess-dev-01'
 
 /** 名称化：电站/策略 id → 名称映射（查不到回退裸 id） */
 const stations = ref<Station[]>([])
@@ -142,8 +149,28 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
     }
     const bands = await fetchBands(plan.stationId, plan.planDate)
     renderChart(pts, bands)
+    // 实际曲线独立异步拉取，拉回后重渲染叠加虚线；失败已在 loadActualCurve 内降级为 null
+    await loadActualCurve(plan)
+    renderChart(pts, bands, actualCurve.value)
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** 反查下发设备（energyx.ems.device-name 对应设备）拿 deviceId + productKey，拉当日实际功率曲线 */
+async function loadActualCurve(plan: EmsPlan): Promise<void> {
+  actualCurve.value = null
+  try {
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 20 })
+    const dev = page.records.find((d) => d.deviceName === PCS_DEVICE_NAME)
+    if (!dev) {
+      // 设备列表未匹配到下发设备：不展示实际曲线，波形照常渲染
+      return
+    }
+    actualCurve.value = await fetchActualCurve(String(dev.deviceId), dev.productKey, plan.planDate.slice(0, 10))
+  } catch {
+    // 拉取失败降级：无实际曲线不阻断波形
+    actualCurve.value = null
   }
 }
 
@@ -202,7 +229,7 @@ function buildBands(bands: EmsElectricityPrice[], times: string[]): [BandMark, B
   return out
 }
 
-function renderChart(pts: EmsPlanPoint[], bands: EmsElectricityPrice[]): void {
+function renderChart(pts: EmsPlanPoint[], bands: EmsElectricityPrice[], actual?: { times: string[]; power: number[] } | null): void {
   const times = pts.map((p) => timeLabel(p.time))
   render({
     animation: false, // 数据仪表：无多余动效
@@ -263,6 +290,18 @@ function renderChart(pts: EmsPlanPoint[], bands: EmsElectricityPrice[]): void {
         symbol: 'none',
         lineStyle: { color: '#1F2833', width: 1.5 },
       },
+      // 实际功率：TSDB 采样点按索引对齐计划 category 轴（密度不同近似展示），浅蓝虚线
+      ...(actual && actual.power.length
+        ? [{
+            name: '实际功率（采样点）',
+            type: 'line' as const,
+            yAxisIndex: 0,
+            data: actual.power,
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { color: '#2B6CB0', width: 1.2, type: 'dashed' as const },
+          }]
+        : []),
     ],
   })
 }
@@ -473,9 +512,12 @@ onMounted(() => {
                 <li><i class="sw sw-peak" aria-hidden="true"></i>峰</li>
                 <li><i class="sw sw-flat" aria-hidden="true"></i>平</li>
                 <li><i class="sw sw-valley" aria-hidden="true"></i>谷</li>
+                <li class="sep" aria-hidden="true">·</li>
+                <li v-if="actualCurve && actualCurve.power.length"><i class="sw sw-actual" aria-hidden="true"></i>实际</li>
+                <li v-else class="legend-muted">实际（无数据）</li>
               </ul>
             </div>
-            <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
+            <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段，浅蓝虚线为实际功率"></div>
             <el-empty v-else description="该计划无点序列——所选策略类型暂不支持生成" :image-size="96" class="wave-empty" />
             <p class="wave-note">底纹为分时电价时段（低谷充电、高峰放电的套利逻辑一眼可读）；SOC 线为计划目标荷电状态。</p>
           </el-tab-pane>
@@ -652,6 +694,15 @@ onMounted(() => {
 .sw-valley {
   background: rgba(46, 158, 91, 0.14);
   border: 1px solid rgba(46, 158, 91, 0.4);
+}
+/* 实际功率：虚线描边小方块，与波形上的浅蓝虚线呼应 */
+.sw-actual {
+  background: transparent;
+  border: 1px dashed #2B6CB0;
+}
+/* 实际曲线无数据：图例灰置，表明已尝试拉取但不可用 */
+.legend-muted {
+  color: var(--ex-ink-3);
 }
 .wave {
   height: 340px;
