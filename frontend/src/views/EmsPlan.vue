@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import { useEChart } from '@/composables/useEChart'
-import type { EmsElectricityPrice, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
+import type { EmsElectricityPrice, EmsExecutionRecord, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
 import { constraintReady } from '@/utils/planGate'
 
@@ -16,6 +16,7 @@ const pageNo = ref(1)
 const pageSize = ref(10)
 const selected = ref<EmsPlan>()
 const points = ref<EmsPlanPoint[]>([])
+const execRecords = ref<EmsExecutionRecord[]>([])
 const chartEl = ref<HTMLElement>()
 const { chart, render } = useEChart(chartEl)
 
@@ -41,8 +42,18 @@ const PRICE_TINT: Record<string, string> = {
   PEEK: 'rgba(224,138,30,0.10)',
 }
 
-const STATUS_TEXT: Record<number, string> = { 0: '待执行', 1: '执行中', 2: '完成', 3: '已取消' }
-const STATUS_TAG: Record<number, 'success' | 'primary' | 'info'> = { 0: 'info', 1: 'primary', 2: 'success', 3: 'info' }
+const STATUS_TEXT: Record<number, string> = { 0: '待执行', 1: '执行中', 2: '完成', 3: '已取消', 4: '失败' }
+const STATUS_TAG: Record<number, 'success' | 'primary' | 'info' | 'danger'> = { 0: 'info', 1: 'primary', 2: 'success', 3: 'info', 4: 'danger' }
+
+/** 计划点执行状态语义（执行记录表格用） */
+const EXEC_STATE_TEXT: Record<number, string> = { 0: '待下发', 1: '已下发', 2: '成功', 3: '失败', 4: '超时' }
+const EXEC_STATE_TAG: Record<number, 'info' | 'primary' | 'success' | 'danger' | 'warning'> = {
+  0: 'info',
+  1: 'primary',
+  2: 'success',
+  3: 'danger',
+  4: 'warning',
+}
 
 const statusText = computed(() => STATUS_TEXT[selected.value?.status ?? 0])
 /** 仪表读数：各动作累计电量 = Σ 功率 × 30 分钟槽 */
@@ -110,6 +121,19 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
     renderChart(pts, bands)
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** 加载选中计划的执行记录（点级下发/ACK 结果）；失败静默不影响波形展示 */
+async function loadExecRecords(): Promise<void> {
+  if (!selected.value) {
+    execRecords.value = []
+    return
+  }
+  try {
+    execRecords.value = await emsApi.planRecords(selected.value.planId)
+  } catch {
+    execRecords.value = []
   }
 }
 
@@ -226,9 +250,10 @@ async function dispatchSelected(): Promise<void> {
 
 async function dispatch(row: EmsPlan): Promise<void> {
   try {
-    await emsApi.dispatch(row.planId)
-    ElMessage.success('已下发')
+    const sent = await emsApi.dispatch(row.planId)
+    ElMessage.success(`已受理下发，立即下发 ${sent} 点，其余到点自动执行`)
     await load()
+    await loadExecRecords()
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
   }
@@ -304,6 +329,9 @@ function onRowClick(row: EmsPlan): void {
   void selectPlan(row)
 }
 
+/** 选中计划变化 → 联动加载执行记录 */
+watch(selected, () => void loadExecRecords())
+
 onMounted(() => {
   void load()
   void loadMaps()
@@ -369,6 +397,36 @@ onMounted(() => {
       <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
       <el-empty v-else description="该计划无点序列——所选策略类型暂不支持生成" :image-size="96" class="wave-empty" />
       <p class="wave-note">底纹为分时电价时段（低谷充电、高峰放电的套利逻辑一眼可读）；SOC 线为计划目标荷电状态。</p>
+    </section>
+
+    <section class="exec-card">
+      <div class="exec-head">
+        <h2 class="exec-title">执行记录</h2>
+        <span class="exec-sub">下发后由调度器到点执行，ACK 回写点级结果；选中计划自动刷新</span>
+      </div>
+      <el-table :data="execRecords" empty-text="暂无执行记录——下发后调度器按计划点时刻到点下发" size="small" max-height="260">
+        <el-table-column prop="planTime" label="计划时刻" width="100" align="center">
+          <template #default="{ row }"><span class="ex-num">{{ row.planTime }}</span></template>
+        </el-table-column>
+        <el-table-column prop="action" label="动作" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.action === 'CHARGE' ? 'success' : row.action === 'DISCHARGE' ? 'warning' : 'info'" size="small">
+              {{ row.action === 'CHARGE' ? '充电' : row.action === 'DISCHARGE' ? '放电' : '待机' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="state" label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="EXEC_STATE_TAG[row.state as number] ?? 'info'" size="small">{{ EXEC_STATE_TEXT[row.state as number] }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="commandId" label="指令 ID" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }"><span class="ex-num">{{ row.commandId || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="result" label="回执" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }"><span class="ex-result">{{ row.result || '—' }}</span></template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <section class="list-card">
@@ -591,6 +649,39 @@ onMounted(() => {
 }
 .list-card {
   padding: 6px 14px 14px;
+}
+.exec-card {
+  background: #fff;
+  border: 1px solid #dce2ea;
+  border-radius: 6px;
+  padding: 14px 14px 6px;
+}
+.exec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.exec-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2833;
+}
+.exec-sub {
+  font-size: 12px;
+  color: #94a0ac;
+}
+.ex-num {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  color: #5b6b8c;
+}
+.ex-result {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  color: #5b6b8c;
+  word-break: break-all;
 }
 .plan-table {
   width: 100%;

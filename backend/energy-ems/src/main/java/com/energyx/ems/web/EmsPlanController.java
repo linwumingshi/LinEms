@@ -2,6 +2,7 @@ package com.energyx.ems.web;
 
 import com.energyx.common.model.PageResult;
 import com.energyx.common.model.Result;
+import com.energyx.ems.entity.EmsExecutionRecord;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.service.EmsPlanService;
 import com.energyx.ems.util.PlanPoint;
@@ -39,6 +40,12 @@ public class EmsPlanController {
 	@GetMapping("/{planId}/points")
 	public Result<List<PlanPoint>> points(@PathVariable Long planId) {
 		return Result.ok(service.getPoints(planId));
+	}
+
+	/** 计划执行记录查询（P0 执行闭环：前端展示各计划点下发/ACK 结果） */
+	@GetMapping("/{planId}/records")
+	public Result<List<EmsExecutionRecord>> records(@PathVariable Long planId) {
+		return Result.ok(service.records(planId));
 	}
 
 }

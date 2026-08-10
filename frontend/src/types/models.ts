@@ -207,6 +207,20 @@ export interface EmsPlanPoint {
   socTarget: number
 }
 
+export interface EmsExecutionRecord {
+  execId: string
+  planId: string
+  commandId: string
+  /** 计划点时刻 HH:mm */
+  planTime: string
+  action: string
+  /** 0待下发 1已下发 2成功 3失败 4超时 */
+  state: number
+  params: string | null
+  result: string | null
+  executeTime: string
+}
+
 export interface EmsConstraint {
   constraintId: string
   tenantId: string

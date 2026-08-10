@@ -28,11 +28,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 计划生成编排：生成 → 安全包络校验 → TDengine 点序列 → 计划头落库 → 下发（复用 energy-command）。 租户取自策略行（@Scheduled
@@ -163,8 +165,10 @@ public class EmsPlanService {
 	}
 
 	/**
-	 * 下发计划：先置计划为执行中（防重试重复下发）→ 重跑安全包络校验（全局约束：生成/下发前） → 逐点调 energy-command
-	 * 建指令写执行记录；单点业务失败仅记日志跳过，不中止整日计划。
+	 * 下发计划（受理制）：校验待执行状态 → 重跑安全包络校验 → 置执行中 → 立即下发当前到期点， 其余点由
+	 * {@link PlanExecutionScheduler} 每分钟按计划点时刻到点下发。 取代旧"一次性全量下发"缺陷：状态卡死 + 时间字段丢失。
+	 * @param planId 计划 ID
+	 * @return 本次立即下发的点数（受理成功即返回，不代表全量下发完成）
 	 */
 	public int dispatch(Long planId) {
 		EmsPlan plan = planMapper.selectById(planId);
@@ -177,46 +181,56 @@ public class EmsPlanService {
 		if (deviceName == null || deviceName.isBlank()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 energyx.ems.device-name");
 		}
-		List<PlanPoint> points;
-		try {
-			points = writer.read(plan.getStationId(), plan.getPlanDate());
-		}
-		catch (Exception e) {
-			throw new BusinessException(ErrorCode.BAD_REQUEST, "读取点序列失败: " + e.getMessage());
-		}
-		EmsConstraint constraint = constraintMapper
-			.selectOne(new LambdaQueryWrapper<EmsConstraint>().eq(EmsConstraint::getTenantId, plan.getTenantId())
-				.eq(EmsConstraint::getStationId, plan.getStationId()));
-		if (constraint == null) {
-			throw new BusinessException(ErrorCode.NOT_FOUND, "未配置安全约束: stationId=" + plan.getStationId());
-		}
-		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint.getSocMin().doubleValue(),
-				constraint.getSocMax().doubleValue(), constraint.getChargePowerMax().doubleValue(),
-				constraint.getDischargePowerMax().doubleValue(),
-				constraint.getTempMax() == null ? null : constraint.getTempMax().doubleValue());
-		if (!vr.valid()) {
-			throw new BusinessException(ErrorCode.BAD_REQUEST, "安全包络校验未通过: " + String.join("; ", vr.rejections()));
-		}
-		plan.setStatus(1); // 执行中（先置位：下发途中失败后重试命中 CONFLICT，杜绝重复下发）
+		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
+		validateEnvelope(plan, points);
+		// 受理：置执行中，后续由调度器到点下发（先置位防重复受理）
+		plan.setStatus(1);
 		planMapper.updateById(plan);
+		int sent = dispatchDuePoints(plan);
+		log.info("下发计划受理成功 planId={} stationId={} 立即下发点数={}", planId, plan.getStationId(), sent);
+		return sent;
+	}
+
+	/**
+	 * 到点下发：把计划点序列中「已到时刻」且未下发的点逐一下发（含补发窗口）， 写执行记录。 幂等：按 (plan_id, plan_time)
+	 * 唯一键查重，调度器重复触发不会重复下发。
+	 * @param plan 执行中计划（status=1）
+	 * @return 本次新下发点数
+	 */
+	public int dispatchDuePoints(EmsPlan plan) {
+		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
+		LocalTime now = LocalTime.now();
 		int sent = 0;
 		for (PlanPoint p : points) {
 			if ("STANDBY".equals(p.action())) {
 				continue;
 			}
+			// 只处理已到时刻的点（当前槽位 + 前 10 分钟补发窗口，防调度器重启/延迟错过）
+			if (p.time().isAfter(now)) {
+				continue;
+			}
+			if (now.minusMinutes(10).isAfter(p.time())) {
+				continue;
+			}
+			if (execMapper.selectByPlanAndTime(plan.getPlanId(), p.time()) != null) {
+				continue; // 该点已下发，跳过
+			}
 			Map<String, Object> params = new HashMap<>();
 			params.put("action", p.action());
 			params.put("power", p.powerKw());
 			params.put("socTarget", p.socTarget());
+			params.put("time", p.time().toString()); // 携带计划点时刻，供设备侧定时执行语义
 			try {
 				String paramsJson = JSON.writeValueAsString(params); // 列类型 JSON，必须真实 JSON
 				String commandId = commandClient.dispatch(productKey, deviceName, p.action(), params, 0L);
 				EmsExecutionRecord rec = new EmsExecutionRecord();
 				rec.setTenantId(plan.getTenantId());
-				rec.setPlanId(planId);
+				rec.setPlanId(plan.getPlanId());
 				rec.setCommandId(commandId);
+				rec.setPlanTime(p.time());
 				rec.setDeviceId(0L);
 				rec.setAction(p.action());
+				rec.setState(1); // 已下发，待 ACK
 				rec.setParams(paramsJson);
 				execMapper.insert(rec);
 				sent++;
@@ -231,6 +245,89 @@ public class EmsPlanService {
 		return sent;
 	}
 
+	/**
+	 * 状态推进（调度器/ACK 回写后调用）：当计划全部点已下发且全部到终态时收敛状态。 全部成功 → 完成(2)；存在失败/超时 →
+	 * 失败(4)；计划日已过仍未下发的点补记超时，避免状态永久悬挂。
+	 * @param planId 计划 ID
+	 */
+	public void refreshPlanStatus(Long planId) {
+		EmsPlan plan = planMapper.selectById(planId);
+		if (plan == null || plan.getStatus() != 1) {
+			return; // 非执行中无需推进
+		}
+		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
+		List<PlanPoint> actionable = points.stream().filter(p -> !"STANDBY".equals(p.action())).toList();
+		List<EmsExecutionRecord> records = execMapper.selectByPlanId(planId);
+		Set<LocalTime> dispatched = records.stream().map(EmsExecutionRecord::getPlanTime).collect(Collectors.toSet());
+		boolean allDispatched = actionable.stream().allMatch(p -> dispatched.contains(p.time()));
+		boolean planDateOver = LocalDate.now().isAfter(plan.getPlanDate());
+		if (!allDispatched && planDateOver) {
+			// 计划日已过但有点错过未下发：补记超时记录，收敛不悬挂
+			for (PlanPoint p : actionable) {
+				if (dispatched.contains(p.time())) {
+					continue;
+				}
+				EmsExecutionRecord rec = new EmsExecutionRecord();
+				rec.setTenantId(plan.getTenantId());
+				rec.setPlanId(planId);
+				rec.setCommandId("");
+				rec.setPlanTime(p.time());
+				rec.setDeviceId(0L);
+				rec.setAction(p.action());
+				rec.setState(4); // 超时（错过下发窗口）
+				rec.setParams("");
+				execMapper.insert(rec);
+			}
+			records = execMapper.selectByPlanId(planId);
+			allDispatched = true;
+		}
+		if (!allDispatched) {
+			return; // 还有未到期/未下发的点，继续保持执行中
+		}
+		boolean allTerminal = records.stream().allMatch(r -> r.getState() != null && r.getState() >= 2);
+		if (!allTerminal) {
+			return; // 尚有在途点（已下发未回执），继续等待 ACK
+		}
+		boolean hasFailure = records.stream().anyMatch(r -> r.getState() >= 3);
+		plan.setStatus(hasFailure ? 4 : 2);
+		planMapper.updateById(plan);
+		log.info("计划状态收敛 planId={} 状态={} 点数={} 失败={}", planId, plan.getStatus(), records.size(), hasFailure);
+	}
+
+	/** 查询计划执行记录（按计划点时刻升序，前端展示执行进度/结果） */
+	public List<EmsExecutionRecord> records(Long planId) {
+		EmsPlan plan = planMapper.selectById(planId);
+		if (plan == null) {
+			throw new BusinessException(ErrorCode.NOT_FOUND, "计划不存在: " + planId);
+		}
+		return execMapper.selectByPlanId(planId);
+	}
+
+	private List<PlanPoint> readPoints(Long stationId, LocalDate planDate) {
+		try {
+			return writer.read(stationId, planDate);
+		}
+		catch (Exception e) {
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "读取点序列失败: " + e.getMessage());
+		}
+	}
+
+	private void validateEnvelope(EmsPlan plan, List<PlanPoint> points) {
+		EmsConstraint constraint = constraintMapper
+			.selectOne(new LambdaQueryWrapper<EmsConstraint>().eq(EmsConstraint::getTenantId, plan.getTenantId())
+				.eq(EmsConstraint::getStationId, plan.getStationId()));
+		if (constraint == null) {
+			throw new BusinessException(ErrorCode.NOT_FOUND, "未配置安全约束: stationId=" + plan.getStationId());
+		}
+		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint.getSocMin().doubleValue(),
+				constraint.getSocMax().doubleValue(), constraint.getChargePowerMax().doubleValue(),
+				constraint.getDischargePowerMax().doubleValue(),
+				constraint.getTempMax() == null ? null : constraint.getTempMax().doubleValue());
+		if (!vr.valid()) {
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "安全包络校验未通过: " + String.join("; ", vr.rejections()));
+		}
+	}
+
 	public Page<EmsPlan> page(long pageNo, long pageSize, Long stationId) {
 		return planMapper.selectPage(new Page<>(pageNo, pageSize),
 				new LambdaQueryWrapper<EmsPlan>().eq(stationId != null, EmsPlan::getStationId, stationId)
@@ -242,12 +339,7 @@ public class EmsPlanService {
 		if (plan == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "计划不存在: " + planId);
 		}
-		try {
-			return writer.read(plan.getStationId(), plan.getPlanDate());
-		}
-		catch (Exception e) {
-			throw new BusinessException(ErrorCode.BAD_REQUEST, "读取点序列失败: " + e.getMessage());
-		}
+		return readPoints(plan.getStationId(), plan.getPlanDate());
 	}
 
 	private EmsStrategy resolveStrategy(Long stationId, Long strategyId) {

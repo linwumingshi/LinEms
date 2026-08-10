@@ -1,5 +1,5 @@
 import http from './http'
-import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsConstraint, EmsElectricityPrice, PageResult } from '@/types/models'
+import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsExecutionRecord, EmsConstraint, EmsElectricityPrice, PageResult } from '@/types/models'
 
 /** EMS 储能策略 API（网关路由 /api/ems/** → energy-ems） */
 export const emsApi = {
@@ -42,6 +42,9 @@ export const emsApi = {
 
   /** GET /api/ems/plan/{planId}/points 计划点位（充放电曲线） */
   planPoints(planId: string): Promise<EmsPlanPoint[]> { return http.get(`/api/ems/plan/${planId}/points`) },
+
+  /** GET /api/ems/plan/{planId}/records 计划执行记录（点级下发/ACK 结果） */
+  planRecords(planId: string): Promise<EmsExecutionRecord[]> { return http.get(`/api/ems/plan/${planId}/records`) },
 
   /** POST /api/ems/plan/{planId}/dispatch 下发调度计划 */
   dispatch(planId: string): Promise<number> { return http.post(`/api/ems/plan/${planId}/dispatch`) },
