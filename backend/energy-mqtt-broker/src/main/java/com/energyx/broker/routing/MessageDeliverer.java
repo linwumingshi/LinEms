@@ -295,6 +295,22 @@ public class MessageDeliverer {
         if (!session.isOnline()) {
             return;
         }
+        // v5 属性协商：Maximum Packet Size——估算报文大小超过客户端声明上限时不得发送（[MQTT-3.1.2-25]）。
+        // 超限 QoS0 丢弃、QoS1/2 转离线队列（持久会话）避免静默丢失
+        int maxPacketSize = session.getMaxPacketSize();
+        if (maxPacketSize > 0 && estimatePacketSize(topic, payload) > maxPacketSize) {
+            stats.recordPacketSizeExceeded();
+            if (effQos > 0 && !session.isCleanSession()) {
+                String deviceKey = session.getDeviceKey();
+                executor.execute(() ->
+                        sessionStore.pushOffline(deviceKey, new OfflineMessage(topic, payload, effQos)));
+            }
+            log.warn("[Deliver] 报文超过客户端 Maximum Packet Size 限制 deviceKey={} topic={} "
+                            + "est={}B limit={}B，{}", session.getDeviceKey(), topic,
+                    estimatePacketSize(topic, payload), maxPacketSize,
+                    effQos > 0 ? "转离线队列" : "QoS0 丢弃");
+            return;
+        }
         if (effQos == MqttQoS.AT_MOST_ONCE.value()) {
             writeToChannel(session, buildPublish(topic, payload, effQos, retain, 0), effQos);
             stats.recordOutgoing();
@@ -507,6 +523,15 @@ public class MessageDeliverer {
                 log.warn("[Deliver] 续传 in-flight 持久化失败 deviceKey={}", deviceKey, e);
             }
         });
+    }
+
+    /**
+     * 估算 MQTT PUBLISH 报文大小（字节）：topic + payload + 固定开销（固定头 2 + topic 长度 2
+     * + packetId 2 + 剩余长度 1-4 + v5 properties 1-2）。估算偏保守（含 32B 裕量），
+     * 确保不超客户端声明的 Maximum Packet Size。
+     */
+    private int estimatePacketSize(String topic, byte[] payload) {
+        return (topic == null ? 0 : topic.length()) + (payload == null ? 0 : payload.length) + 32;
     }
 
     private String toJson(Object value) {

@@ -97,6 +97,14 @@ public class Session {
     @Setter
     private int receiveMaximum = 65_535;
 
+    /**
+     * 客户端声明的 Maximum Packet Size（v5 属性协商，CONNECT 属性 0x27）：
+     * 本节点可发送的最大报文大小（字节，含 MQTT 固定头）；0 = 不限制（未声明或 v3）。
+     * 超限报文 QoS0 丢弃、QoS1/2 转离线队列，绝不超过客户端接收能力（[MQTT-3.1.2-25]）。
+     */
+    @Setter
+    private int maxPacketSize;
+
     public Session(String deviceKey, Channel channel, int mqttVersion, boolean cleanSession) {
         this.deviceKey = deviceKey;
         this.channel = channel;

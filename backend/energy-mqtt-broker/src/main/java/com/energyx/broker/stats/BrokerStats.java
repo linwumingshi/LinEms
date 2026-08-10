@@ -34,6 +34,8 @@ public class BrokerStats {
     public final AtomicLong rateLimited = new AtomicLong();
     /** 认证并发超限拒绝次数（P2-8 认证风暴防护） */
     public final AtomicLong authOverloadRejected = new AtomicLong();
+    /** 下行报文超过客户端 Maximum Packet Size 被拦截次数（v5 属性协商） */
+    public final AtomicLong packetSizeExceeded = new AtomicLong();
 
     private final SessionRegistry sessionRegistry;
     private final LocalSubscriberIndex subscriberIndex;
@@ -98,6 +100,11 @@ public class BrokerStats {
         authOverloadRejected.incrementAndGet();
     }
 
+    /** 下行报文超过客户端 Maximum Packet Size（v5 属性协商） */
+    public void recordPacketSizeExceeded() {
+        packetSizeExceeded.incrementAndGet();
+    }
+
     public Map<String, Object> snapshot() {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("connections", sessionRegistry.connectionCount());
@@ -115,6 +122,7 @@ public class BrokerStats {
         map.put("executorRejected", executorRejected.get());
         map.put("rateLimited", rateLimited.get());
         map.put("authOverloadRejected", authOverloadRejected.get());
+        map.put("packetSizeExceeded", packetSizeExceeded.get());
         return map;
     }
 }

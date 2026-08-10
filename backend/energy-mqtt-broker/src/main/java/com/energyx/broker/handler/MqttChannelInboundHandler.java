@@ -28,23 +28,7 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
-import io.netty.handler.codec.mqtt.MqttConnectMessage;
-import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
-import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
-import io.netty.handler.codec.mqtt.MqttFixedHeader;
-import io.netty.handler.codec.mqtt.MqttMessage;
-import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
-import io.netty.handler.codec.mqtt.MqttMessageType;
-import io.netty.handler.codec.mqtt.MqttPubAckMessage;
-import io.netty.handler.codec.mqtt.MqttPublishMessage;
-import io.netty.handler.codec.mqtt.MqttQoS;
-import io.netty.handler.codec.mqtt.MqttSubAckMessage;
-import io.netty.handler.codec.mqtt.MqttSubAckPayload;
-import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
-import io.netty.handler.codec.mqtt.MqttTopicSubscription;
-import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
-import io.netty.handler.codec.mqtt.MqttConnAckMessage;
-import io.netty.handler.codec.mqtt.MqttConnAckVariableHeader;
+import io.netty.handler.codec.mqtt.*;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
@@ -103,9 +87,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private final ScheduledExecutorService scheduler;
     private final PublishRateLimiter rateLimiter;
     private final AtomicInteger rawConnections = new AtomicInteger();
-    /** 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴 */
+    /**
+     * 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴
+     */
     private final java.util.concurrent.Semaphore authSlots;
-    /** 会话恢复并发信号量（重连风暴防护）：控制同时执行的恢复任务数，超限延迟重试 */
+    /**
+     * 会话恢复并发信号量（重连风暴防护）：控制同时执行的恢复任务数，超限延迟重试
+     */
     private final java.util.concurrent.Semaphore sessionRestoreSlots;
 
     public MqttChannelInboundHandler(DeviceAuthService authService,
@@ -246,7 +234,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    /** channel 恢复可写：冲刷该会话的背压挂起队列（在 eventLoop 上触发） */
+    /**
+     * channel 恢复可写：冲刷该会话的背压挂起队列（在 eventLoop 上触发）
+     */
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
         Session session = ctx.channel().attr(SESSION_ATTR).get();
@@ -324,24 +314,32 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         String password = msg.payload().passwordInBytes() == null
                 ? "" : new String(msg.payload().passwordInBytes(), StandardCharsets.UTF_8);
 
-        // ---- v5 连接属性（P1-11）：Session Expiry Interval / Receive Maximum ----
+        // ---- v5 连接属性协商：Session Expiry Interval / Receive Maximum / Maximum Packet Size ----
         long sessionExpirySeconds = -1; // -1 = 未指定，沿用默认
         int receiveMaximum = -1;        // -1 = 未指定，用协议上限
+        int maxPacketSize = 0;          // 0 = 未指定，不限制
         if (version == 5) {
-            io.netty.handler.codec.mqtt.MqttProperties props = msg.variableHeader().properties();
-            io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty expiry =
-                    (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty) props.getProperty(
-                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+            MqttProperties props = msg.variableHeader().properties();
+            MqttProperties.IntegerProperty expiry =
+                    (MqttProperties.IntegerProperty) props.getProperty(
+                            MqttProperties.MqttPropertyType
                                     .SESSION_EXPIRY_INTERVAL.value());
             if (expiry != null) {
                 sessionExpirySeconds = expiry.value();
             }
-            io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty recvMax =
-                    (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty) props.getProperty(
-                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+            MqttProperties.IntegerProperty recvMax =
+                    (MqttProperties.IntegerProperty) props.getProperty(
+                            MqttProperties.MqttPropertyType
                                     .RECEIVE_MAXIMUM.value());
             if (recvMax != null) {
                 receiveMaximum = Math.max(1, recvMax.value());
+            }
+            MqttProperties.IntegerProperty maxPkt =
+                    (MqttProperties.IntegerProperty) props.getProperty(
+                            MqttProperties.MqttPropertyType
+                                    .MAXIMUM_PACKET_SIZE.value());
+            if (maxPkt != null && maxPkt.value() != null) {
+                maxPacketSize = Math.max(1, maxPkt.value());
             }
         }
 
@@ -355,10 +353,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 byte[] willBytes = msg.payload().willMessageInBytes();
                 int willDelay = 0;
                 if (version == 5 && msg.payload().willProperties() != null) {
-                    io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty delay =
-                            (io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty)
+                    MqttProperties.IntegerProperty delay =
+                            (MqttProperties.IntegerProperty)
                                     msg.payload().willProperties().getProperty(
-                                            io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType
+                                            MqttProperties.MqttPropertyType
                                                     .WILL_DELAY_INTERVAL.value());
                     if (delay != null) {
                         willDelay = Math.max(0, delay.value());
@@ -373,7 +371,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         ConnectParams params = new ConnectParams(version, clientId,
                 vh.keepAliveTimeSeconds(), vh.isCleanSession(),
                 username, password, will, remoteIp(channel),
-                sessionExpirySeconds, receiveMaximum);
+                sessionExpirySeconds, receiveMaximum, maxPacketSize);
 
         // 慢路径全部在业务线程：认证（Redis/MySQL）→ 连接锁（Redis）→ sessionPresent 判定（Redis），
         // 仅最终会话注册与 CONNACK 回投 eventLoop（IO 线程零阻塞）
@@ -476,6 +474,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         if (p.receiveMaximum > 0) {
             session.setReceiveMaximum(p.receiveMaximum);
         }
+        // v5 属性协商：Maximum Packet Size（0 = 未指定/v3，不限制下行报文大小）
+        if (p.maxPacketSize > 0) {
+            session.setMaxPacketSize(p.maxPacketSize);
+        }
         channel.attr(SESSION_ATTR).set(session);
         channel.attr(DEVICE_KEY_ATTR).set(deviceKey);
         sessionRegistry.register(session);
@@ -495,7 +497,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             subscriberIndex.removeAll(deviceKey);
         }
 
-        sendConnAck(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
+        if (p.version == 5) {
+            // v5 CONNACK 能力声明（属性协商）：Maximum QoS=2、Retain Available=1（本 broker 能力）
+            sendConnAckV5(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
+        } else {
+            sendConnAck(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
+        }
         stats.recordAccepted();
         log.info("[Broker] 设备上线 deviceKey={} version={} remote={}", deviceKey, p.version, p.remoteIp);
 
@@ -611,7 +618,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    /** 从 X500 名称提取 CN（LDAP 序，兼容 "CN=xx,O=yy" 与 RFC2253 "O=yy,CN=xx"） */
+    /**
+     * 从 X500 名称提取 CN（LDAP 序，兼容 "CN=xx,O=yy" 与 RFC2253 "O=yy,CN=xx"）
+     */
     private String extractCn(String dn) {
         try {
             for (javax.naming.ldap.Rdn rdn : new javax.naming.ldap.LdapName(dn).getRdns()) {
@@ -697,7 +706,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         stats.recordIncoming();
     }
 
-    /** 会话 deviceKey（工具方法，避免重复 get） */
+    /**
+     * 会话 deviceKey（工具方法，避免重复 get）
+     */
     private String deviceKeyOf(Session session) {
         return session.getDeviceKey();
     }
@@ -895,6 +906,20 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 new MqttConnAckVariableHeader(code, sessionPresent)));
     }
 
+    /**
+     * v5 CONNACK：携带服务端能力声明（Maximum QoS=2、Retain Available=1，见 v5 属性协商）
+     */
+    private void sendConnAckV5(Channel channel, MqttConnectReturnCode code, boolean sessionPresent) {
+        MqttProperties props = new MqttProperties();
+        props.add(new MqttProperties.IntegerProperty(
+                MqttProperties.MqttPropertyType.MAXIMUM_QOS.value(), 2));
+        props.add(new MqttProperties.IntegerProperty(
+                MqttProperties.MqttPropertyType.RETAIN_AVAILABLE.value(), 1));
+        channel.writeAndFlush(new MqttConnAckMessage(
+                new MqttFixedHeader(MqttMessageType.CONNACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
+                new MqttConnAckVariableHeader(code, sessionPresent, props)));
+    }
+
     private void sendPubAck(Channel channel, int packetId) {
         channel.writeAndFlush(new MqttPubAckMessage(
                 new MqttFixedHeader(MqttMessageType.PUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
@@ -933,7 +958,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                 MqttMessageIdVariableHeader.from(packetId)));
     }
 
-    /** 提取报文 packetId（v3/v5 统一：各 VariableHeader 均继承 MqttMessageIdVariableHeader） */
+    /**
+     * 提取报文 packetId（v3/v5 统一：各 VariableHeader 均继承 MqttMessageIdVariableHeader）
+     */
     private int messageId(MqttMessage msg) {
         Object vh = msg.variableHeader();
         if (vh instanceof MqttMessageIdVariableHeader h) {
@@ -974,10 +1001,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         return null;
     }
 
-    /** CONNECT 解析结果（认证回调使用，跨线程传递） */
+    /**
+     * CONNECT 解析结果（认证回调使用，跨线程传递）
+     */
     private record ConnectParams(int version, String clientId, int keepAliveSeconds,
                                  boolean cleanSession, String username, String password,
                                  Session.MqttWill will, String remoteIp,
-                                 long sessionExpirySeconds, int receiveMaximum) {
+                                 long sessionExpirySeconds, int receiveMaximum, int maxPacketSize) {
     }
 }
