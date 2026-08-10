@@ -4,12 +4,14 @@ import com.energyx.shadow.config.ShadowProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
  * energy-shadow 启动入口。
  */
 @SpringBootApplication(scanBasePackages = "com.energyx")
+@EnableScheduling
 @MapperScan("com.energyx.shadow.mapper")
 @EnableConfigurationProperties(ShadowProperties.class)
 public class ShadowApplication {
