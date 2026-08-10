@@ -143,7 +143,8 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
     const pts = await emsApi.planPoints(plan.planId)
     points.value = pts
     if (!pts.length) {
-      // 清掉上一条计划的残留波形（若有）
+      // 清掉上一条计划的残留波形与残留实际曲线（若有）
+      actualCurve.value = null
       chart.value?.clear()
       return
     }
@@ -151,6 +152,8 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
     renderChart(pts, bands)
     // 实际曲线独立异步拉取，拉回后重渲染叠加虚线；失败已在 loadActualCurve 内降级为 null
     await loadActualCurve(plan)
+    // 计划 ID 守卫：拉取期间已切换计划，本次 pts/bands 已过期，不重绘避免旧计划波形覆盖新计划
+    if (selected.value?.planId !== plan.planId) return
     renderChart(pts, bands, actualCurve.value)
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
@@ -161,16 +164,22 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
 async function loadActualCurve(plan: EmsPlan): Promise<void> {
   actualCurve.value = null
   try {
-    const page = await deviceApi.page({ pageNum: 1, pageSize: 20 })
+    // keyword 过滤只拉目标设备，避免设备数超过一页时目标设备落选；仍按 deviceName 精确匹配双保险
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 20, keyword: PCS_DEVICE_NAME })
+    // 计划 ID 守卫：响应回来时已切换到其他计划，丢弃过期响应，不 set 不重绘
+    if (selected.value?.planId !== plan.planId) return
     const dev = page.records.find((d) => d.deviceName === PCS_DEVICE_NAME)
     if (!dev) {
       // 设备列表未匹配到下发设备：不展示实际曲线，波形照常渲染
       return
     }
-    actualCurve.value = await fetchActualCurve(String(dev.deviceId), dev.productKey, plan.planDate.slice(0, 10))
+    const curve = await fetchActualCurve(String(dev.deviceId), dev.productKey, plan.planDate.slice(0, 10))
+    // 二次守卫：TSDB 拉取期间也可能切换计划，同样丢弃过期响应
+    if (selected.value?.planId !== plan.planId) return
+    actualCurve.value = curve
   } catch {
-    // 拉取失败降级：无实际曲线不阻断波形
-    actualCurve.value = null
+    // 拉取失败降级：无实际曲线不阻断波形；仅当仍是当前计划才清空，避免清掉新计划已拉到的曲线
+    if (selected.value?.planId === plan.planId) actualCurve.value = null
   }
 }
 
