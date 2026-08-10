@@ -9,8 +9,8 @@
 | 接入层 | 自研 Netty MQTT Broker（MQTT 3.1.1/5.0），Redis 会话共享，Kafka 跨节点路由 |
 | 后端 | Java 17 / Spring Boot 3.x / Spring Cloud Alibaba / Spring Security（RBAC + Redis 会话令牌） / MyBatis Plus |
 | 消息 | Kafka（15 topic，全链路事件总线） |
-| 存储 | MySQL 8（ShardingSphere 分库分表）/ TDengine（时序）/ Redis Cluster / Elasticsearch |
-| 服务治理 | Nacos / Spring Cloud Gateway / OpenFeign / Sentinel |
+| 存储 | MySQL 8 / TDengine（时序）/ Redis Cluster / Elasticsearch |
+| 服务治理 | Nacos / Spring Cloud Gateway / Sentinel（服务间经网关 `lb://` + Kafka 事件总线，不引入 OpenFeign） |
 | 前端 | Vue3 / TypeScript / Vite / Pinia / Element Plus / ECharts |
 
 ## 阶段进度
