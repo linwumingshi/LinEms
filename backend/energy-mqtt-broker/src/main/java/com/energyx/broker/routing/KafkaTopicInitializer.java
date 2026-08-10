@@ -4,11 +4,14 @@ import com.energyx.broker.config.BrokerProperties;
 import com.energyx.common.constant.KafkaTopicConstant;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -77,7 +80,7 @@ public class KafkaTopicInitializer {
 		try (AdminClient admin = AdminClient.create(props)) {
 			Set<String> existing = admin.listTopics().names().get(10, TimeUnit.SECONDS);
 			List<NewTopic> toCreate = new ArrayList<>();
-			java.util.Map<String, org.apache.kafka.clients.admin.NewPartitions> toExpand = new java.util.HashMap<>();
+			Map<String, NewPartitions> toExpand = new HashMap<>();
 			// 不存在的 topic 走 createTopics；已存在但分区不足走 createPartitions（显式扩容）
 			addIfNeed(admin, existing, toCreate, toExpand, KafkaTopicConstant.MQTT_UPLINK,
 					properties.getRouterTopicPartitions());
@@ -106,13 +109,12 @@ public class KafkaTopicInitializer {
 
 	/** 不存在的纳入创建；存在但分区不足纳入扩容；达标跳过 */
 	private void addIfNeed(AdminClient admin, Set<String> existing, List<NewTopic> toCreate,
-			java.util.Map<String, org.apache.kafka.clients.admin.NewPartitions> toExpand, String topic, int partitions)
-			throws Exception {
+			Map<String, NewPartitions> toExpand, String topic, int partitions) throws Exception {
 		if (!existing.contains(topic)) {
 			toCreate.add(new NewTopic(topic, partitions, (short) 1));
 			return;
 		}
-		int current = admin.describeTopics(java.util.List.of(topic))
+		int current = admin.describeTopics(List.of(topic))
 			.allTopicNames()
 			.get(10, TimeUnit.SECONDS)
 			.get(topic)

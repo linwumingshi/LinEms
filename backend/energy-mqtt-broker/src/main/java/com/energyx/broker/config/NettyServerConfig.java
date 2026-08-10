@@ -5,13 +5,14 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.mqtt.MqttDecoder;
 import io.netty.handler.codec.mqtt.MqttEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,7 +105,7 @@ public class NettyServerConfig {
 				throw new IllegalStateException("mTLS 设备 CA 证书缺失: " + trust.getAbsolutePath()
 						+ "（clientAuth=true 必须提供 trust-cert-file，见 gen-mqtt-certs.sh -c）");
 			}
-			builder.clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE).trustManager(trust);
+			builder.clientAuth(ClientAuth.REQUIRE).trustManager(trust);
 			log.info("[Broker] MQTT mTLS 双向认证已启用，设备 CA={}", trust);
 		}
 		log.info("[Broker] MQTT TLS 证书加载 {} / {}", cert, key);
@@ -133,8 +134,7 @@ public class NettyServerConfig {
 			.childOption(ChannelOption.SO_SNDBUF, 262_144)
 			// P2-5：显式启用池化 ByteBuf 分配器，减少高并发下堆外内存分配与 GC 压力
 			.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-			.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK,
-					new io.netty.channel.WriteBufferWaterMark(32 * 1024, 256 * 1024));
+			.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(32 * 1024, 256 * 1024));
 	}
 
 	/**

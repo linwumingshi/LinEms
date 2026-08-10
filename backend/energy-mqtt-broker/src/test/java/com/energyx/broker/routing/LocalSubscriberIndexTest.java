@@ -3,7 +3,9 @@ package com.energyx.broker.routing;
 import com.energyx.broker.session.Session;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -130,7 +132,7 @@ class LocalSubscriberIndexTest {
 		index.add(d1, "$share/g1/a/b", 1);
 		index.add(d2, "$share/g1/a/b", 2);
 		// 连续匹配 6 次，组内两个成员应交替被选中（轮询），且 QoS 取组内最大 2
-		java.util.Set<Session> seen = new java.util.HashSet<>();
+		Set<Session> seen = new HashSet<>();
 		for (int i = 0; i < 6; i++) {
 			List<LocalSubscriberIndex.SubscriberMatch> matches = index.match("a/b");
 			assertEquals(1, matches.size(), "共享组一次只投一个成员");

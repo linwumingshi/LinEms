@@ -28,7 +28,26 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
-import io.netty.handler.codec.mqtt.*;
+import io.netty.handler.codec.mqtt.MqttConnectMessage;
+import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
+import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
+import io.netty.handler.codec.mqtt.MqttFixedHeader;
+import io.netty.handler.codec.mqtt.MqttMessage;
+import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
+import io.netty.handler.codec.mqtt.MqttMessageType;
+import io.netty.handler.codec.mqtt.MqttProperties;
+import io.netty.handler.codec.mqtt.MqttPubAckMessage;
+import io.netty.handler.codec.mqtt.MqttPublishMessage;
+import io.netty.handler.codec.mqtt.MqttQoS;
+import io.netty.handler.codec.mqtt.MqttReasonCodeAndPropertiesVariableHeader;
+import io.netty.handler.codec.mqtt.MqttSubAckMessage;
+import io.netty.handler.codec.mqtt.MqttSubAckPayload;
+import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
+import io.netty.handler.codec.mqtt.MqttTopicSubscription;
+import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
+import io.netty.handler.codec.mqtt.MqttConnAckMessage;
+import io.netty.handler.codec.mqtt.MqttConnAckVariableHeader;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
@@ -39,14 +58,19 @@ import org.springframework.stereotype.Component;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.naming.ldap.LdapName;
+import javax.naming.ldap.Rdn;
 
 /**
  * MQTT 报文分发处理器（@Sharable 单例，跨 channel 共享，channel 态全部放 channel attribute）。
@@ -108,12 +132,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	/**
 	 * 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴
 	 */
-	private final java.util.concurrent.Semaphore authSlots;
+	private final Semaphore authSlots;
 
 	/**
 	 * 会话恢复并发信号量（重连风暴防护）：控制同时执行的恢复任务数，超限延迟重试
 	 */
-	private final java.util.concurrent.Semaphore sessionRestoreSlots;
+	private final Semaphore sessionRestoreSlots;
 
 	public MqttChannelInboundHandler(DeviceAuthService authService, SessionRegistry sessionRegistry,
 			SessionStore sessionStore, LocalSubscriberIndex subscriberIndex, MessageDeliverer deliverer,
@@ -135,9 +159,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		this.objectMapper = objectMapper;
 		this.executor = executor;
 		this.scheduler = scheduler;
-		this.authSlots = new java.util.concurrent.Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
-		this.sessionRestoreSlots = new java.util.concurrent.Semaphore(
-				Math.max(1, properties.getSessionRestoreMaxConcurrent()));
+		this.authSlots = new Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
+		this.sessionRestoreSlots = new Semaphore(Math.max(1, properties.getSessionRestoreMaxConcurrent()));
 	}
 
 	// ---------------- 连接生命周期 ----------------
@@ -605,17 +628,17 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	private boolean verifyClientCert(Channel channel, String clientId) {
 		try {
-			io.netty.handler.ssl.SslHandler sslHandler = channel.pipeline().get(io.netty.handler.ssl.SslHandler.class);
+			SslHandler sslHandler = channel.pipeline().get(SslHandler.class);
 			if (sslHandler == null) {
 				log.warn("[mTLS] 非 TLS 连接尝试设备接入，拒绝 clientId={}", clientId);
 				return false;
 			}
-			java.security.cert.Certificate[] chain = sslHandler.engine().getSession().getPeerCertificates();
+			Certificate[] chain = sslHandler.engine().getSession().getPeerCertificates();
 			if (chain == null || chain.length == 0) {
 				log.warn("[mTLS] 对端未提供证书 clientId={}", clientId);
 				return false;
 			}
-			if (!(chain[0] instanceof java.security.cert.X509Certificate leaf)) {
+			if (!(chain[0] instanceof X509Certificate leaf)) {
 				return false;
 			}
 			String cn = extractCn(leaf.getSubjectX500Principal().getName());
@@ -636,7 +659,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	private String extractCn(String dn) {
 		try {
-			for (javax.naming.ldap.Rdn rdn : new javax.naming.ldap.LdapName(dn).getRdns()) {
+			for (Rdn rdn : new LdapName(dn).getRdns()) {
 				if ("CN".equalsIgnoreCase(rdn.getType())) {
 					return String.valueOf(rdn.getValue());
 				}

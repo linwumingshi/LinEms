@@ -1,5 +1,6 @@
 package com.energyx.ems.service;
 
+import com.energyx.common.redis.DistributedLock;
 import com.energyx.ems.entity.EmsConstraint;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStrategy;
@@ -10,9 +11,11 @@ import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
 import com.energyx.ems.util.TdenginePlanWriter;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -46,11 +49,10 @@ class EmsPlanServiceTest {
 		constraint.setChargePowerMax(new BigDecimal("100"));
 		constraint.setDischargePowerMax(new BigDecimal("80"));
 		when(constraintMapper.selectOne(any())).thenReturn(constraint);
-		when(priceMapper.selectList(any())).thenReturn(java.util.List.of());
+		when(priceMapper.selectList(any())).thenReturn(List.of());
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
-				validator, writer, commandClient, new com.energyx.common.redis.DistributedLock(
-						org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class)));
+				validator, writer, commandClient, new DistributedLock(mock(StringRedisTemplate.class)));
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
 		assertNotNull(plan);
