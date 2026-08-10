@@ -389,8 +389,8 @@ Session Expiry Interval → Receive Maximum → Reason Code → Will Delay → T
 | 跨节点路由      | —                      | 定向投递 mqtt.down.{nodeId}（fan-out 消除）   | **已消除**（原 P1-1/P1-2）           |
 | 可观测        | $SYS + Prometheus + 追踪 | Micrometer + Prometheus（连接/消息/时延/线程池） | 小（原 P1-10，缺链路追踪）               |
 | MQTT5      | 全量                     | $share 负载均衡 + Session Expiry + Receive Max + Will Delay（Topic Alias/AUTH 延后） | 小（原 P1-11）                     |
-| 共享订阅       | 组内负载均衡                 | 语义错误（全组投递）                            | 中（未修）                          |
-| 限速/配额      | 内置 zone/listener 级     | 无                                     | 中（未修）                          |
+| 共享订阅       | 组内负载均衡                 | $share 组内轮询投递（P1-11）                  | **已消除**                        |
+| 限速/配额      | 内置 zone/listener 级     | per-deviceKey 发布限速（P2-7，per-tenant 维度未做） | 小                              |
 | 安全         | mTLS/PSK/JWT/CRL       | HMAC + mTLS（CN=clientId 绑定，待真机联测）   | 小（原 P1-12）                     |
 | 运维         | CLI/Dashboard/热配置/滚动升级 | 无                                     | 大（未修）                          |
 
