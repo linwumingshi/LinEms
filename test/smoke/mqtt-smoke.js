@@ -60,7 +60,7 @@ async function main() {
 
   // ---- 首次连接（持久会话） ----
   const client = mqtt.connect({
-    host: '127.0.0.1', port: 1883, protocolVersion: 4,
+    host: '127.0.0.1', port: 18831, protocolVersion: 4,
     clientId, username, password, clean: false, keepalive: 30, reconnectPeriod: 0,
   });
 
@@ -89,7 +89,7 @@ async function main() {
   const ts2 = Date.now();
   const nonce2 = crypto.randomBytes(8).toString('hex');
   const client2 = mqtt.connect({
-    host: '127.0.0.1', port: 1883, protocolVersion: 4,
+    host: '127.0.0.1', port: 18831, protocolVersion: 4,
     clientId, username: `${clientId}&${ts2}&${nonce2}`,
     password: sign(secret, clientId, String(ts2), nonce2),
     clean: false, keepalive: 30, reconnectPeriod: 0,
@@ -113,7 +113,7 @@ async function main() {
   const ts3 = Date.now();
   const nonce3 = crypto.randomBytes(8).toString('hex');
   const client3 = mqtt.connect({
-    host: '127.0.0.1', port: 1883, protocolVersion: 4,
+    host: '127.0.0.1', port: 18831, protocolVersion: 4,
     clientId, username: `${clientId}&${ts3}&${nonce3}`,
     password: sign(secret, clientId, String(ts3), nonce3),
     clean: true, keepalive: 30, reconnectPeriod: 0,

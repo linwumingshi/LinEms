@@ -30,4 +30,9 @@ public final class AccessKeys {
     public static String cmdQueue(long deviceId) {
         return "iot:cmd:q:" + deviceId;
     }
+
+    /** Broker 连接锁（mqtt:conn:{deviceKey}，value=brokerNodeId）：下行定向路由定位（阶段 2） */
+    public static String brokerConnLock(String deviceKey) {
+        return "mqtt:conn:" + deviceKey;
+    }
 }

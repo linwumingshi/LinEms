@@ -260,6 +260,11 @@ public class SessionStore {
                 nodeId, String.valueOf(properties.getConnLockTtlSeconds()));
     }
 
+    /** 下行路由定位：当前持有连接锁的节点（= 设备所在节点）；离线/竞态窗口返回 null */
+    public String resolveOwnerNode(String deviceKey) {
+        return getConnLockOwner(deviceKey);
+    }
+
     // ---------------- 认证封禁（跨节点共享） ----------------
 
     /** 是否处于封禁期 */

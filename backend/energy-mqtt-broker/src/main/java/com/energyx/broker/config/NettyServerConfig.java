@@ -5,9 +5,7 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.mqtt.MqttDecoder;
 import io.netty.handler.codec.mqtt.MqttEncoder;
 import io.netty.handler.ssl.SslContext;
@@ -30,10 +28,9 @@ import java.io.File;
  * TLS 开启时（{@code energyx.broker.tls.enabled=true}）SslHandler 置于 pipeline 头部，其余与明文完全一致；
  * 两个 acceptor 共享同一 boss/worker 事件循环组与同一 {@code mqttHandler} 单例。</p>
  *
- * <p>传输层决策（Phase 1 §4.2）：默认 NIO（跨平台）；生产 Linux 环境切换
- * {@code io.netty.transport.epoll}（EpollEventLoopGroup）并通过启动参数
- * {@code -Dio.netty.transport.auto-detect=true} 自动选择。Window 本机仅做功能验证，
- * NIO 吞吐已足够（单通道 10 万 TPS 量级）。TLS 用 JDK 默认 provider（RSA 自签），无 tcnative/BouncyCastle 依赖。</p>
+ * <p>传输层（阶段 2）：经 {@link TransportFactory} 自适应——Linux 有
+ * netty-transport-native-epoll 时启用 Epoll（SO_REUSEPORT/零拷贝/批量唤醒），macOS 反射 KQueue，
+ * 其余回退 NIO（Windows 开发机恒为 NIO）。TLS 用 JDK 默认 provider（RSA 自签），无 tcnative/BouncyCastle 依赖。</p>
  */
 @Configuration
 public class NettyServerConfig {
@@ -53,10 +50,10 @@ public class NettyServerConfig {
         this.mqttHandler = mqttHandler;
     }
 
-    /** boss：accept 连接；worker：读/写事件循环 */
+    /** boss：accept 连接；worker：读/写事件循环（原生传输自适应） */
     @Bean(name = "bossGroup", destroyMethod = "shutdownGracefully")
     public EventLoopGroup bossGroup() {
-        return new NioEventLoopGroup(1);
+        return TransportFactory.newEventLoopGroup(1);
     }
 
     @Bean(name = "workerGroup", destroyMethod = "shutdownGracefully")
@@ -65,8 +62,8 @@ public class NettyServerConfig {
         if (threads <= 0) {
             threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         }
-        log.info("[Broker] worker 线程数 = {}", threads);
-        return new NioEventLoopGroup(threads);
+        log.info("[Broker] worker 线程数 = {}（传输={}）", threads, TransportFactory.detect());
+        return TransportFactory.newEventLoopGroup(threads);
     }
 
     /**
@@ -110,7 +107,7 @@ public class NettyServerConfig {
     private ServerBootstrap baseBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
         return new ServerBootstrap()
                 .group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
+                .channel(TransportFactory.serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, 8192)
                 .option(ChannelOption.SO_REUSEADDR, true)
                 .childOption(ChannelOption.TCP_NODELAY, true)

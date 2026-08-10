@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
 
@@ -18,14 +20,15 @@ import java.util.Properties;
  * <ul>
  *   <li>idempotence + acks=all：生产者幂等，配合消费端 MessageDedup 实现端到端去重；</li>
  *   <li>linger 5ms + batch 64KB：批量发送降低小报文开销（设备上行以短 JSON 为主）；</li>
- *   <li>send 异步不阻塞消费线程；失败回调记日志（DLQ 兜底在消费引擎层）。</li>
+ *   <li>send 异步不阻塞消费线程；失败回调记日志（DLQ 兜底在消费引擎层）；</li>
+ *   <li>阶段 2：value 序列化改 byte[]（mqtt.uplink/down/broadcast 二进制信封）；String 值 UTF-8 编码。</li>
  * </ul></p>
  */
 @Slf4j
 @Component
 public class AccessKafkaProducer implements AutoCloseable {
 
-    private final KafkaProducer<String, String> producer;
+    private final KafkaProducer<String, byte[]> producer;
     private final boolean enabled;
 
     public AccessKafkaProducer(AccessProperties properties) {
@@ -39,7 +42,7 @@ public class AccessKafkaProducer implements AutoCloseable {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, properties.getKafkaBootstrapServers());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
@@ -55,8 +58,14 @@ public class AccessKafkaProducer implements AutoCloseable {
         return enabled;
     }
 
-    /** 异步发送；Kafka 停用时静默丢弃（单机调试模式） */
+    /** 异步发送 String（UTF-8 编码为字节）；Kafka 停用时静默丢弃（单机调试模式） */
     public void send(String topic, String key, String value) {
+        sendBytes(topic, key,
+                value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 异步发送二进制信封（mqtt.uplink/down/broadcast）；Kafka 停用时静默丢弃 */
+    public void sendBytes(String topic, String key, byte[] value) {
         if (!enabled || producer == null) {
             log.debug("[Access] Kafka 停用，丢弃消息 topic={} key={}", topic, key);
             return;

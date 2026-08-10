@@ -20,12 +20,14 @@ import com.energyx.common.mqtt.MqttTopicInfo;
 import com.energyx.common.mqtt.MqttTopicUtil;
 import com.energyx.common.mqtt.MqttUpType;
 import com.energyx.common.mqtt.RouterEnvelope;
+import com.energyx.common.mqtt.RouterEnvelopeCodec;
 import com.energyx.common.redis.MessageDedup;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -78,9 +80,12 @@ public class UplinkProcessor implements KafkaRecordHandler {
     public void handle(ConsumerRecord<String, String> record) throws Exception {
         RouterEnvelope envelope;
         try {
-            envelope = objectMapper.readValue(record.value(), RouterEnvelope.class);
+            // 阶段 2：二进制信封（magic 0xE9 0x01）；StringDeserializer 读回的 String 按
+            // ISO-8859-1 还原字节无损（ByteArraySerializer 写出的原始字节）。兼容期 JSON 自动探测。
+            byte[] raw = record.value().getBytes(StandardCharsets.ISO_8859_1);
+            envelope = RouterEnvelopeCodec.decode(raw, objectMapper);
         } catch (Exception e) {
-            log.warn("[Access] mqtt.router 信封反序列化失败 key={} offset={}，丢弃",
+            log.warn("[Access] mqtt.uplink 信封解码失败 key={} offset={}，丢弃",
                     record.key(), record.offset());
             return;
         }

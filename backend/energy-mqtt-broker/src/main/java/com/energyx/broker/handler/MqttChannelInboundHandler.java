@@ -11,6 +11,7 @@ import com.energyx.broker.mqtt.KafkaEventProducer;
 import com.energyx.broker.routing.LocalSubscriberIndex;
 import com.energyx.broker.routing.MessageDeliverer;
 import com.energyx.common.mqtt.RouterEnvelope;
+import com.energyx.common.mqtt.RouterEnvelopeCodec;
 import com.energyx.broker.session.InboundPublish;
 import com.energyx.broker.session.InflightMessage;
 import com.energyx.broker.session.MqttSubscription;
@@ -411,8 +412,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private void kickRemote(String ownerNode, String deviceKey) {
         try {
             RouterEnvelope envelope = RouterEnvelope.kick(properties.getNodeId(), deviceKey);
-            kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, deviceKey,
-                    objectMapper.writeValueAsString(envelope));
+            // 阶段 2：KICK 走 mqtt.broadcast 广播通道（每节点唯一消费组，sourceNode 去重）
+            byte[] payload = RouterEnvelopeCodec.encode(envelope);
+            kafkaProducer.sendBytes(KafkaTopicConstant.MQTT_BROADCAST, deviceKey, payload);
         } catch (Exception e) {
             log.warn("[Broker] 远程踢线信封发送失败 deviceKey={} owner={}", deviceKey, ownerNode, e);
         }

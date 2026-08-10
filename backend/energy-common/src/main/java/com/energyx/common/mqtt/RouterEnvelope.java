@@ -79,6 +79,16 @@ public class RouterEnvelope {
         }
     }
 
+    /** 原始字节直通（二进制信封编解码路径，免 Base64 往返） */
+    public byte[] payload() {
+        return decodePayload();
+    }
+
+    public void setPayload(byte[] payload) {
+        this.payloadBase64 = payload == null || payload.length == 0
+                ? "" : Base64.getEncoder().encodeToString(payload);
+    }
+
     public String decodePayloadAsText() {
         return new String(decodePayload(), StandardCharsets.UTF_8);
     }

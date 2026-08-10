@@ -46,17 +46,27 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-codec-mqtt</artifactId>
-      <version>4.1.108.Final</version>
+      <version>4.1.109.Final</version>
     </dependency>
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-handler</artifactId>
-      <version>4.1.108.Final</version>
+      <version>4.1.109.Final</version>
     </dependency>
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-transport</artifactId>
-      <version>4.1.108.Final</version>
+      <version>4.1.109.Final</version>
+    </dependency>
+    <!-- Epoll 原生传输（Linux 生产环境）：optional —— 本地离线仓库仅 4.1.109 起有 classes 构件，
+         且仅 linux-aarch64 原生 jar；运行时经 TransportFactory 反射探测，不可用自动回退 NIO。
+         生产 x86_64 部署时在服务器本地 Maven 仓库补齐
+         netty-transport-native-epoll:4.1.109.Final:linux-x86_64 并去掉 optional 即可启用 -->
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-transport-classes-epoll</artifactId>
+      <version>4.1.109.Final</version>
+      <optional>true</optional>
     </dependency>
 
     <!-- Kafka 原生客户端：跨节点路由 + 生命周期事件（替代缺失 starter，见 D9） -->

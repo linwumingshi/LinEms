@@ -90,4 +90,22 @@ public class BrokerProperties {
 
     /** 跨节点路由批量消费最大条数 */
     private int routerMaxPollRecords = 500;
+
+    /** 阶段 2 路由通道开关：设备上行 → mqtt.uplink；下行 → mqtt.down.{nodeId} 定向；KICK/回落 → mqtt.broadcast */
+    private boolean directedRouting = true;
+
+    /** 兼容期旧通道 mqtt.router fan-out（仅多版本混布升级期开启；全量升级后关闭并删除 topic） */
+    private boolean routerLegacyBroadcast = false;
+
+    /** 节点专属下行 topic 分区数（mqtt.down.{nodeId}，24 分区支撑单节点下行并发） */
+    private int downTopicPartitions = 24;
+
+    /** 跨节点广播 topic 分区数（KICK/回落，低频） */
+    private int broadcastTopicPartitions = 8;
+
+    /** 消费失败毒丸报文兜底 DLQ topic */
+    private String dlqTopicName = "iot-dlq";
+
+    /** RouterConsumer 每个消费引擎线程数（分区并行；down/broadcast/legacy 各引擎独立） */
+    private int routerConsumerThreads = 2;
 }

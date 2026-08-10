@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
 
@@ -15,8 +17,9 @@ import java.util.Properties;
  * 原生 kafka-clients 生产者（路由 + 生命周期共用单实例，线程安全）。
  *
  * <p>因为镜像缺失 spring-boot-starter-kafka（Phase 3 D9），此处直接使用 kafka-clients。
- * 相比 Spring Kafka，原生客户端线程模型更透明，适合 Broker 这种自定义分区/低延迟场景；
- * 指标（发送延迟/重试）Phase 8 通过 JMX + prometheus 暴露。</p>
+ * 相比 Spring Kafka，原生客户端线程模型更透明，适合 Broker 这种自定义分区/低延迟场景。
+ * 阶段 2：value 序列化改 byte[]（二进制信封免 Base64 膨胀），String 发送按 UTF-8 编码，
+ * 消费端 StringDeserializer 读回后按 ISO-8859-1 还原字节仍无损。</p>
  *
  * <p>幂等生产：enable.idempotence=true + acks=all，防止路由消息乱序/重复（跨节点投递一致性）。</p>
  */
@@ -24,7 +27,7 @@ import java.util.Properties;
 @Component
 public class KafkaEventProducer implements AutoCloseable {
 
-    private final KafkaProducer<String, String> producer;
+    private final KafkaProducer<String, byte[]> producer;
     private final boolean enabled;
 
     public KafkaEventProducer(BrokerProperties properties) {
@@ -38,7 +41,7 @@ public class KafkaEventProducer implements AutoCloseable {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, properties.getKafkaBootstrapServers());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
@@ -64,14 +67,25 @@ public class KafkaEventProducer implements AutoCloseable {
         send(topic, key, value, null, null);
     }
 
+    /** 字节信封发送（mqtt.uplink / mqtt.down.{nodeId} / mqtt.broadcast 二进制信封统一入口） */
+    public void sendBytes(String topic, String key, byte[] value) {
+        sendBytes(topic, key, value, null, null);
+    }
+
     /**
-     * 异步发送（带结果回调）。
+     * 异步发送（带结果回调，String 值 UTF-8 编码为字节）。
      *
      * @param onSuccess Broker 端持久化确认（acks=all 返回），在 producer sender 线程触发
      * @param onFailure 最终失败（重试耗尽/超时/缓冲满快速失败），在 sender 线程或调用线程触发；
      *                  需要写 Netty channel 的回调必须自行回投 eventLoop
      */
     public void send(String topic, String key, String value, Runnable onSuccess, Runnable onFailure) {
+        sendBytes(topic, key,
+                value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8), onSuccess, onFailure);
+    }
+
+    /** 字节信封发送（带结果回调；同上线程约束） */
+    public void sendBytes(String topic, String key, byte[] value, Runnable onSuccess, Runnable onFailure) {
         if (!enabled || producer == null) {
             log.debug("[Broker] Kafka 停用，丢弃事件 topic={} key={}", topic, key);
             if (onSuccess != null) {

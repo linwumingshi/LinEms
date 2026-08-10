@@ -59,7 +59,7 @@ mybatis-plus:
 energyx:
   broker:
     node-id: ${BROKER_NODE_ID:broker-1}
-    port: ${BROKER_MQTT_PORT:1883}
+    port: ${BROKER_MQTT_PORT:18831}
     max-connections: 500000
     worker-threads: 0
     enable-router: true
@@ -79,6 +79,13 @@ energyx:
     auth-failure-ban-threshold: 10
     auth-failure-ban-seconds: 300
     router-max-poll-records: 500
+    # ---- 阶段 2 定向路由（替代 mqtt.router 全量 fan-out）----
+    directed-routing: true
+    router-legacy-broadcast: false   # 兼容期旧通道：仅多版本混布升级时临时开启
+    down-topic-partitions: 24
+    broadcast-topic-partitions: 8
+    router-consumer-threads: 2
+    dlq-topic-name: iot-dlq
     # MQTT TLS 8883（P0-3）：enabled=false 时无 TLS acceptor，行为与明文单端口一致
     # 证书默认相对路径按进程 CWD 解析（start-stack.sh 从仓库根启动 jar），生产请传绝对路径
     tls:

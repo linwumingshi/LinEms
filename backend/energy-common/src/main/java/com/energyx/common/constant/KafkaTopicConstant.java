@@ -30,8 +30,14 @@ public final class KafkaTopicConstant {
     public static final String EMS_PLAN = "ems-plan";
     /** 操作审计 */
     public static final String IOT_AUDIT = "iot-audit";
-    /** Broker 跨节点消息路由 */
+    /** Broker 跨节点消息路由（阶段 2 起为兼容期通道，仅多版本混布时启用） */
     public static final String MQTT_ROUTER = "mqtt.router";
+    /** 设备上行（阶段 2：Broker 唯一生产者，唯一消费组 energy-access-uplink 摄取） */
+    public static final String MQTT_UPLINK = "mqtt.uplink";
+    /** 下行定向 topic 前缀：mqtt.down.{nodeId}，仅目标节点消费（投递目标 = mqtt:conn owner） */
+    public static final String MQTT_DOWN_PREFIX = "mqtt.down.";
+    /** 跨节点广播（KICK 踢线 / owner 解析失败回落）；每节点唯一消费组全量 fan-out */
+    public static final String MQTT_BROADCAST = "mqtt.broadcast";
     /** 日志（→ES） */
     public static final String IOT_LOG = "iot-log";
     /** AI 特征 */

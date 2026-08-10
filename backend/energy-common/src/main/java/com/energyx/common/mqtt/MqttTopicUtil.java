@@ -65,4 +65,22 @@ public final class MqttTopicUtil {
         }
         return new MqttTopicInfo(parts[0], parts[1], type);
     }
+
+    /** 是否为平台下行 topic（`{pk}/{dn}/down/*`，阶段 2 下行定向投递判定） */
+    public static boolean isDownTopic(String topic) {
+        if (topic == null || topic.isBlank()) {
+            return false;
+        }
+        String[] parts = topic.split("/");
+        return parts.length >= 4 && "down".equals(parts[2]);
+    }
+
+    /** 提取下行 topic 对应的 deviceKey（`{pk}_{dn}`）；非 down topic 返回 null */
+    public static String deviceKeyOfDownTopic(String topic) {
+        if (!isDownTopic(topic)) {
+            return null;
+        }
+        String[] parts = topic.split("/");
+        return buildDeviceKey(parts[0], parts[1]);
+    }
 }

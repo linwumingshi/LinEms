@@ -2,6 +2,7 @@ package com.energyx.access.publish;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.access.config.AccessProperties;
+import com.energyx.access.device.BrokerNodeResolver;
 import com.energyx.access.mqtt.AccessKafkaProducer;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.message.CommandAckMessage;
@@ -12,6 +13,7 @@ import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
 import com.energyx.common.mqtt.MqttTopicUtil;
 import com.energyx.common.mqtt.RouterEnvelope;
+import com.energyx.common.mqtt.RouterEnvelopeCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +28,7 @@ import java.util.Map;
  * <ul>
  *   <li>property/event/lifecycle 以 deviceId 为 key ⇒ 单设备有序、按设备分区；</li>
  *   <li>ack 以 commandId 为 key ⇒ 指令 ACK 与指令记录同分区保序；</li>
- *   <li>raw 以 messageId 为 key；下行桥接信封以 topic 为 key（与 Broker 路由分区规则一致）。</li>
+ *   <li>raw 以 messageId 为 key；下行信封以 deviceKey 为 key（阶段 2：定向 topic 分区有序）。</li>
  * </ul></p>
  */
 @Slf4j
@@ -35,11 +37,14 @@ public class EventPublisher {
 
     private final AccessKafkaProducer producer;
     private final AccessProperties props;
+    private final BrokerNodeResolver nodeResolver;
     private final ObjectMapper objectMapper;
 
-    public EventPublisher(AccessKafkaProducer producer, AccessProperties props, ObjectMapper objectMapper) {
+    public EventPublisher(AccessKafkaProducer producer, AccessProperties props,
+                          BrokerNodeResolver nodeResolver, ObjectMapper objectMapper) {
         this.producer = producer;
         this.props = props;
+        this.nodeResolver = nodeResolver;
         this.objectMapper = objectMapper;
     }
 
@@ -68,13 +73,16 @@ public class EventPublisher {
     }
 
     /**
-     * 平台下行：把 CommandDownMessage 桥接为 mqtt.router PUBLISH 信封。
+     * 平台下行：把 CommandDownMessage 桥接为 PUBLISH 信封（阶段 2 定向投递）。
      *
-     * <p>Broker 每节点唯一消费组全量 fan-out 该信封，仅设备所在节点存在 down/# 订阅，
-     * 由该节点按 QoS 投递给设备——复用既有跨节点路由通道，access 无需直连 Broker。</p>
+     * <p>按设备连接锁（mqtt:conn:{deviceKey}）解析所在 Broker 节点：
+     * 命中 → 定向投递 mqtt.down.{nodeId}（仅目标节点消费，无 fan-out）；
+     * 未命中（离线/竞态）→ 回落 mqtt.broadcast，由节点幽灵订阅入离线队列 / 上线接管兜底。
+     * 信封为二进制（RouterEnvelopeCodec），access 无需直连 Broker。</p>
      */
     public void publishRouterDown(CommandDownMessage m) {
         String topic = MqttTopicUtil.downCommandTopic(m.getProductKey(), m.getDeviceName());
+        String deviceKey = MqttTopicUtil.buildDeviceKey(m.getProductKey(), m.getDeviceName());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("commandId", m.getCommandId());
         body.put("command", m.getCommand());
@@ -84,7 +92,15 @@ public class EventPublisher {
             byte[] payload = objectMapper.writeValueAsBytes(body);
             RouterEnvelope env = RouterEnvelope.publish(
                     props.getNodeId(), topic, payload, m.getQos() == null ? 1 : m.getQos(), false);
-            send(KafkaTopicConstant.MQTT_ROUTER, topic, env);
+            byte[] envelope = RouterEnvelopeCodec.encode(env);
+            String owner = nodeResolver.resolveNode(deviceKey);
+            if (owner != null && !owner.isBlank()) {
+                producer.sendBytes(KafkaTopicConstant.MQTT_DOWN_PREFIX + owner, deviceKey, envelope);
+            } else {
+                // 离线/竞态：广播回落（Broker 幽灵订阅 / 上线接管兜底）
+                log.debug("[Access] 下行无 owner，回落广播 deviceKey={} topic={}", deviceKey, topic);
+                producer.sendBytes(KafkaTopicConstant.MQTT_BROADCAST, deviceKey, envelope);
+            }
         } catch (Exception e) {
             log.error("[Access] 下行信封序列化失败 commandId={}", m.getCommandId(), e);
         }

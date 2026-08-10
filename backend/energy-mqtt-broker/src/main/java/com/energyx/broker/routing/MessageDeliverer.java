@@ -11,7 +11,9 @@ import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.stats.BrokerStats;
 import com.energyx.broker.util.TopicMatcher;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.mqtt.MqttTopicUtil;
 import com.energyx.common.mqtt.RouterEnvelope;
+import com.energyx.common.mqtt.RouterEnvelopeCodec;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttFixedHeader;
@@ -92,9 +94,20 @@ public class MessageDeliverer {
     /**
      * 设备上行报文入口（带路由确认回调）。
      *
+     * <p>阶段 2 定向路由（directedRouting=true）：
+     * <ul>
+     *   <li>设备上行（{pk}/{dn}/up/*）→ mqtt.uplink（key=deviceKey，单设备有序），
+     *       仅 access 唯一消费组摄取，Broker 自身不再 fan-out（Topic ACL 保证设备只订自己 down/*）；</li>
+     *   <li>平台下行（{pk}/{dn}/down/*）→ 按 mqtt:conn:{deviceKey} owner 定向投递
+     *       mqtt.down.{nodeId}（跨节点）或本节点直投；owner 缺失（离线/竞态）→
+     *       持久会话入 Redis 离线队列，否则回落 mqtt.broadcast；</li>
+     *   <li>遗嘱/其他 topic → mqtt.broadcast（每节点唯一消费组，sourceNode 去重）。</li>
+     * </ul>
+     * 定向路由下 IO 线程零 Redis：owner 解析全部在 brokerExecutor 完成（仅下行/遗嘱路径）。</p>
+     *
      * @param sourceNode     路由源节点；null 表示本节点发起（需要发路由），否则为远端已路由消息
      * @param onRouted       路由持久化确认回调（Kafka 回调成功，或路由停用/远端消息时立即触发）；
-     *                       在 Kafka sender 线程触发，需要写 channel 的回调必须自行回投 eventLoop
+     *                       可能在任何线程触发，需要写 channel 的回调必须自行回投 eventLoop
      * @param onRouteFailed  路由持久化失败回调（同上线程约束）；为 null 时失败仅记日志
      */
     public void deliver(String topic, byte[] payload, int qos, boolean retain, String sourceNode,
@@ -103,12 +116,33 @@ public class MessageDeliverer {
         if (retain) {
             retainedStore.put(topic, payload, qos);
         }
-        // 本地投递
+        // 本地投递（本节点订阅者；含持久离线会话幽灵订阅入队）
         deliverLocal(topic, payload, qos, retain);
         // 跨节点路由（仅本节点发起时）
         if (sourceNode == null && properties.isEnableRouter() && kafkaProducer.isEnabled()) {
-            String envelope = toJson(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
-            kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, topic, envelope,
+            if (properties.isDirectedRouting()) {
+                routeDirected(topic, payload, qos, retain, onRouted, onRouteFailed);
+            } else {
+                routeLegacy(topic, payload, qos, retain, onRouted, onRouteFailed);
+            }
+        } else if (onRouted != null) {
+            onRouted.run();
+        }
+    }
+
+    /**
+     * 阶段 2 定向路由：上行走 mqtt.uplink 快路径（IO 线程直接发，无 Redis）；
+     * 下行/遗嘱走 owner 解析（brokerExecutor，Redis 连接锁定位）。
+     */
+    private void routeDirected(String topic, byte[] payload, int qos, boolean retain,
+                               Runnable onRouted, Runnable onRouteFailed) {
+        if (MqttTopicUtil.parseUpTopic(topic) != null) {
+            // 设备上行快路径：mqtt.uplink，key=deviceKey（分区有序）。IO 线程直接发。
+            String deviceKey = MqttTopicUtil.buildDeviceKey(
+                    topic.split("/")[0], topic.split("/")[1]);
+            byte[] envelope = RouterEnvelopeCodec.encode(
+                    RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
+            kafkaProducer.sendBytes(KafkaTopicConstant.MQTT_UPLINK, deviceKey, envelope,
                     () -> {
                         stats.recordCrossNode();
                         if (onRouted != null) {
@@ -117,13 +151,124 @@ public class MessageDeliverer {
                     },
                     () -> {
                         stats.recordRouteFailure();
-                        log.error("[Deliver] 路由持久化失败 topic={}，触发降级", topic);
+                        log.error("[Deliver] 上行路由持久化失败 topic={}，触发降级", topic);
                         if (onRouteFailed != null) {
                             onRouteFailed.run();
                         }
                     });
-        } else if (onRouted != null) {
-            onRouted.run();
+            return;
+        }
+        // 非上行（下行指令/遗嘱）：owner 解析 + 定向投递，Redis 慢路径全在 executor
+        executor.execute(() -> routeDirectedSlow(topic, payload, qos, retain, onRouted, onRouteFailed));
+    }
+
+    private void routeDirectedSlow(String topic, byte[] payload, int qos, boolean retain,
+                                   Runnable onRouted, Runnable onRouteFailed) {
+        String deviceKey = MqttTopicUtil.deviceKeyOfDownTopic(topic);
+        if (deviceKey != null) {
+            // 下行：按连接锁定位设备所在节点（owner 仅赋值一次，保证 lambda 内 effectively final）
+            String owner;
+            try {
+                owner = sessionStore.resolveOwnerNode(deviceKey);
+            } catch (Exception e) {
+                log.warn("[Deliver] owner 解析异常 deviceKey={}，回落广播", deviceKey, e);
+                owner = null;
+            }
+            final String targetOwner = owner;
+            if (targetOwner == null) {
+                // 离线/竞态窗口：持久会话直接入 Redis 离线队列（不依赖幽灵订阅所在节点）
+                if (sessionStore.existsSession(deviceKey)) {
+                    try {
+                        sessionStore.pushOffline(deviceKey, new OfflineMessage(topic, payload, qos));
+                        stats.recordCrossNode();
+                        if (onRouted != null) {
+                            onRouted.run();
+                        }
+                        return;
+                    } catch (Exception e) {
+                        log.warn("[Deliver] 离线入队失败 deviceKey={}，回落广播", deviceKey, e);
+                    }
+                }
+                // 无持久会话或入队失败：广播兜底（多节点幽灵订阅场景）
+                sendToBroadcast(topic, payload, qos, retain, onRouted, onRouteFailed);
+                return;
+            }
+            if (properties.getNodeId().equals(targetOwner)) {
+                // owner 是本节点：已本地投递（在线直投/幽灵订阅入队），无需跨节点
+                if (onRouted != null) {
+                    onRouted.run();
+                }
+                return;
+            }
+            // 跨节点：定向投递到 owner 节点专属 topic
+            byte[] envelope = RouterEnvelopeCodec.encode(
+                    RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
+            kafkaProducer.sendBytes(KafkaTopicConstant.MQTT_DOWN_PREFIX + targetOwner, deviceKey, envelope,
+                    () -> {
+                        stats.recordCrossNode();
+                        if (onRouted != null) {
+                            onRouted.run();
+                        }
+                    },
+                    () -> {
+                        stats.recordRouteFailure();
+                        log.error("[Deliver] 下行定向投递失败 topic={} owner={}，触发降级", topic, targetOwner);
+                        if (onRouteFailed != null) {
+                            onRouteFailed.run();
+                        }
+                    });
+            return;
+        }
+        // 遗嘱/其他 topic：广播（KICK 同类低频通道）
+        sendToBroadcast(topic, payload, qos, retain, onRouted, onRouteFailed);
+    }
+
+    private void sendToBroadcast(String topic, byte[] payload, int qos, boolean retain,
+                                 Runnable onRouted, Runnable onRouteFailed) {
+        byte[] envelope = RouterEnvelopeCodec.encode(
+                RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
+        kafkaProducer.sendBytes(KafkaTopicConstant.MQTT_BROADCAST, topic, envelope,
+                () -> {
+                    stats.recordCrossNode();
+                    if (onRouted != null) {
+                        onRouted.run();
+                    }
+                },
+                () -> {
+                    stats.recordRouteFailure();
+                    log.error("[Deliver] 广播投递失败 topic={}，触发降级", topic);
+                    if (onRouteFailed != null) {
+                        onRouteFailed.run();
+                    }
+                });
+    }
+
+    /** 兼容期旧通道：mqtt.router 全量 fan-out（JSON 信封，仅多版本混布时启用） */
+    private void routeLegacy(String topic, byte[] payload, int qos, boolean retain,
+                             Runnable onRouted, Runnable onRouteFailed) {
+        String envelope = toJson(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
+        kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, topic, envelope,
+                () -> {
+                    stats.recordCrossNode();
+                    if (onRouted != null) {
+                        onRouted.run();
+                    }
+                },
+                () -> {
+                    stats.recordRouteFailure();
+                    log.error("[Deliver] 路由持久化失败 topic={}，触发降级", topic);
+                    if (onRouteFailed != null) {
+                        onRouteFailed.run();
+                    }
+                });
+    }
+
+    /** 消费失败毒丸报文兜底进 DLQ（RouterConsumer 调用；不重复投递） */
+    public void sendToDlq(String key, byte[] value) {
+        try {
+            kafkaProducer.sendBytes(properties.getDlqTopicName(), key, value, null, null);
+        } catch (Exception e) {
+            log.warn("[Deliver] DLQ 写入失败 key={}", key, e);
         }
     }
 

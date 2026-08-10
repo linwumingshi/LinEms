@@ -17,11 +17,12 @@ import java.util.Properties;
  * 接入适配消费引擎装配（三个独立消费组）。
  *
  * <ul>
- *   <li>energy-access-uplink（mqtt.router，4 线程）：设备上行摄取；</li>
+ *   <li>energy-access-uplink（mqtt.uplink，4 线程）：设备上行摄取（阶段 2：Broker 唯一生产者，
+ *       本组唯一消费，无 fan-out）；</li>
  *   <li>energy-access-lifecycle（iot-device-lifecycle，2 线程）：在线态/记录/补发；</li>
  *   <li>energy-access-command-down（iot-command-down，2 线程）：下行桥接。</li>
  * </ul>
- * 单设备消息按 deviceId 分区 ⇒ 组内单分区单线程，天然保序。
+ * 单设备消息按 deviceId/deviceKey 分区 ⇒ 组内单分区单线程，天然保序。
  */
 @Configuration
 public class AccessConsumerConfig {
@@ -30,7 +31,7 @@ public class AccessConsumerConfig {
     public KafkaConsumerEngine uplinkEngine(UplinkProcessor handler, AccessKafkaProducer producer,
                                             AccessProperties props) {
         return start(new KafkaConsumerEngine(
-                KafkaTopicConstant.MQTT_ROUTER, "energy-access-uplink", handler,
+                KafkaTopicConstant.MQTT_UPLINK, "energy-access-uplink", handler,
                 baseProps(props), props.getConsumerThreads(), props.getPollMs(),
                 producer::send, props.getDlqTopic()));
     }

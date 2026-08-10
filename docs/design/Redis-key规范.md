@@ -1,6 +1,6 @@
 # EnergyX 储能管理平台 — Redis Key 规范
 
-> 版本：v1.1（+§2 用户会话令牌、§3.6）  日期：2026-08-06
+> 版本：v1.2（+§3.8 Broker 集群路由 topic 约定）  日期：2026-08-10
 > 设计依据：ADR-005（Redis 承担加速 + 过程态，MySQL/TDengine 为权威源）；Phase1 §4.4（Broker 会话共享）
 
 ## 1. 命名总则
@@ -109,6 +109,26 @@ TTL:   7200s（与 jwt.expire-seconds 一致），每请求 verifyToken 滑动�
 - `cache:model:current:{product_key}`：当前生效物模型（`iot_thing_model.is_current=1`），access 摄取时查询 + **L1 进程内 ConcurrentHashMap**（max 1000 清空）两级缓存；
 - `cache:device:{device_key}`：设备信息（device_id/station/enterprise/product_key），access 摄取时把 topic 的 `{pk}/{dn}` 解析为内部 ID 用；
 - 两级缓存结构：L1 内存（热点，无网络）→ L2 Redis → MySQL 兜底，MySQL 不可用不回源、降级用缓存值。
+
+### 3.8 Broker 集群路由 topic 约定（阶段 2 新增，替代 mqtt.router fan-out）
+
+```text
+mqtt.uplink             设备上行（deviceKey key，24 分区）：Broker 唯一生产者；
+                        唯一消费组 energy-access-uplink 摄取，Broker 自身不再 fan-out
+                        （Topic ACL 保证设备只订自己 down/*，跨设备订阅不存在）
+mqtt.down.{nodeId}      下行定向（24 分区）：access/跨节点 Broker 写，仅目标节点消费
+                        （消费组 mqtt-down-{nodeId}），投递目标 = mqtt:conn:{deviceKey} 的 owner
+mqtt.broadcast          跨节点广播（8 分区）：KICK 踢线、owner 解析失败/离线回落；
+                        每节点唯一消费组 mqtt-bc-{nodeId} 全量 fan-out + sourceNode 去重
+mqtt.router（兼容期）    旧 fan-out 通道：阶段 2 默认停用（router-legacy-broadcast=false），
+                        仅多版本混布升级期开启；下线后删除
+```
+
+- 信封编码：`mqtt.uplink/down/broadcast` 使用二进制信封（RouterEnvelopeCodec，magic=0xE9 0x01），
+  替代 JSON+Base64（payload 零膨胀、免序列化）；`mqtt.router` 兼容期保持 JSON。
+- 节点解析：`mqtt:conn:{deviceKey}` = String(nodeId)，同时承担「连接锁」与「下行路由定位」
+  两个职责；TTL 60s 随心跳续期，owner 缺失（离线/竞态）时下行回落 mqtt.broadcast。
+- 消费组约定：`mqtt-down-{nodeId}`（定向）、`mqtt-bc-{nodeId}`（广播）、`energy-access-uplink`（上行唯一组）。
 
 ## 4. 缓存一致性策略
 
