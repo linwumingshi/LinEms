@@ -22,6 +22,12 @@
   <name>energy-command</name>
   <description>指令中心：状态机/ACK/离线队列/超时重试/影子 delta 物化</description>
 
+    <properties>
+    <!-- 本地仓库仅有 micrometer 1.13.4 全系列，覆盖 Boot 3.5.4 BOM 管理的 1.15.2 保持离线可构建 -->
+    <micrometer.version>1.13.4</micrometer.version>
+    <prometheus-client.version>1.2.1</prometheus-client.version>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.energyx</groupId>
@@ -49,6 +55,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
+    </dependency>
+      <!-- 可观测性：actuator + Prometheus 指标端点（/actuator/prometheus，O-01 业务服务指标管线） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
   </dependencies>
 
