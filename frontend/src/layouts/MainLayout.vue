@@ -37,6 +37,7 @@ const menus: MenuItem[] = [
   { path: '/device', title: '设备管理' },
   { path: '/ems/strategy', title: '策略管理' },
   { path: '/ems/plan', title: '充放电计划' },
+  { path: '/ems/constraint', title: '安全约束' },
   {
     group: '/archive',
     title: '基础档案',
