@@ -71,6 +71,9 @@ public class EmsPlanService {
 	/** 执行记录 params 列为 MySQL JSON，必须真实 JSON 序列化（不能 Map.toString）。 */
 	private static final ObjectMapper JSON = new ObjectMapper();
 
+	/** 到点下发补发窗口（分钟）：调度器重启/延迟错过当前槽位时，仍可补发该窗口内的点 */
+	private static final long DISPATCH_WINDOW_MIN = 10;
+
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
 			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
@@ -187,6 +190,8 @@ public class EmsPlanService {
 		plan.setStatus(1);
 		planMapper.updateById(plan);
 		int sent = dispatchDuePoints(plan);
+		// 立即推进一次：全部点已错过窗口/已终态时马上收敛，不必等调度器下一轮
+		refreshPlanStatus(planId);
 		log.info("下发计划受理成功 planId={} stationId={} 立即下发点数={}", planId, plan.getStationId(), sent);
 		return sent;
 	}
@@ -209,7 +214,7 @@ public class EmsPlanService {
 			if (p.time().isAfter(now)) {
 				continue;
 			}
-			if (now.minusMinutes(10).isAfter(p.time())) {
+			if (now.minusMinutes(DISPATCH_WINDOW_MIN).isAfter(p.time())) {
 				continue;
 			}
 			if (execMapper.selectByPlanAndTime(plan.getPlanId(), p.time()) != null) {
@@ -247,7 +252,7 @@ public class EmsPlanService {
 
 	/**
 	 * 状态推进（调度器/ACK 回写后调用）：当计划全部点已下发且全部到终态时收敛状态。 全部成功 → 完成(2)；存在失败/超时 →
-	 * 失败(4)；计划日已过仍未下发的点补记超时，避免状态永久悬挂。
+	 * 失败(4)；错过下发窗口（计划日已过，或今日所有点时刻已过补发窗口）的点补记超时，避免状态永久悬挂。
 	 * @param planId 计划 ID
 	 */
 	public void refreshPlanStatus(Long planId) {
@@ -260,9 +265,13 @@ public class EmsPlanService {
 		List<EmsExecutionRecord> records = execMapper.selectByPlanId(planId);
 		Set<LocalTime> dispatched = records.stream().map(EmsExecutionRecord::getPlanTime).collect(Collectors.toSet());
 		boolean allDispatched = actionable.stream().allMatch(p -> dispatched.contains(p.time()));
-		boolean planDateOver = LocalDate.now().isAfter(plan.getPlanDate());
+		// 错过下发窗口：计划日已过，或今日所有点时刻均已过 10min 补发窗口（今日计划晚下发不再补发过期点）
+		LocalTime now = LocalTime.now();
+		boolean allPointsPassed = actionable.stream()
+			.allMatch(p -> now.isAfter(p.time().plusMinutes(DISPATCH_WINDOW_MIN)));
+		boolean planDateOver = LocalDate.now().isAfter(plan.getPlanDate()) || allPointsPassed;
 		if (!allDispatched && planDateOver) {
-			// 计划日已过但有点错过未下发：补记超时记录，收敛不悬挂
+			// 已过下发窗口但有点未下发：补记超时记录，收敛不悬挂
 			for (PlanPoint p : actionable) {
 				if (dispatched.contains(p.time())) {
 					continue;

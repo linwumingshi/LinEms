@@ -114,6 +114,7 @@ class EmsPlanServiceTest {
 			.thenReturn(List.of(new PlanPoint(LocalTime.now().minusMinutes(1), "CHARGE", 50, 40),
 					new PlanPoint(LocalTime.now().plusHours(2), "DISCHARGE", 60, 50)));
 		when(execMapper.selectByPlanAndTime(anyLong(), any())).thenReturn(null);
+		when(execMapper.selectByPlanId(1L)).thenReturn(List.of()); // 受理后状态推进：尚无记录，未到收敛条件
 		when(commandClient.dispatch(anyString(), anyString(), anyString(), anyMap(), anyLong())).thenReturn("cmd-1001");
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
