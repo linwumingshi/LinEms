@@ -36,6 +36,7 @@
 | 认证封禁 | `mqtt:ban:{clientId}` | SET | auth-failure-ban-seconds(默认300s) | — | Broker 认证 | 自然过期解封 |
 | 限流 | `rl:{scope}:{tenant_id}:{key}` | 计数/滑动窗口 | 窗口期 | — | Gateway/认证钩子 | 自然过期 |
 | 分布式锁 | `lock:{resource}` | Redisson 锁 | 租约 | — | 影子/命令/告警 | 看门狗续期 |
+| 定时任务锁 | `lock:scheduled:{task}` | String(owner) Lua 原子锁 | TTL=任务最坏耗时 | — | command/alarm/ems/tsdb 定时任务（R-01） | 到期自动释放；防多实例重复执行 |
 | 缓存-产品 | `cache:product:{product_key}` | String(JSON) | 10min | MySQL `iot_product` | product→所有读方 | 变更时删除/重建 |
 | 缓存-物模型 | `cache:model:{product_key}:{version}` | String(JSON) | 10min | MySQL `iot_thing_model` | product→接入适配 | 版本发布时失效 |
 | 缓存-当前物模型 | `cache:model:current:{product_key}` | String(JSON) | 10min | MySQL `iot_thing_model` (is_current=1) | product→access 摄取 | 版本发布时失效 |

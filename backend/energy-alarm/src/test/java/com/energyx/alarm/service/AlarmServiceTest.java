@@ -7,6 +7,7 @@ import com.energyx.alarm.mapper.AlarmRuleMapper;
 import com.energyx.alarm.mapper.ProductInfoMapper;
 import com.energyx.alarm.model.AlarmRecordRow;
 import com.energyx.alarm.model.AlarmRuleRow;
+import com.energyx.common.redis.DistributedLock;
 import com.energyx.alarm.web.dto.AlarmRecordView;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.message.AlarmMessage;
@@ -80,7 +81,7 @@ class AlarmServiceTest {
 	void setUp() {
 		props = new AlarmProperties();
 		service = new AlarmService(ruleMapper, recordMapper, productMapper, redis, props, publisher,
-				new SnowflakeIdGenerator(), new ObjectMapper());
+				new SnowflakeIdGenerator(), new ObjectMapper(), new DistributedLock(redis));
 		lenient().when(redis.opsForValue()).thenReturn(valueOps);
 		when(ruleMapper.selectEnabledRules()).thenReturn(List.of(tempRule(), eventRule(), productRule()));
 		service.init();

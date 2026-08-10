@@ -49,7 +49,8 @@ class EmsPlanServiceTest {
 		when(priceMapper.selectList(any())).thenReturn(java.util.List.of());
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
-				validator, writer, commandClient);
+				validator, writer, commandClient, new com.energyx.common.redis.DistributedLock(
+						org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class)));
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
 		assertNotNull(plan);

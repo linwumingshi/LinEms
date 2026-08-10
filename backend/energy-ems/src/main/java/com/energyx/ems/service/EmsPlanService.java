@@ -2,6 +2,7 @@ package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.energyx.common.redis.DistributedLock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.common.exception.BusinessException;
@@ -57,6 +58,8 @@ public class EmsPlanService {
 
 	private final CommandClient commandClient;
 
+	private final DistributedLock distributedLock;
+
 	@Value("${energyx.ems.product-key:snd_ess_pcs}")
 	private String productKey;
 
@@ -68,7 +71,8 @@ public class EmsPlanService {
 
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
-			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient) {
+			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
+			DistributedLock distributedLock) {
 		this.strategyMapper = strategyMapper;
 		this.priceMapper = priceMapper;
 		this.constraintMapper = constraintMapper;
@@ -77,6 +81,7 @@ public class EmsPlanService {
 		this.validator = validator;
 		this.writer = writer;
 		this.commandClient = commandClient;
+		this.distributedLock = distributedLock;
 	}
 
 	/** 生成计划：查策略 → 电价 → 安全约束 → PlanGenerator 出点序列 → 包络校验 → 写 TDengine → 计划头落库。 */
@@ -130,9 +135,14 @@ public class EmsPlanService {
 		return plan;
 	}
 
-	/** 每日 00:05 为启用策略的电站生成次日计划（定时线程无租户上下文，遍历全量启用策略）。 */
+	/** 每日 00:05 为启用策略的电站生成次日计划（定时线程无租户上下文，遍历全量启用策略）。R-01 分布式锁：多实例仅一个实例执行，防重复生成/下发。 */
 	@Scheduled(cron = "0 5 0 * * *")
 	public void generateDailyPlans() {
+		// 锁 TTL 600s：覆盖全量策略生成+校验+TDengine 写的最坏耗时（100 电站级）
+		distributedLock.runIfAcquired("scheduled:ems-daily-plan", 600, this::doGenerateDailyPlans);
+	}
+
+	private void doGenerateDailyPlans() {
 		LocalDate tomorrow = LocalDate.now().plusDays(1);
 		List<EmsStrategy> enabled = strategyMapper
 			.selectList(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStatus, 1));

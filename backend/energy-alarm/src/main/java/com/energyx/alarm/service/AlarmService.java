@@ -1,5 +1,6 @@
 package com.energyx.alarm.service;
 
+import com.energyx.common.redis.DistributedLock;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.alarm.config.AlarmProperties;
@@ -92,6 +93,8 @@ public class AlarmService {
 
 	private final ObjectMapper objectMapper;
 
+	private final DistributedLock distributedLock;
+
 	/** 启用规则缓存（volatile 保证刷新可见性） */
 	private volatile List<AlarmRuleRow> ruleCache = List.of();
 
@@ -100,13 +103,14 @@ public class AlarmService {
 
 	public AlarmService(AlarmRuleMapper ruleMapper, AlarmRecordMapper recordMapper, ProductInfoMapper productMapper,
 			StringRedisTemplate redis, AlarmProperties props, AlarmKafkaPublisher publisher,
-			SnowflakeIdGenerator idGenerator, ObjectMapper objectMapper) {
+			SnowflakeIdGenerator idGenerator, ObjectMapper objectMapper, DistributedLock distributedLock) {
 		this.ruleMapper = ruleMapper;
 		this.recordMapper = recordMapper;
 		this.productMapper = productMapper;
 		this.redis = redis;
 		this.props = props;
 		this.publisher = publisher;
+		this.distributedLock = distributedLock;
 		this.idGenerator = idGenerator;
 		this.objectMapper = objectMapper;
 	}
@@ -116,11 +120,11 @@ public class AlarmService {
 		reloadRules();
 	}
 
-	/** 规则缓存定时刷新 */
+	/** 规则缓存定时刷新（R-01 分布式锁：多实例仅一个刷新，防重复加载） */
 	@Scheduled(fixedDelayString = "${energyx.alarm.rule-cache-refresh-ms:30000}",
 			initialDelayString = "${energyx.alarm.rule-cache-initial-delay-ms:10000}")
 	public void refreshRules() {
-		reloadRules();
+		distributedLock.runIfAcquired("scheduled:alarm-rule-refresh", 60, this::reloadRules);
 	}
 
 	private void reloadRules() {
