@@ -86,6 +86,10 @@ energyx:
     broadcast-topic-partitions: 8
     router-consumer-threads: 2
     dlq-topic-name: iot-dlq
+    # ---- P2 加固 ----
+    publish-rate-limit-rps: 0        # 单设备发布限速（0=不限制）
+    rate-limit-bucket-capacity: 200000
+    auth-max-concurrent: 2000        # 认证并发上限（认证风暴防护）
     # MQTT TLS 8883（P0-3）：enabled=false 时无 TLS acceptor，行为与明文单端口一致
     # 证书默认相对路径按进程 CWD 解析（start-stack.sh 从仓库根启动 jar），生产请传绝对路径
     tls:

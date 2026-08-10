@@ -43,7 +43,7 @@ public class RetainedMessageStore {
         this.executor = executor;
     }
 
-    /** 写入保留消息（retain=1 且 payload 非空）；payload 为空视为删除 */
+    /** 写入保留消息（retain=1 且 payload 非空）；payload 为空视为删除。跨节点并发写按时间戳新者胜（P2-9）。 */
     public void put(String topic, byte[] payload, int qos) {
         String key = BrokerKeys.retained(topic);
         if (payload == null || payload.length == 0) {
@@ -51,13 +51,20 @@ public class RetainedMessageStore {
             executor.execute(() -> sessionStore.delete(key));
             return;
         }
-        RetainedEntry entry = new RetainedEntry(topic, Base64.getEncoder().encodeToString(payload), qos);
+        RetainedEntry entry = new RetainedEntry(topic, Base64.getEncoder().encodeToString(payload), qos,
+                System.currentTimeMillis());
         cache.put(topic, entry);
+        final String json;
+        try {
+            json = objectMapper.writeValueAsString(entry);
+        } catch (Exception e) {
+            log.warn("[Retained] 序列化失败 topic={}", topic, e);
+            return;
+        }
         executor.execute(() -> {
-            try {
-                sessionStore.redis().opsForValue().set(key, objectMapper.writeValueAsString(entry));
-            } catch (Exception e) {
-                log.warn("[Retained] Redis 写入失败 topic={}", topic, e);
+            // Lua 原子比较：仅当 Redis 中无旧值或旧值时间戳不新于本次时写入，防止节点时钟漂移下旧值覆盖新值
+            if (!sessionStore.setRetainedIfNewer(key, json, entry.getTs())) {
+                log.debug("[Retained] 丢弃更旧的时间戳写入 topic={} ts={}", topic, entry.getTs());
             }
         });
     }
@@ -141,14 +148,17 @@ public class RetainedMessageStore {
         private String topic;
         private String payloadBase64;
         private int qos;
+        /** 发布毫秒时间戳（P2-9：跨节点覆盖比较，旧值不覆盖新值） */
+        private long ts;
 
         public RetainedEntry() {
         }
 
-        public RetainedEntry(String topic, String payloadBase64, int qos) {
+        public RetainedEntry(String topic, String payloadBase64, int qos, long ts) {
             this.topic = topic;
             this.payloadBase64 = payloadBase64;
             this.qos = qos;
+            this.ts = ts;
         }
 
         public byte[] payload() {

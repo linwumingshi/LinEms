@@ -8,6 +8,7 @@ import com.energyx.broker.config.BrokerProperties;
 import com.energyx.broker.config.NettyServerConfig;
 import com.energyx.broker.lifecycle.LifecycleNotifier;
 import com.energyx.broker.mqtt.KafkaEventProducer;
+import com.energyx.broker.ratelimit.PublishRateLimiter;
 import com.energyx.broker.routing.LocalSubscriberIndex;
 import com.energyx.broker.routing.MessageDeliverer;
 import com.energyx.common.mqtt.RouterEnvelope;
@@ -100,7 +101,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduler;
+    private final PublishRateLimiter rateLimiter;
     private final AtomicInteger rawConnections = new AtomicInteger();
+    /** 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴 */
+    private final java.util.concurrent.Semaphore authSlots;
 
     public MqttChannelInboundHandler(DeviceAuthService authService,
                                      SessionRegistry sessionRegistry,
@@ -112,6 +116,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                                      BrokerProperties properties,
                                      BrokerStats stats,
                                      BrokerMetrics metrics,
+                                     PublishRateLimiter rateLimiter,
                                      ObjectMapper objectMapper,
                                      @Qualifier("brokerExecutor") ExecutorService executor,
                                      @Qualifier("brokerScheduler") ScheduledExecutorService scheduler) {
@@ -125,9 +130,11 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         this.properties = properties;
         this.stats = stats;
         this.metrics = metrics;
+        this.rateLimiter = rateLimiter;
         this.objectMapper = objectMapper;
         this.executor = executor;
         this.scheduler = scheduler;
+        this.authSlots = new java.util.concurrent.Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
     }
 
     // ---------------- 连接生命周期 ----------------
@@ -287,6 +294,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             channel.close();
             return;
         }
+        // P2-4 决策：MQTT 3.1.1/5.0 允许 cleanSession=1 时空 clientId 由 Broker 分配，
+        // 但本平台认证为「clientId 即设备身份」（HMAC username 内嵌 clientId，凭据按 clientId 绑定），
+        // 空 clientId 无法通过认证且构成匿名接入风险，故维持拒绝（安全约束优先于协议完备）。
         if (clientId.isEmpty()) {
             sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, false);
             channel.close();
@@ -329,8 +339,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
         Session.MqttWill will = null;
         if (vh.isWillFlag()) {
             String willTopic = msg.payload().willTopic();
-            String willMessage = msg.payload().willMessage();
             if (willTopic != null && !willTopic.isEmpty()) {
+                // P2-3：用 willMessageInBytes 提取原始字节（二进制安全），
+                // willMessage() 按 UTF-8 String 解码会损坏二进制载荷
+                byte[] willBytes = msg.payload().willMessageInBytes();
                 int willDelay = 0;
                 if (version == 5 && msg.payload().willProperties() != null) {
                     io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty delay =
@@ -343,7 +355,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                     }
                 }
                 will = new Session.MqttWill(willTopic,
-                        willMessage == null ? new byte[0] : willMessage.getBytes(StandardCharsets.UTF_8),
+                        willBytes == null ? new byte[0] : willBytes,
                         vh.willQos(), vh.isWillRetain(), willDelay);
             }
         }
@@ -355,6 +367,24 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
         // 慢路径全部在业务线程：认证（Redis/MySQL）→ 连接锁（Redis）→ sessionPresent 判定（Redis），
         // 仅最终会话注册与 CONNACK 回投 eventLoop（IO 线程零阻塞）
+        // P2-8 认证风暴防护：并发认证数超限（信号量 3s 拿不到许可）快速拒绝新连接，保护 executor 不被打满
+        boolean acquired;
+        try {
+            acquired = authSlots.tryAcquire(3, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            acquired = false;
+        }
+        if (!acquired) {
+            stats.recordAuthOverloadRejected();
+            log.warn("[Auth] 认证并发超限拒绝 clientId={} remote={}",
+                    clientId, channel.remoteAddress());
+            channel.eventLoop().execute(() -> {
+                sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, false);
+                channel.close();
+            });
+            return;
+        }
         executor.execute(() -> {
             AuthResult result;
             try {
@@ -362,6 +392,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             } catch (Exception e) {
                 log.error("[Auth] 认证异常 clientId={}", clientId, e);
                 result = AuthResult.deny(3, false, "认证服务异常");
+            } finally {
+                // 认证（含后续 mTLS/连接锁）完成释放并发许可
+                authSlots.release();
             }
             if (!result.isAllowed()) {
                 stats.recordAuthFailure();
@@ -566,6 +599,19 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
         session.touch();
         maybeRenewOnline(session, cred);
+        // P2-7 单设备发布限速：超限 QoS0 丢弃、QoS1/2 关连接迫使设备节流
+        if (!rateLimiter.tryAcquire(session.getDeviceKey())) {
+            stats.recordRateLimited();
+            if (qos > 0) {
+                log.warn("[RateLimit] 发布超限关连接 deviceKey={} topic={} qos={}",
+                        session.getDeviceKey(), topic, qos);
+                ctx.close();
+            } else {
+                log.warn("[RateLimit] QoS0 发布超限丢弃 deviceKey={} topic={}",
+                        session.getDeviceKey(), topic);
+            }
+            return;
+        }
         Channel channel = ctx.channel();
         // P1-10 链路追踪：同一上报报文的处理链日志共用 traceId（deviceKey+毫秒+序号）
         String traceId = deviceKeyOf(session) + "-" + (System.currentTimeMillis() & 0xFFFFF)

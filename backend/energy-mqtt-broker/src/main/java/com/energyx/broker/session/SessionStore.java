@@ -67,6 +67,16 @@ public class SessionStore {
                     + "return c;",
             Long.class);
 
+    /** 保留消息新者胜写入（P2-9）：无旧值或旧值时间戳不新于本次才 SET；返回 1 写入成功 0 丢弃 */
+    private static final DefaultRedisScript<Long> SET_RETAINED_IF_NEWER_SCRIPT = new DefaultRedisScript<>(
+            "local old = redis.call('GET', KEYS[1]); "
+                    + "if old == false then redis.call('SET', KEYS[1], ARGV[1]); return 1; end; "
+                    + "local ok, old_ts = pcall(function() return cjson.decode(old).ts or 0 end); "
+                    + "if not ok then old_ts = 0; end; "
+                    + "if tonumber(old_ts) <= tonumber(ARGV[2]) then redis.call('SET', KEYS[1], ARGV[1]); return 1; end; "
+                    + "return 0;",
+            Long.class);
+
     public SessionStore(StringRedisTemplate redis, ObjectMapper objectMapper, BrokerProperties properties) {
         this.redis = redis;
         this.objectMapper = objectMapper;
@@ -300,6 +310,13 @@ public class SessionStore {
     /** 认证成功：清零失败计数 */
     public void clearAuthFail(String clientId) {
         redis.delete(BrokerKeys.authFail(clientId));
+    }
+
+    /** 保留消息新者胜写入（P2-9）：返回 true 写入成功；false 表示 Redis 中已有更新的值，丢弃本次 */
+    public boolean setRetainedIfNewer(String key, String json, long ts) {
+        Long ok = redis.execute(SET_RETAINED_IF_NEWER_SCRIPT, Collections.singletonList(key), json,
+                String.valueOf(ts));
+        return Long.valueOf(1L).equals(ok);
     }
 
     // ---------------- nonce（防重放） ----------------

@@ -30,6 +30,10 @@ public class BrokerStats {
     public final AtomicLong inflightOverflow = new AtomicLong();
     /** brokerExecutor 业务线程池拒绝次数（任务被丢弃，认证/持久化降级） */
     public final AtomicLong executorRejected = new AtomicLong();
+    /** 速率限制拦截次数（P2-7 单设备发布超限） */
+    public final AtomicLong rateLimited = new AtomicLong();
+    /** 认证并发超限拒绝次数（P2-8 认证风暴防护） */
+    public final AtomicLong authOverloadRejected = new AtomicLong();
 
     private final SessionRegistry sessionRegistry;
     private final LocalSubscriberIndex subscriberIndex;
@@ -84,6 +88,16 @@ public class BrokerStats {
         executorRejected.incrementAndGet();
     }
 
+    /** 单设备发布超限被拦截（P2-7） */
+    public void recordRateLimited() {
+        rateLimited.incrementAndGet();
+    }
+
+    /** 认证并发超限拒绝（P2-8） */
+    public void recordAuthOverloadRejected() {
+        authOverloadRejected.incrementAndGet();
+    }
+
     public Map<String, Object> snapshot() {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("connections", sessionRegistry.connectionCount());
@@ -99,6 +113,8 @@ public class BrokerStats {
         map.put("backpressureDropped", backpressureDropped.get());
         map.put("inflightOverflow", inflightOverflow.get());
         map.put("executorRejected", executorRejected.get());
+        map.put("rateLimited", rateLimited.get());
+        map.put("authOverloadRejected", authOverloadRejected.get());
         return map;
     }
 }

@@ -112,4 +112,13 @@ public class BrokerProperties {
 
     /** RouterConsumer 每个消费引擎线程数（分区并行；down/broadcast/legacy 各引擎独立） */
     private int routerConsumerThreads = 2;
+
+    /** 单设备发布速率限制（每秒条数，P2-7）：0 = 不限制；超限 QoS0 丢弃、QoS1/2 关连接 */
+    private int publishRateLimitRps = 0;
+
+    /** 速率限制桶容量封顶（防海量随机 deviceKey 打爆内存，P2-7） */
+    private int rateLimitBucketCapacity = 200_000;
+
+    /** 认证并发上限（P2-8 认证风暴防护）：同时进行中的认证请求数，超限新连接直接拒绝 */
+    private int authMaxConcurrent = 2_000;
 }

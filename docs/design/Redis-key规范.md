@@ -1,6 +1,6 @@
 # EnergyX 储能管理平台 — Redis Key 规范
 
-> 版本：v1.2（+§3.8 Broker 集群路由 topic 约定）  日期：2026-08-10
+> 版本：v1.3（+§3.9 凭据失效广播通道）  日期：2026-08-10
 > 设计依据：ADR-005（Redis 承担加速 + 过程态，MySQL/TDengine 为权威源）；Phase1 §4.4（Broker 会话共享）
 
 ## 1. 命名总则
@@ -129,6 +129,18 @@ mqtt.router（兼容期）    旧 fan-out 通道：阶段 2 默认停用（route
 - 节点解析：`mqtt:conn:{deviceKey}` = String(nodeId)，同时承担「连接锁」与「下行路由定位」
   两个职责；TTL 60s 随心跳续期，owner 缺失（离线/竞态）时下行回落 mqtt.broadcast。
 - 消费组约定：`mqtt-down-{nodeId}`（定向）、`mqtt-bc-{nodeId}`（广播）、`energy-access-uplink`（上行唯一组）。
+
+### 3.9 凭据失效广播（P2-6 新增，pub/sub 通道）
+
+```text
+channel: mqtt:cred:revoked
+消息体: {clientId}（String）
+发布方: 设备服务（吊销/禁用/重置凭据时）
+订阅方: Broker CredentialRevokeSubscriber → 删除 cache:cred:{clientId} + 踢在线连接强制重认证
+```
+
+- 目的：凭据吊销从「cache:cred TTL 30min 后生效」缩到秒级；离线设备下次重连自动回源 MySQL 拿到最新状态。
+- 通道归属 `mqtt:` 域（Broker 连接面），与 Redis-key 规范统一管理。
 
 ## 4. 缓存一致性策略
 

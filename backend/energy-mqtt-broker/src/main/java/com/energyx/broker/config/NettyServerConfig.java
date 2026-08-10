@@ -2,6 +2,7 @@ package com.energyx.broker.config;
 
 import com.energyx.broker.handler.MqttChannelInboundHandler;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
@@ -125,6 +126,8 @@ public class NettyServerConfig {
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.SO_RCVBUF, 262_144)
                 .childOption(ChannelOption.SO_SNDBUF, 262_144)
+                // P2-5：显式启用池化 ByteBuf 分配器，减少高并发下堆外内存分配与 GC 压力
+                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK,
                         new io.netty.channel.WriteBufferWaterMark(32 * 1024, 256 * 1024));
     }

@@ -58,6 +58,8 @@ public class BrokerMetrics {
         counter(registry, "mqtt.backpressure.dropped", stats.backpressureDropped, "背压丢弃总数");
         counter(registry, "mqtt.inflight.overflow", stats.inflightOverflow, "inflight 超限总数");
         counter(registry, "mqtt.executor.rejected", stats.executorRejected, "业务线程池拒绝任务总数");
+        counter(registry, "mqtt.rate.limited", stats.rateLimited, "单设备发布超限拦截总数");
+        counter(registry, "mqtt.auth.overload.rejected", stats.authOverloadRejected, "认证并发超限拒绝总数");
 
         if (brokerExecutor instanceof ThreadPoolExecutor tpe) {
             Gauge.builder("broker.executor.queue.size", tpe, e -> e.getQueue().size())
