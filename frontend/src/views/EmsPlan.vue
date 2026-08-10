@@ -10,6 +10,11 @@ import { constraintReady } from '@/utils/planGate'
 
 const router = useRouter()
 
+/** 列表筛选：电站下拉后端已支持 stationId；状态下拉为 UI 占位，等 Task 3 后端支持 status 后再启用 */
+const filters = ref<{ stationId?: string; status?: number }>({})
+/** 右主区 Tab：wave=计划波形 / exec=执行记录 */
+const activeTab = ref('wave')
+
 const list = ref<EmsPlan[]>([])
 const total = ref(0)
 const pageNo = ref(1)
@@ -20,7 +25,7 @@ const execRecords = ref<EmsExecutionRecord[]>([])
 const chartEl = ref<HTMLElement>()
 const { chart, render } = useEChart(chartEl)
 
-/** 名称化：电站/策略 id → 名称映射（查不到回退裸 id，见 Global Constraints 3） */
+/** 名称化：电站/策略 id → 名称映射（查不到回退裸 id） */
 const stations = ref<Station[]>([])
 const strategies = ref<EmsStrategy[]>([])
 function strategyLabel(id: string | undefined): string {
@@ -84,15 +89,32 @@ function timeLabel(t: string): string {
 
 async function load(): Promise<void> {
   try {
-    const data = await emsApi.planPage({ pageNo: pageNo.value, pageSize: pageSize.value })
+    const data = await emsApi.planPage({
+      pageNo: pageNo.value,
+      pageSize: pageSize.value,
+      // 电站筛选后端已支持，stationId 为空时后端忽略；status 待 Task 3 支持，此处不传
+      stationId: filters.value.stationId || undefined,
+    })
     list.value = data.records
     total.value = data.total
     if (list.value.length) {
-      await selectPlan(list.value[0]) // 列表按计划日期倒序，默认展示最近一条
+      // 列表按计划日期倒序，默认展示最近一条
+      await selectPlan(list.value[0])
     }
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
   }
+}
+
+/** 筛选条件变化：回到第一页重新查询，避免停在超出筛选结果范围的页码 */
+function onFilterChange(): void {
+  pageNo.value = 1
+  void load()
+}
+
+/** 行高亮：el-table 的 current-row 会随 data 替换丢失，用选中态补画，保持视觉连续 */
+function rowClassName({ row }: { row: EmsPlan }): string {
+  return selected.value?.planId === row.planId ? 'ex-row-current' : ''
 }
 
 async function loadMaps() {
@@ -114,7 +136,8 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
     const pts = await emsApi.planPoints(plan.planId)
     points.value = pts
     if (!pts.length) {
-      chart.value?.clear() // 清掉上一条计划的残留波形（若有）
+      // 清掉上一条计划的残留波形（若有）
+      chart.value?.clear()
       return
     }
     const bands = await fetchBands(plan.stationId, plan.planDate)
@@ -149,7 +172,8 @@ async function fetchBands(stationId: string, planDate: string): Promise<EmsElect
       return true
     })
   } catch {
-    return [] // 无价格数据时波形照常渲染，仅缺底纹
+    // 无价格数据时波形照常渲染，仅缺底纹
+    return []
   }
 }
 
@@ -285,10 +309,12 @@ async function onGenStationChange(stationId?: string) {
   if (!stationId) return
   try {
     const page = await emsApi.strategyPage({ pageNo: 1, pageSize: 50, stationId, status: 1 })
-    if (genForm.value.stationId !== stationId) return // 过期响应丢弃：候选串站会把 A 站策略带到 B 站生成错误计划
+    // 过期响应丢弃：候选串站会把 A 站策略带到 B 站生成错误计划
+    if (genForm.value.stationId !== stationId) return
     genStrategies.value = page.records
   } catch {
-    if (genForm.value.stationId === stationId) genStrategies.value = [] // 候选拉取失败：策略留空走自动选择
+    // 候选拉取失败：策略留空走自动选择
+    if (genForm.value.stationId === stationId) genStrategies.value = []
   }
 }
 
@@ -340,127 +366,152 @@ onMounted(() => {
 
 <template>
   <div class="plan-page">
-    <header class="page-head">
-      <div class="head-title">
-        <h1 class="page-title">充放电计划</h1>
-        <p class="page-sub">
-          {{ selected ? `${selected.planDate} · 电站 ${stationName(selected.stationId, stations)} · 策略 ${strategyLabel(selected.strategyId)}` : '加载中…' }}
-        </p>
-      </div>
-      <el-button class="gen-btn" type="success" :disabled="generating" @click="openGenerate">生成计划</el-button>
-      <el-button
-        class="dispatch-btn"
-        type="primary"
-        :disabled="!selected || selected.status !== 0"
-        @click="dispatchSelected"
-      >
-        下发计划
-      </el-button>
-    </header>
+    <div class="plan-layout">
+      <!-- 左栏：计划列表（电站/状态筛选 + 表格 + 分页） -->
+      <aside class="plan-list ex-card">
+        <div class="filter-bar">
+          <el-select v-model="filters.stationId" placeholder="全部电站" clearable filterable @change="onFilterChange">
+            <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+          </el-select>
+          <!-- 状态筛选：后端 planPage 暂不支持 status，占位禁用，Task 3 支持后启用 -->
+          <el-select v-model="filters.status" placeholder="状态筛选（待支持）" clearable disabled>
+            <el-option v-for="(text, code) in STATUS_TEXT" :key="code" :label="text" :value="Number(code)" />
+          </el-select>
+        </div>
 
-    <section class="readout-band" aria-label="当日计划汇总">
-      <div class="readout">
-        <span class="readout-label">累计充电</span>
-        <span class="readout-value"><b>{{ chargeKwh }}</b><em>kWh</em></span>
-      </div>
-      <div class="readout">
-        <span class="readout-label">累计放电</span>
-        <span class="readout-value"><b>{{ dischargeKwh }}</b><em>kWh</em></span>
-      </div>
-      <div class="readout">
-        <span class="readout-label">计划点数</span>
-        <span class="readout-value"><b>{{ pointCount }}</b><em>点</em></span>
-      </div>
-      <div class="readout">
-        <span class="readout-label">计划末 SOC</span>
-        <span class="readout-value"><b>{{ endSoc }}</b><em>%</em></span>
-      </div>
-      <div class="readout readout-status">
-        <span class="readout-label">状态</span>
-        <el-tag :type="STATUS_TAG[selected?.status ?? 0]" effect="light" round>{{ statusText }}</el-tag>
-      </div>
-    </section>
+        <el-table
+          :data="list"
+          class="plan-table"
+          size="small"
+          highlight-current-row
+          :row-class-name="rowClassName"
+          @row-click="onRowClick"
+        >
+          <el-table-column prop="planDate" label="日期" width="104" />
+          <el-table-column label="电站" min-width="96" show-overflow-tooltip>
+            <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
+          </el-table-column>
+          <el-table-column label="策略" min-width="104" show-overflow-tooltip>
+            <template #default="{ row }">{{ strategyLabel(row.strategyId) }}</template>
+          </el-table-column>
+          <el-table-column label="总量 kWh" width="92" align="right">
+            <template #default="{ row }">{{ row.totalEnergy ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="76">
+            <template #default="{ row }">
+              <el-tag :type="STATUS_TAG[row.status as number]" effect="light" round size="small">{{ STATUS_TEXT[row.status as number] }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="132" align="right" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" @click.stop="onRowClick(row)">查看</el-button>
+              <el-button size="small" type="success" :disabled="row.status !== 0" @click.stop="dispatch(row)">下发</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
 
-    <section class="wave-card">
-      <div class="wave-head">
-        <h2 class="wave-title">今日充放电波形</h2>
-        <ul class="legend">
-          <li><i class="sw sw-charge" aria-hidden="true"></i>充电</li>
-          <li><i class="sw sw-discharge" aria-hidden="true"></i>放电</li>
-          <li><i class="sw sw-standby" aria-hidden="true"></i>待机</li>
-          <li class="sep" aria-hidden="true">·</li>
-          <li><i class="sw sw-peak" aria-hidden="true"></i>峰</li>
-          <li><i class="sw sw-flat" aria-hidden="true"></i>平</li>
-          <li><i class="sw sw-valley" aria-hidden="true"></i>谷</li>
-        </ul>
-      </div>
-      <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
-      <el-empty v-else description="该计划无点序列——所选策略类型暂不支持生成" :image-size="96" class="wave-empty" />
-      <p class="wave-note">底纹为分时电价时段（低谷充电、高峰放电的套利逻辑一眼可读）；SOC 线为计划目标荷电状态。</p>
-    </section>
+        <div class="pager">
+          <el-pagination
+            v-model:current-page="pageNo"
+            v-model:page-size="pageSize"
+            :total="total"
+            layout="total, prev, pager, next"
+            size="small"
+            @change="load"
+          />
+        </div>
+      </aside>
 
-    <section class="exec-card">
-      <div class="exec-head">
-        <h2 class="exec-title">执行记录</h2>
-        <span class="exec-sub">下发后由调度器到点执行，ACK 回写点级结果；选中计划自动刷新</span>
-      </div>
-      <el-table :data="execRecords" empty-text="暂无执行记录——下发后调度器按计划点时刻到点下发" size="small" max-height="260">
-        <el-table-column prop="planTime" label="计划时刻" width="100" align="center">
-          <template #default="{ row }"><span class="ex-num">{{ row.planTime }}</span></template>
-        </el-table-column>
-        <el-table-column prop="action" label="动作" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.action === 'CHARGE' ? 'success' : row.action === 'DISCHARGE' ? 'warning' : 'info'" size="small">
-              {{ row.action === 'CHARGE' ? '充电' : row.action === 'DISCHARGE' ? '放电' : '待机' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="state" label="状态" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag :type="EXEC_STATE_TAG[row.state as number] ?? 'info'" size="small">{{ EXEC_STATE_TEXT[row.state as number] }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="commandId" label="指令 ID" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }"><span class="ex-num">{{ row.commandId || '—' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="result" label="回执" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }"><span class="ex-result">{{ row.result || '—' }}</span></template>
-        </el-table-column>
-      </el-table>
-    </section>
+      <!-- 右栏：页头 + Tab 分栏（计划波形 / 执行记录） -->
+      <main class="plan-main ex-card">
+        <header class="plan-head ex-page-head">
+          <div class="head-title">
+            <h1 class="ex-title">充放电计划</h1>
+            <p class="ex-sub">
+              {{ selected ? `${stationName(selected.stationId, stations)} · ${strategyLabel(selected.strategyId)} · ${selected.planDate}` : '加载中…' }}
+            </p>
+          </div>
+          <div class="head-actions">
+            <el-button class="gen-btn" type="success" :disabled="generating" @click="openGenerate">生成计划</el-button>
+            <el-button class="dispatch-btn" type="primary" :disabled="!selected || selected.status !== 0" @click="dispatchSelected">
+              下发计划
+            </el-button>
+          </div>
+        </header>
 
-    <section class="list-card">
-      <el-table :data="list" class="plan-table" highlight-current-row @row-click="onRowClick">
-        <el-table-column prop="planDate" label="计划日期" min-width="110" />
-        <el-table-column label="电站" min-width="120">
-          <template #default="{ row }">{{ stationName(row.stationId, stations) }}</template>
-        </el-table-column>
-        <el-table-column label="策略" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ strategyLabel(row.strategyId) }}</template>
-        </el-table-column>
-        <el-table-column prop="totalEnergy" label="总量 kWh" width="110" align="right">
-          <template #default="{ row }">{{ row.totalEnergy ?? '—' }}</template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag :type="STATUS_TAG[row.status as number]" effect="light" round>{{ STATUS_TEXT[row.status as number] }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="140" align="right">
-          <template #default="{ row }">
-            <el-button size="small" @click.stop="onRowClick(row)">查看</el-button>
-            <el-button size="small" type="success" :disabled="row.status !== 0" @click.stop="dispatch(row)">下发</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination
-        v-model:current-page="pageNo"
-        v-model:page-size="pageSize"
-        :total="total"
-        @change="load"
-        layout="total, prev, pager, next"
-      />
-    </section>
+        <el-tabs v-model="activeTab" class="plan-tabs">
+          <el-tab-pane label="计划波形" name="wave">
+            <section class="ex-readout-band" aria-label="当日计划汇总">
+              <div class="ex-readout">
+                <span class="ex-readout-label">累计充电</span>
+                <span class="ex-readout-value"><b>{{ chargeKwh }}</b><em>kWh</em></span>
+              </div>
+              <div class="ex-readout">
+                <span class="ex-readout-label">累计放电</span>
+                <span class="ex-readout-value"><b>{{ dischargeKwh }}</b><em>kWh</em></span>
+              </div>
+              <div class="ex-readout">
+                <span class="ex-readout-label">计划点数</span>
+                <span class="ex-readout-value"><b>{{ pointCount }}</b><em>点</em></span>
+              </div>
+              <div class="ex-readout">
+                <span class="ex-readout-label">计划末 SOC</span>
+                <span class="ex-readout-value"><b>{{ endSoc }}</b><em>%</em></span>
+              </div>
+              <div class="ex-readout ex-readout-status">
+                <span class="ex-readout-label">状态</span>
+                <el-tag :type="STATUS_TAG[selected?.status ?? 0]" effect="light" round>{{ statusText }}</el-tag>
+              </div>
+            </section>
+
+            <div class="wave-head">
+              <ul class="legend">
+                <li><i class="sw sw-charge" aria-hidden="true"></i>充电</li>
+                <li><i class="sw sw-discharge" aria-hidden="true"></i>放电</li>
+                <li><i class="sw sw-standby" aria-hidden="true"></i>待机</li>
+                <li class="sep" aria-hidden="true">·</li>
+                <li><i class="sw sw-peak" aria-hidden="true"></i>峰</li>
+                <li><i class="sw sw-flat" aria-hidden="true"></i>平</li>
+                <li><i class="sw sw-valley" aria-hidden="true"></i>谷</li>
+              </ul>
+            </div>
+            <div v-if="!emptyPoints" ref="chartEl" class="wave" role="img" aria-label="充放电功率柱状与 SOC 目标曲线，底纹为分时电价时段"></div>
+            <el-empty v-else description="该计划无点序列——所选策略类型暂不支持生成" :image-size="96" class="wave-empty" />
+            <p class="wave-note">底纹为分时电价时段（低谷充电、高峰放电的套利逻辑一眼可读）；SOC 线为计划目标荷电状态。</p>
+          </el-tab-pane>
+
+          <el-tab-pane label="执行记录" name="exec">
+            <div class="exec-head">
+              <h2 class="exec-title">执行记录</h2>
+              <span class="exec-sub">下发后由调度器到点执行，ACK 回写点级结果；选中计划自动刷新</span>
+            </div>
+            <el-table :data="execRecords" empty-text="暂无执行记录——下发后调度器按计划点时刻到点下发" size="small" max-height="260">
+              <el-table-column prop="planTime" label="计划时刻" width="100" align="center">
+                <template #default="{ row }"><span class="mono-num">{{ row.planTime }}</span></template>
+              </el-table-column>
+              <el-table-column prop="action" label="动作" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.action === 'CHARGE' ? 'success' : row.action === 'DISCHARGE' ? 'warning' : 'info'" size="small">
+                    {{ row.action === 'CHARGE' ? '充电' : row.action === 'DISCHARGE' ? '放电' : '待机' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="state" label="状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="EXEC_STATE_TAG[row.state as number] ?? 'info'" size="small">{{ EXEC_STATE_TEXT[row.state as number] }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="commandId" label="指令 ID" min-width="180" show-overflow-tooltip>
+                <template #default="{ row }"><span class="mono-num">{{ row.commandId || '—' }}</span></template>
+              </el-table-column>
+              <el-table-column prop="result" label="回执" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }"><span class="mono-result">{{ row.result || '—' }}</span></template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+      </main>
+    </div>
 
     <!-- 生成调度计划弹窗 -->
     <el-dialog v-model="genDialogVisible" title="生成调度计划" width="480px">
@@ -488,103 +539,74 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* 页面整体：flex 上下堆叠改左右分栏，token 全部走 --ex-* */
 .plan-page {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
-  color: #1f2833;
+  color: var(--ex-ink);
 }
-.page-head {
+.plan-layout {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
 }
-.page-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  color: #1f2833;
+/* 左栏固定 360px，右主区吃掉剩余宽度 */
+.plan-list {
+  flex: 0 0 360px;
+  width: 360px;
+  padding: 12px 12px 14px;
 }
-.page-sub {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #5b6b8c;
-  font-variant-numeric: tabular-nums;
+.plan-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 16px 18px 12px;
 }
-.dispatch-btn {
-  min-width: 112px;
-}
-/* 仪表读数带：白卡 + 发丝分隔，数字用 Bahnschrift（DIN 工业字形） */
-.readout-band {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  background: #fff;
-  border: 1px solid #dce2ea;
-  border-radius: 6px;
-  overflow: hidden;
-}
-.readout {
-  padding: 14px 18px;
-  border-left: 1px solid #eef1f6;
+/* 筛选条：电站 + 状态下拉各占一半 */
+.filter-bar {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
-.readout:first-child {
-  border-left: none;
+.filter-bar .el-select {
+  flex: 1;
+  min-width: 0;
 }
-.readout-label {
-  font-size: 12px;
-  color: #5b6b8c;
-  letter-spacing: 1px;
-}
-.readout-value {
-  font-family: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', sans-serif;
-  font-weight: 600;
-  font-size: 26px;
-  line-height: 1;
-  color: #1f2833;
-  font-variant-numeric: tabular-nums;
+.pager {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
-.readout-value em {
-  font-style: normal;
-  font-size: 13px;
-  color: #5b6b8c;
-  font-weight: 400;
+.plan-table {
+  width: 100%;
 }
-.readout-status {
+/* 列表选中行：data 刷新后 current-row 丢失，用 rowClassName 补画底色 */
+.plan-table :deep(tr.ex-row-current) {
+  background: var(--ex-hair-soft);
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+.plan-tabs {
+  margin-top: 4px;
+}
+.plan-tabs :deep(.el-tabs__content) {
+  padding: 14px 0 0;
+}
+.ex-readout-status {
   justify-content: center;
 }
-.wave-card,
-.list-card {
-  background: #fff;
-  border: 1px solid #dce2ea;
-  border-radius: 6px;
-}
-.wave-card {
-  padding: 18px 20px 14px;
-}
+/* 波形：标题/图例行 + 图表 + 说明 */
 .wave-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.wave-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2833;
+  margin: 14px 0 10px;
 }
 .legend {
   display: flex;
@@ -594,7 +616,7 @@ onMounted(() => {
   padding: 0;
   list-style: none;
   font-size: 12px;
-  color: #5b6b8c;
+  color: var(--ex-ink-2);
 }
 .legend li {
   display: flex;
@@ -602,7 +624,7 @@ onMounted(() => {
   gap: 6px;
 }
 .legend .sep {
-  color: #c6cfdb;
+  color: var(--ex-ink-3);
 }
 .sw {
   width: 12px;
@@ -611,13 +633,13 @@ onMounted(() => {
   display: inline-block;
 }
 .sw-charge {
-  background: #2e9e5b;
+  background: var(--ex-charge);
 }
 .sw-discharge {
-  background: #e08a1e;
+  background: var(--ex-discharge);
 }
 .sw-standby {
-  background: #94a0ac;
+  background: var(--ex-ink-3);
 }
 .sw-peak {
   background: rgba(224, 138, 30, 0.18);
@@ -645,17 +667,9 @@ onMounted(() => {
 .wave-note {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #94a0ac;
+  color: var(--ex-ink-3);
 }
-.list-card {
-  padding: 6px 14px 14px;
-}
-.exec-card {
-  background: #fff;
-  border: 1px solid #dce2ea;
-  border-radius: 6px;
-  padding: 14px 14px 6px;
-}
+/* 执行记录：头行 + 表格 */
 .exec-head {
   display: flex;
   align-items: baseline;
@@ -666,38 +680,31 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1f2833;
+  color: var(--ex-ink);
 }
 .exec-sub {
   font-size: 12px;
-  color: #94a0ac;
+  color: var(--ex-ink-3);
 }
-.ex-num {
+.mono-num {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 12px;
-  color: #5b6b8c;
+  color: var(--ex-ink-2);
 }
-.ex-result {
+.mono-result {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 12px;
-  color: #5b6b8c;
+  color: var(--ex-ink-2);
   word-break: break-all;
 }
-.plan-table {
-  width: 100%;
-}
-@media (max-width: 900px) {
-  .readout-band {
-    grid-template-columns: repeat(2, 1fr);
+/* 小屏：左右分栏回退为上下堆叠 */
+@media (max-width: 960px) {
+  .plan-layout {
+    flex-direction: column;
   }
-  .readout:nth-child(3) {
-    border-left: none;
-  }
-  .readout {
-    border-top: 1px solid #eef1f6;
-  }
-  .readout:nth-child(-n + 2) {
-    border-top: none;
+  .plan-list {
+    flex: none;
+    width: 100%;
   }
 }
 </style>
