@@ -205,12 +205,14 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
             String remoteIp = session.getRemoteIp();
             // 离线通知含 Redis 删除，剥离到业务线程
             executor.execute(() -> lifecycleNotifier.notifyOffline(cred, reason, remoteIp));
-            // 遗嘱投递（非优雅断开）：delay=0 立即投递；delay>0 按 P1-11 Will Delay 调度，
-            // 投递前若设备已重连上线则取消（规范：延迟窗口内重连不投遗嘱）
+            // 遗嘱处理（Redis 持久化，节点宕机不丢）：
+            //  非优雅断开 → 投递遗嘱（delay=0 立即 / delay>0 调度，窗口内重连取消）→ 删除 Redis 遗嘱；
+            //  优雅断开 → 不投递，直接删除 Redis 遗嘱（视为正常下线，不再补投）
             Session.MqttWill will = session.getWill();
             if (!graceful && will != null) {
                 if (will.getDelaySeconds() <= 0) {
                     deliverer.deliver(will.getTopic(), will.getPayload(), will.getQos(), will.isRetain(), null);
+                    executor.execute(() -> sessionStore.deleteWill(deviceKey));
                 } else {
                     String willDeviceKey = deviceKey;
                     scheduler.schedule(() -> {
@@ -221,8 +223,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                         }
                         deliverer.deliver(will.getTopic(), will.getPayload(),
                                 will.getQos(), will.isRetain(), null);
+                        executor.execute(() -> sessionStore.deleteWill(willDeviceKey));
                     }, will.getDelaySeconds(), TimeUnit.SECONDS);
                 }
+            } else if (graceful) {
+                // 优雅断开：遗嘱不投递，清除 Redis 持久化遗嘱（下次重连不再补投）
+                executor.execute(() -> sessionStore.deleteWill(deviceKey));
             }
         }
         log.info("[Broker] 连接关闭 deviceKey={} reason={}", deviceKey, graceful ? "NORMAL" : "ABNORMAL");
@@ -528,6 +534,18 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
                     sessionStore.deleteSubscriptions(deviceKey);
                     sessionStore.deleteInflight(deviceKey);
                 } else {
+                    // 遗嘱持久化（节点宕机不丢）：先补投上次连接未投递的遗嘱（如节点宕机场景），
+                    // 再以本次 CONNECT 声明的遗嘱覆盖；正常非优雅断开已投递并删除，此处 loadWill 为空
+                    Session.MqttWill persistedWill = sessionStore.loadWill(deviceKey);
+                    if (persistedWill != null) {
+                        log.info("[Broker] 补投上次未投递的遗嘱 deviceKey={} topic={}",
+                                deviceKey, persistedWill.getTopic());
+                        deliverer.deliver(persistedWill.getTopic(), persistedWill.getPayload(),
+                                persistedWill.getQos(), persistedWill.isRetain(), null);
+                        sessionStore.deleteWill(deviceKey);
+                    }
+                    sessionStore.saveWill(deviceKey, session.getWill());
+
                     Set<MqttSubscription> subs = sessionStore.loadSubscriptions(deviceKey);
                     for (MqttSubscription sub : subs) {
                         session.getSubscriptions().put(sub.getTopicFilter(), sub);

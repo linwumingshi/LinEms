@@ -112,6 +112,44 @@ public class SessionStore {
         return ok;
     }
 
+    // ---------------- will（遗嘱持久化：节点宕机不丢） ----------------
+
+    /**
+     * 持久化遗嘱到会话（持久会话 CONNECT 时写入；MqttWill 经 JSON 序列化，byte[] payload 自动 base64）。
+     * 节点宕机时遗嘱保留在 Redis，设备重连任意节点后由恢复流程补投。
+     */
+    public void saveWill(String deviceKey, Session.MqttWill will) {
+        if (will == null) {
+            return;
+        }
+        try {
+            redis.opsForHash().put(BrokerKeys.session(deviceKey), "will",
+                    objectMapper.writeValueAsString(will));
+        } catch (Exception e) {
+            log.warn("[SessionStore] 遗嘱序列化失败 deviceKey={}", deviceKey, e);
+        }
+    }
+
+    /** 读取持久化遗嘱；无返回 null（含反序列化失败降级） */
+    public Session.MqttWill loadWill(String deviceKey) {
+        Object json = redis.opsForHash().get(BrokerKeys.session(deviceKey), "will");
+        if (json == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(String.valueOf(json), Session.MqttWill.class);
+        } catch (Exception e) {
+            log.warn("[SessionStore] 遗嘱反序列化失败 deviceKey={}，删除", deviceKey);
+            deleteWill(deviceKey);
+            return null;
+        }
+    }
+
+    /** 删除持久化遗嘱（投递完成 / 优雅断开 / 会话清理时） */
+    public void deleteWill(String deviceKey) {
+        redis.opsForHash().delete(BrokerKeys.session(deviceKey), "will");
+    }
+
     public Map<Object, Object> loadSession(String deviceKey) {
         return redis.opsForHash().entries(BrokerKeys.session(deviceKey));
     }
