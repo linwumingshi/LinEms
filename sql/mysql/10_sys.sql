@@ -190,6 +190,7 @@ VALUES
   (650,  0,   'device:view',           '设备管理',   1, 'DEVICE',   'device',        7, 'cpu',        'device/index',        0, 0, '设备管理菜单'),
   (660,  0,   'strategy:view',         '策略管理',   1, 'STRATEGY', 'ems/strategy',  8, 'operation',  'ems/strategy/index',  0, 0, '策略管理菜单'),
   (670,  0,   'plan:view',             '充放电计划', 1, 'STRATEGY', 'ems/plan',      9, 'date-range', 'ems/plan/index',      0, 0, '充放电计划菜单'),
+  (680,  0,   'constraint:view',       '安全约束',   1, 'STRATEGY', 'ems/constraint', 10, 'lock', 'ems/constraint/index', 0, 0, '安全约束菜单'),
   -- 基础档案目录（单位管理 + 电站管理）
   (2,    0,   'archive',               '基础档案',   1, NULL,     'archive',           10, 'office-building', NULL,                      0, 0, '基础档案目录'),
   (400,  2,   'system:enterprise:list','单位管理',   1, NULL,     'archive/enterprise', 1, 'office-building', 'archive/enterprise/index', 0, 0, '单位管理菜单'),
