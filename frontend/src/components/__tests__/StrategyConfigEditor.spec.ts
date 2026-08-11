@@ -97,4 +97,22 @@ describe('StrategyConfigEditor', () => {
     await wrapper.find('.json-toolbar button').trigger('click')
     expect(document.body.textContent).not.toContain('配置不是合法 JSON')
   })
+
+  it('跨类型切换：DEMAND 形状 config 切到 TIME → 重置为 TIME 结构化空表（不被强制 JSON）', async () => {
+    const demandCfg = JSON.stringify({ chargeWindows: [{ start: '02:00', end: '06:00', powerLimit: 100 }] })
+    const wrapper = mountEditor(demandCfg, 'DEMAND')
+    await wrapper.setProps({ strategyType: 'TIME' })
+    // modelValue 仍是 DEMAND 形状，TIME 无法解析 → 应重置为结构化空时段表，而非 JSON 模式
+    expect(wrapper.find('.schedule-group').exists()).toBe(true)
+    expect(wrapper.find('.json-toolbar').exists()).toBe(false)
+    expect(wrapper.find('.mode-alert').exists()).toBe(false)
+  })
+
+  it('跨类型切换：TIME 形状 config 切到 DEMAND → 重置为 DEMAND 结构化空窗口表', async () => {
+    const timeCfg = JSON.stringify({ schedule: [{ start: '08:00', end: '09:00', action: 'CHARGE', power: 100 }] })
+    const wrapper = mountEditor(timeCfg, 'TIME')
+    await wrapper.setProps({ strategyType: 'DEMAND' })
+    expect(wrapper.find('.demand-limit-row').exists()).toBe(true)
+    expect(wrapper.find('.json-toolbar').exists()).toBe(false)
+  })
 })

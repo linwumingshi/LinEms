@@ -236,6 +236,26 @@ function computeIssues(): string[] {
   return validatePeakValleyConfig(serializePeakValley(form.value, rest.value))
 }
 
+/** 类型切换兜底：上一类型结构化表单会自动把空窗/空段写进 modelValue，新类型解析不了该形状 → 重置为新类型空表单，避免被强制 JSON（用户以为该类型不能结构化编辑）。覆盖 form/schedule 触发深层 watch → 自动 emit 新类型空配置。 */
+function resetToEmptyForm() {
+  if (isTime.value) {
+    schedule.value = []
+    timeRest.value = {}
+  } else {
+    form.value = { chargeWindows: [], dischargeWindows: [] }
+    rest.value = {}
+    initializing = true
+    priceDriven.value = false
+    chargePower.value = undefined
+    dischargePower.value = undefined
+    demandLimit.value = undefined
+    initializing = false
+  }
+  issues.value = []
+  mode.value = 'form'
+  forceJson.value = false
+}
+
 function switchMode(m: Mode) {
   if (m === mode.value) return
   if (m === 'json') {
@@ -333,7 +353,13 @@ watch(
 
 watch(
   () => props.strategyType,
-  () => initFromConfig(),
+  () => {
+    initFromConfig()
+    // 类型切换遗留旧类型 config 无法按新类型结构化解析 → 重置为空表单（见 resetToEmptyForm 注释）
+    if (isStructured.value && mode.value === 'json') {
+      resetToEmptyForm()
+    }
+  },
 )
 
 watch(
