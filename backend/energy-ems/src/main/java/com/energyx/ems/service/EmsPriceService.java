@@ -10,7 +10,11 @@ import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /** 分时电价管理。 */
 @Service
@@ -24,20 +28,51 @@ public class EmsPriceService extends ServiceImpl<EmsElectricityPriceMapper, EmsE
 					.orderByAsc(EmsElectricityPrice::getStartTime));
 	}
 
-	/** 批量保存：逐条补租户后插入。 */
+	/**
+	 * 批量保存（upsert 幂等）：同站同 startTime 视为同一档位——已存在则原位更新（保留 priceId/create_time），否则插入。
+	 * 重复提交同一批档位不产生重复行（与 PlanGenerator 按 startTime 去重语义一致）。
+	 */
 	public void batchSave(List<EmsElectricityPrice> prices) {
+		if (prices == null || prices.isEmpty())
+			return;
 		long tenant = requireTenant();
+		// 一次查出本批涉及电站的现有档位，按 (stationId, startTime) 建索引，避免逐条 selectOne
+		Map<String, EmsElectricityPrice> existing = new HashMap<>();
+		List<Long> stationIds = prices.stream()
+			.map(EmsElectricityPrice::getStationId)
+			.filter(Objects::nonNull)
+			.distinct()
+			.toList();
+		if (!stationIds.isEmpty()) {
+			for (EmsElectricityPrice row : list(
+					new LambdaQueryWrapper<EmsElectricityPrice>().eq(EmsElectricityPrice::getTenantId, tenant)
+						.in(EmsElectricityPrice::getStationId, stationIds))) {
+				existing.put(upsertKey(row.getStationId(), row.getStartTime()), row);
+			}
+		}
 		for (EmsElectricityPrice p : prices) {
 			p.setTenantId(tenant);
 			if (p.getStatus() == null)
 				p.setStatus(1);
-			save(p);
+			EmsElectricityPrice hit = existing.get(upsertKey(p.getStationId(), p.getStartTime()));
+			if (hit != null) {
+				p.setPriceId(hit.getPriceId()); // 原位更新，保留主键与 create_time
+				updateById(p);
+			}
+			else {
+				p.setPriceId(null);
+				save(p);
+			}
 		}
 	}
 
 	public void update(EmsElectricityPrice p) {
 		p.setTenantId(null);
 		updateById(p);
+	}
+
+	private static String upsertKey(Long stationId, LocalTime startTime) {
+		return stationId + ":" + startTime;
 	}
 
 	private long requireTenant() {
