@@ -95,8 +95,8 @@ class PlanGeneratorTest {
 		assertTrue(charges.size() >= 12); // 至少推进到上限附近（12-13 个 5min 点 ≈ 1% SOC）
 		assertTrue(charges.size() < 48); // 到达上限即停：远小于 4h 满窗 48 点
 		assertTrue(charges.stream().allMatch(p -> p.powerKw() == 100.0));
-		// 尾点 STANDBY 携带最终 SOC：近似演进允许一槽越界（d≈0.0833），钳制在 90 附近
-		assertEquals(90.0, points.get(points.size() - 1).socTarget(), 0.1);
+		// 尾点 STANDBY 携带最终 SOC：generate() 将近似演进一槽越界 clamp 回包络，恒为 90.0
+		assertEquals(90.0, points.get(points.size() - 1).socTarget(), 1e-9);
 	}
 
 	@Test
@@ -143,8 +143,8 @@ class PlanGeneratorTest {
 		assertTrue(discharges.size() >= 12); // 至少推进到下限附近（12-13 个 5min 点 ≈ 1% SOC）
 		assertTrue(discharges.size() < 120); // 到达下限即停：远小于 10h 满窗 120 点
 		assertTrue(discharges.stream().allMatch(p -> p.powerKw() == 100.0));
-		// 尾点 STANDBY 携带最终 SOC：近似演进允许一槽越界（d≈0.0833），钳制在 10 附近
-		assertEquals(10.0, points.get(points.size() - 1).socTarget(), 0.1);
+		// 尾点 STANDBY 携带最终 SOC：generate() 将近似演进一槽越界 clamp 回包络，恒为 10.0
+		assertEquals(10.0, points.get(points.size() - 1).socTarget(), 1e-9);
 	}
 
 }

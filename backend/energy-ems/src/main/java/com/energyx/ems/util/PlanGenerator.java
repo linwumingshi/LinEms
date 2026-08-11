@@ -45,7 +45,8 @@ public final class PlanGenerator {
 			else {
 				soc = generateByWindows(in, cfg, soc, points);
 			}
-			// 当日尾点锚定待机（保证前端图时间轴完整）
+			// 当日尾点锚定待机（保证前端图时间轴完整）；SOC 收进包络，防近似演进一槽越界被安全包络校验拒绝
+			soc = Math.min(in.socMax(), Math.max(in.socMin(), soc));
 			points.add(new PlanPoint(LocalTime.of(23, 55), "STANDBY", 0, soc));
 			// 按时间升序（不依赖 config 窗口书写顺序）
 			points.sort(Comparator.comparing(PlanPoint::time));
