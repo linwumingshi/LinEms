@@ -12,7 +12,7 @@ import { fetchActualCurve } from '@/utils/planCurve'
 
 const router = useRouter()
 
-/** 列表筛选：电站下拉后端已支持 stationId；状态下拉为 UI 占位，等 Task 3 后端支持 status 后再启用 */
+/** 列表筛选：电站/状态下拉后端均已支持；值为空时不参与过滤 */
 const filters = ref<{ stationId?: string; status?: number }>({})
 /** 右主区 Tab：wave=计划波形 / exec=执行记录 */
 const activeTab = ref('wave')
@@ -99,14 +99,22 @@ async function load(): Promise<void> {
     const data = await emsApi.planPage({
       pageNo: pageNo.value,
       pageSize: pageSize.value,
-      // 电站筛选后端已支持，stationId 为空时后端忽略；status 待 Task 3 支持，此处不传
+      // 电站/状态筛选后端均已支持，值为空时传 undefined，后端忽略
       stationId: filters.value.stationId || undefined,
+      status: filters.value.status ?? undefined,
     })
     list.value = data.records
     total.value = data.total
     if (list.value.length) {
       // 列表按计划日期倒序，默认展示最近一条
       await selectPlan(list.value[0])
+    } else {
+      // 筛选结果为空：清掉右侧残留的旧计划选中态与波形，避免过期数据滞留
+      selected.value = undefined
+      points.value = []
+      actualCurve.value = null
+      execRecords.value = []
+      chart.value?.clear()
     }
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
@@ -141,6 +149,8 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
   selected.value = plan
   try {
     const pts = await emsApi.planPoints(plan.planId)
+    // 计划 ID 守卫：拉取期间已切换计划，本次 pts 过期，不 set 不渲染
+    if (selected.value?.planId !== plan.planId) return
     points.value = pts
     if (!pts.length) {
       // 清掉上一条计划的残留波形与残留实际曲线（若有）
@@ -149,6 +159,8 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
       return
     }
     const bands = await fetchBands(plan.stationId, plan.planDate)
+    // 计划 ID 守卫：拉电价期间已切换计划，本次 bands 过期，不重绘避免旧计划波形覆盖新计划
+    if (selected.value?.planId !== plan.planId) return
     renderChart(pts, bands)
     // 实际曲线独立异步拉取，拉回后重渲染叠加虚线；失败已在 loadActualCurve 内降级为 null
     await loadActualCurve(plan)
@@ -421,8 +433,8 @@ onMounted(() => {
           <el-select v-model="filters.stationId" placeholder="全部电站" clearable filterable @change="onFilterChange">
             <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
           </el-select>
-          <!-- 状态筛选：后端 planPage 暂不支持 status，占位禁用，Task 3 支持后启用 -->
-          <el-select v-model="filters.status" placeholder="状态筛选（待支持）" clearable disabled>
+          <!-- 状态筛选：后端 planPage 已支持 status，切换即重新查询 -->
+          <el-select v-model="filters.status" placeholder="全部状态" clearable @change="onFilterChange">
             <el-option v-for="(text, code) in STATUS_TEXT" :key="code" :label="text" :value="Number(code)" />
           </el-select>
         </div>
