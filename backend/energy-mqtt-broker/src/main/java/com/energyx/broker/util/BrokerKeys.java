@@ -67,4 +67,14 @@ public final class BrokerKeys {
 		return "cache:cred:" + deviceKey;
 	}
 
+	/** 节点心跳租约：String(nodeId)，TTL 30s；宕机后消失，新节点据此判定旧节点死亡并接管锁 */
+	public static String nodeHeartbeat(String nodeId) {
+		return "mqtt:node:" + nodeId;
+	}
+
+	/** 本节点持有的连接锁前缀（停机批量释放用 SCAN 前缀匹配） */
+	public static String connLockPrefix() {
+		return "mqtt:conn:";
+	}
+
 }

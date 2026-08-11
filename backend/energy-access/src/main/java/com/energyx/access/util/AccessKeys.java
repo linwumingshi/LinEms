@@ -36,4 +36,9 @@ public final class AccessKeys {
 		return "mqtt:conn:" + deviceKey;
 	}
 
+	/** Broker 节点心跳租约（mqtt:node:{nodeId}）：下行路由避让死节点（心跳消失=节点宕机） */
+	public static String nodeHeartbeat(String nodeId) {
+		return "mqtt:node:" + nodeId;
+	}
+
 }

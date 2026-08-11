@@ -77,6 +77,10 @@ delta   : String(JSON)，最近一次 desired-reported 差异，驱动设备同�
 
 - 故障接管：节点宕机 → 设备重连任意节点 → 从 Redis 恢复会话（CleanSession=false）
 - 连接锁：`mqtt:conn:{deviceKey}` 保证同 clientId 单连接，新连接踢旧连接（避免指令投递到过期连接）
+- **节点心跳租约（2026-08-11 新增）**：`mqtt:node:{nodeId}` = String(nodeId)，TTL 30s，每 10s 刷新。
+  节点宕机后心跳 key 30s 消失 → access 下行路由（BrokerNodeResolver）判定 owner 死节点 → 回落广播/离线队列，
+  避免把消息发给无人消费的 `mqtt.down.{deadNode}`（原 60s 锁 TTL 悬空窗口缩至 ≤30s）。
+  优雅停机时 broker 删除本节点心跳 + SCAN 释放本节点全部连接锁（`mqtt:conn:*` 前缀）。
 - **inflight 存储说明（Phase 4 实现细化）**：v1.0 规范为 ZSet(packetId→状态)，但 QoS1/2 断线续传需要携带完整报文（topic/payload），ZSet 成员无法可靠携带二进制。实现定为 **Hash(packetId→JSON 消息+状态)**，状态仍可从 JSON 还原，语义不变。
 - **保留消息**：`mqtt:retained:{topic}` 为跨节点权威（节点内存缓存做本节点读），新增 key 于 Phase 4 补登。
 

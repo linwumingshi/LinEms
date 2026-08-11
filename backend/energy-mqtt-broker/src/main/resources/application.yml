@@ -68,11 +68,13 @@ energyx:
     offline-queue-capacity: 500
     offline-queue-ttl-seconds: 604800
     session-ttl-seconds: 604800
-    conn-lock-ttl-seconds: 60
+    conn-lock-ttl-seconds: 20
     max-pending-messages-per-session: 1000
     credential-cache-ttl-seconds: 1800
     auth-timestamp-window-minutes: 2
     online-ttl-seconds: 30
+    node-heartbeat-interval-seconds: 10
+    node-heartbeat-ttl-seconds: 30
     kafka-bootstrap-servers: ${KAFKA_BOOTSTRAP:127.0.0.1:9092}
     router-topic-partitions: 24
     lifecycle-topic-partitions: 24

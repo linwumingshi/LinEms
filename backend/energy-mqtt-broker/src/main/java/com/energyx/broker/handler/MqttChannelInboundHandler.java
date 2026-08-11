@@ -459,7 +459,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			if (!sessionStore.tryAcquireConnLock(deviceKey, properties.getNodeId())) {
 				String owner = sessionStore.getConnLockOwner(deviceKey);
 				if (owner != null && !owner.equals(properties.getNodeId())) {
-					kickRemote(owner, deviceKey);
+					// 节点心跳判定：owner 已死（宕机/失联）则跳过无效踢线，直接接管；存活才发 KICK
+					if (sessionStore.isNodeAlive(owner)) {
+						kickRemote(owner, deviceKey);
+					}
+					else {
+						log.info("[Broker] owner 节点心跳消失视为宕机，跳过踢线直接接管 deviceKey={} owner={}", deviceKey, owner);
+					}
 				}
 				sessionStore.overwriteConnLock(deviceKey, properties.getNodeId());
 			}

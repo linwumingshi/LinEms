@@ -71,7 +71,13 @@ public class BrokerProperties {
 	private long sessionTtlSeconds = 604_800;
 
 	/** 连接锁 TTL（秒）：短租约 + 随在线续期，避免长连接锁过期被误判空闲；宕机节点最坏该时长后被接管 */
-	private long connLockTtlSeconds = 60;
+	private long connLockTtlSeconds = 20;
+
+	/** 节点心跳刷新间隔（秒）：NodeHeartbeatScheduler 每该时长刷新 mqtt:node:{nodeId} */
+	private long nodeHeartbeatIntervalSeconds = 10;
+
+	/** 节点心跳 TTL（秒）：节点宕机后心跳 key 最坏该时长消失，新节点据此判定旧节点死亡并接管锁 */
+	private long nodeHeartbeatTtlSeconds = 30;
 
 	/** 单连接下行挂起消息上限（背压）：超过后 QoS0 丢弃、QoS1/2 转离线队列 */
 	private int maxPendingMessagesPerSession = 1_000;

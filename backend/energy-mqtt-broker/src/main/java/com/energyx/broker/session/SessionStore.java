@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.broker.config.BrokerProperties;
 import com.energyx.broker.util.BrokerKeys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
@@ -350,6 +354,60 @@ public class SessionStore {
 	/** 下行路由定位：当前持有连接锁的节点（= 设备所在节点）；离线/竞态窗口返回 null */
 	public String resolveOwnerNode(String deviceKey) {
 		return getConnLockOwner(deviceKey);
+	}
+
+	/** 判定节点是否存活（心跳租约存在）；无心跳 key 视为死节点 */
+	public boolean isNodeAlive(String nodeId) {
+		if (nodeId == null || nodeId.isBlank()) {
+			return false;
+		}
+		try {
+			return Boolean.TRUE.equals(redis.hasKey(BrokerKeys.nodeHeartbeat(nodeId)));
+		}
+		catch (Exception e) {
+			// Redis 异常保守视为存活：不因新功能阻断既有下行定向
+			log.warn("[SessionStore] 节点心跳判定异常 nodeId={}，保守视为存活", nodeId, e);
+			return true;
+		}
+	}
+
+	/**
+	 * 停机批量释放本节点持有的全部连接锁（SCAN 前缀 + 归属校验释放）。 仅处理 value 等于本节点的锁，避免误删其他节点持有。
+	 * @return 释放的锁数量
+	 */
+	public int releaseAllConnLocksIfOwner(String nodeId) {
+		int released = 0;
+		try {
+			Set<String> keys = scanKeys(BrokerKeys.connLockPrefix() + "*");
+			for (String key : keys) {
+				Long r = redis.execute(RELEASE_LOCK_SCRIPT, Collections.singletonList(key), nodeId);
+				if (r != null && r > 0) {
+					released++;
+				}
+			}
+		}
+		catch (Exception e) {
+			log.warn("[SessionStore] 停机释放连接锁异常 nodeId={}", nodeId, e);
+		}
+		return released;
+	}
+
+	/** SCAN 全量匹配（COUNT 分批，避免 KEYS 阻塞；本方法仅停机路径调用） */
+	private Set<String> scanKeys(String pattern) {
+		Set<String> keys = new HashSet<>();
+		StringRedisSerializer serializer = StringRedisSerializer.UTF_8;
+		redis.execute((RedisCallback<Set<String>>) connection -> {
+			org.springframework.data.redis.core.Cursor<byte[]> cursor = connection
+				.scan(org.springframework.data.redis.core.ScanOptions.scanOptions().match(pattern).count(500).build());
+			while (cursor.hasNext()) {
+				String sk = serializer.deserialize(cursor.next());
+				if (sk != null) {
+					keys.add(sk);
+				}
+			}
+			return keys;
+		});
+		return keys;
 	}
 
 	// ---------------- 认证封禁（跨节点共享） ----------------
