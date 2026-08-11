@@ -52,6 +52,8 @@
     <mybatis-plus.version>3.5.7</mybatis-plus.version>
     <redisson.version>3.27.2</redisson.version>
     <jjwt.version>0.12.6</jjwt.version>
+    <!-- xxl-job 分布式任务调度（低频 cron 任务迁移，Task 7） -->
+    <xxl-job.version>2.4.1</xxl-job.version>
   </properties>
 
   <dependencyManagement>
@@ -106,6 +108,12 @@
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-jackson</artifactId>
         <version>${jjwt.version}</version>
+      </dependency>
+      <!-- xxl-job 执行器核心（版本统一由 parent 管理，6 业务模块共用） -->
+      <dependency>
+        <groupId>com.xuxueli</groupId>
+        <artifactId>xxl-job-core</artifactId>
+        <version>${xxl-job.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

@@ -69,3 +69,17 @@ management:
 logging:
   level:
     com.energyx: info
+
+# ---------------- xxl-job 执行器（低频 cron 任务调度，Task 7） ----------------
+xxl:
+  job:
+    admin:
+      addresses: http://127.0.0.1:8099/xxl-job-admin
+    accessToken: energyx-xxl-job-token
+    executor:
+      appname: energy-system
+      address: ''
+      ip: ''
+      port: 9994
+      logpath: ./logs/xxl-job/
+      logretentiondays: 30

@@ -20,6 +20,11 @@
       <groupId>com.energyx</groupId>
       <artifactId>energy-common</artifactId>
     </dependency>
+    <!-- xxl-job 执行器核心（低频 cron 任务调度，Task 7） -->
+    <dependency>
+      <groupId>com.xuxueli</groupId>
+      <artifactId>xxl-job-core</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
