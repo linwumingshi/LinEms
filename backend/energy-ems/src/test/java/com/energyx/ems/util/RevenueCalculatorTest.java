@@ -120,4 +120,15 @@ class RevenueCalculatorTest {
 		assertEquals("PLAN", r.slots().get(1).source());
 	}
 
+	@Test
+	void standbyRunModeFallsBackToPlanAndSourcePlan() {
+		// runMode==0（待机）非 1/2 → 方向回退计划 DISCHARGE；source 必须标 PLAN（非 RUN_MODE）
+		Function<LocalTime, String> plan = t -> "DISCHARGE";
+		RevenueDailyResult r = RevenueCalculator.aggregateDay(DAY, List.of(row(0, 60, 0), row(10, 60, 0)), plan,
+				NO_PRICE);
+
+		assertEquals(10.0, r.dischargeEnergy(), 1e-9);
+		assertEquals("PLAN", r.slots().get(0).source());
+	}
+
 }

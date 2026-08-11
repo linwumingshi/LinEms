@@ -59,8 +59,9 @@ public final class RevenueCalculator {
 			chargeEnergy += "CHARGE".equals(action) ? energy : 0;
 			dischargeEnergy += "DISCHARGE".equals(action) ? energy : 0;
 			revenue += slotRevenue;
-			slots.add(new RevenueSlot(time, action, energy, unitPrice, slotRevenue,
-					row.runMode() != null ? "RUN_MODE" : "PLAN"));
+			// 方向来源：方向确实由 runMode 决定（1充/2放）才标 RUN_MODE；runMode==0 待机回退计划 → PLAN
+			String source = row.runMode() != null && (row.runMode() == 1 || row.runMode() == 2) ? "RUN_MODE" : "PLAN";
+			slots.add(new RevenueSlot(time, action, energy, unitPrice, slotRevenue, source));
 		}
 		return new RevenueDailyResult(date, chargeEnergy, dischargeEnergy, revenue, slots);
 	}
