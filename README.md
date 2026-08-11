@@ -27,6 +27,63 @@
 | Phase 8 | 测试与压力测试（百万连接/故障演练） | ✅ 完成 |
 | Phase 9 | 生产化差距分析（缺陷追踪 + 路线图）＋ P0-1 网关鉴权落地（JWT 验签 + Spring Security RBAC + 用户/角色/菜单/单位管理模块） | ✅ 完成 |
 
+## 全链路数据流（链路图）
+
+**关键**：MQTT 只用于「设备 ↔ Broker」这一段；Broker 是「MQTT 接入 + Kafka 桥」一体，消息出了 Broker 全走 Kafka，**后端服务（tsdb/shadow/alarm/command/ems/access）全是 Kafka 消费者，不订阅 MQTT 主题**。
+
+### 设备上报（上行）
+
+```text
+设备（PCS/METER/BMS 模拟器或真机）
+  │  MQTT 3.1.1/5.0 PUBLISH（1883，HMAC 认证，Topic ACL）
+  ▼
+自研 MQTT Broker（Netty，可多节点）
+  │  MqttChannelInboundHandler（ACL / QoS 状态机 / 限流）
+  ▼
+MessageDeliverer.deliver()
+  ├─ deliverLocal()        → 本节点 MQTT 订阅者（如另一台模拟设备）
+  └─ routeDirected()       → KafkaEventProducer（enable.idempotence + acks=all）
+       │  RouterEnvelope 二进制信封（magic 0xE9 0x01，key=deviceKey 分区内保序）
+       ▼
+Kafka topic: mqtt.uplink     ← 仅 energy-access 唯一消费组摄取，无 fan-out
+  │
+  ▼
+energy-access · UplinkProcessor
+  │  MessageDedup 幂等去重 → 物模型校验（ModelValidator）→ 标准化
+  ├─▶ iot-thing-property   → energy-tsdb（TDengine）/ energy-shadow / energy-alarm
+  ├─▶ iot-thing-event      → energy-tsdb / energy-alarm
+  ├─▶ iot-command-ack      → energy-command / energy-ems（执行回写）
+  └─▶ iot-device-lifecycle → energy-command（离线补发触发）
+```
+
+### 平台下发（下行）
+
+```text
+平台（前端 / REST 网关 8000）→ energy-command · CommandService
+  │  producer.send(iot-command-down, key=deviceId)
+  ▼
+Kafka topic: iot-command-down
+  │
+  ▼
+energy-access（command-down 消费者，group=energy-access-command-down）
+  │  publishRouterDown()：按连接锁 mqtt:conn:{deviceKey} 解析设备所在 Broker 节点
+  ├─ owner 命中 → mqtt.down.{owner}   （定向投递，仅目标节点消费）
+  └─ owner 缺失 → mqtt.broadcast      （幽灵订阅 / 上线接管兜底）
+  ▼
+Broker · RouterConsumer（group=mqtt-down-{nodeId} / mqtt-bc-{nodeId}）
+  ▼
+MessageDeliverer.sendCommandToDevice / deliverLocal
+  │  QoS 状态机 + in-flight 续传 + 背压 + 离线队列（Redis）
+  ▼
+设备 ←── MQTT PUBLISH ────（模拟设备收到后回 ACK，ACK 走上行链路回到 energy-command）
+```
+
+### 多实例下的重复防护（三层）
+
+1. **并发不重复**：同服务多实例共用同一 `groupId`，Kafka 消费组把分区互斥分配给组内成员——一个分区同一时刻只被一个实例消费（同组 = 分活干；不同组 = 广播，如 broker `mqtt-down-{nodeId}` 每节点一组是有意 fan-out）。
+2. **broker 不制造重复**：单条 MQTT 消息只入站一个 broker 节点 + 生产侧幂等（`enable.idempotence` + `acks=all`）。
+3. **重放不重复（at-least-once 兜底）**：崩溃/重连后的重发由各消费边界拦截——access/tsdb 用 `MessageDedup`（Redis SETNX，key=`iot:msg:dedup:{stage}:{device_id}:{message_id}`）；command/ems/alarm 用业务幂等（条件状态迁移、雪花唯一键、覆盖式 UPDATE）。
+
 ## 文档导航
 
 - 架构设计：`docs/design/Phase1-整体架构设计.md`
