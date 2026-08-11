@@ -56,6 +56,7 @@ const menus: MenuItem[] = [
       { path: '/ems/constraint', title: '安全约束' },
       { path: '/ems/plan', title: '充放电计划' },
       { path: '/ems/revenue', title: '收益核算' },
+      { path: '/ems/demand', title: '需量管理' },
     ],
   },
   {
