@@ -1483,12 +1483,14 @@ public class EmsRevenueService {
 			.le(EmsElectricityPrice::getValidFrom, end)
 			.ge(EmsElectricityPrice::getValidTo, start));
 		for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
-			EmsPlan plan = planByDate.get(d);
+			// 循环变量 d 非 effectively final（循环更新重赋值），lambda 捕获需本地副本（javac 约束）
+			final LocalDate day = d;
+			EmsPlan plan = planByDate.get(day);
 			Function<LocalTime, String> planAction = planActionLookup(plan);
-			Function<LocalTime, Double> price = buildPriceLookup(priceLookupFor(priceRows, plan, d));
+			Function<LocalTime, Double> price = buildPriceLookup(priceLookupFor(priceRows, plan, day));
 			List<RevenueDailyResult> dayResults = devices.parallelStream()
-				.map(dev -> RevenueCalculator.aggregateDay(d,
-						tsdbClient.history(dev.deviceId(), dev.productKey(), d), planAction, price))
+				.map(dev -> RevenueCalculator.aggregateDay(day,
+						tsdbClient.history(dev.deviceId(), dev.productKey(), day), planAction, price))
 				.filter(java.util.Objects::nonNull)
 				.toList();
 			double charge = 0;
