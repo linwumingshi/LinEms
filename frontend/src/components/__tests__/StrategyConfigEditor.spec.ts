@@ -91,6 +91,14 @@ describe('StrategyConfigEditor', () => {
     expect(wrapper.findAll('.schedule-row')).toHaveLength(3)
   })
 
+  it('时间策略：STANDBY 段不渲染 kW 单位（待机无功率）', () => {
+    const config = JSON.stringify({
+      schedule: [{ start: '08:00', end: '09:00', action: 'STANDBY' }],
+    })
+    const wrapper = mountEditor(config, 'TIME')
+    expect(wrapper.findAll('.schedule-row .unit')).toHaveLength(0)
+  })
+
   it('空 JSON 点格式化 → 静默忽略，不弹「不是合法 JSON」', async () => {
     document.body.innerHTML = ''
     const wrapper = mountEditor('', '')

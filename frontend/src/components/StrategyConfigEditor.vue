@@ -478,7 +478,7 @@ initFromConfig()
             <el-option label="待机" value="STANDBY" />
           </el-select>
           <el-input-number v-if="s.action !== 'STANDBY'" v-model="s.power" :min="0.1" :precision="1" :step="1" style="width: 120px" />
-          <span class="unit">kW</span>
+          <span v-if="s.action !== 'STANDBY'" class="unit">kW</span>
           <el-button link type="danger" size="small" @click="removeSlot(i)">删除</el-button>
         </div>
       </div>
