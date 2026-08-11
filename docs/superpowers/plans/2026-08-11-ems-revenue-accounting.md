@@ -379,7 +379,6 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -468,12 +467,11 @@ class RevenueCalculatorTest {
 
 	@Test
 	void revenueSignChargeSubtractsDischargeAdds() {
-		// 充 10kWh@0.3、放 10kWh@1.0 → 收益 = 10×1.0 − 10×0.3 = 7
-		Map<String, Double> prices = Map.of("02:00", 0.3, "10:00", 1.0);
-		Function<LocalTime, String> plan = t -> "02:00".equals(t.toString().substring(0, 5)) ? "CHARGE" : "DISCHARGE";
-		Function<LocalTime, Double> price = t -> prices.get(t.toString().substring(0, 5));
+		// 00:00/00:05 充 60kW（各 5min=5kWh）、00:10/00:15 放 60kW（各 5min）@0.3 充、@1.0 放 → 收益 = 10×1.0 − 10×0.3 = 7
+		Function<LocalTime, String> plan = t -> t.getMinute() >= 10 ? "DISCHARGE" : "CHARGE";
+		Function<LocalTime, Double> price = t -> t.getMinute() >= 10 ? 1.0 : 0.3;
 		RevenueDailyResult r = RevenueCalculator.aggregateDay(DAY,
-				List.of(row(120, 60, null), row(130, 60, null), row(600, 60, null), row(610, 60, null)),
+				List.of(row(0, 60, null), row(5, 60, null), row(10, 60, null), row(15, 60, null)),
 				plan, price);
 
 		assertEquals(10.0, r.chargeEnergy(), 1e-9);
@@ -925,6 +923,7 @@ package com.energyx.ems.service;
 
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
+import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStationMeta;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
@@ -1005,16 +1004,16 @@ class EmsRevenueServiceTest {
 		when(planMapper.selectList(any())).thenReturn(List.of());
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
-		// 00:00 放 60kW、00:10 放 60kW（无电价 → 收益 0），10:00 充 60kW×2（无电价）
+		// 00:00/00:10 放 60kW（各 10min=10kWh）、00:20/00:30 充 60kW（各 10min），无电价 → 收益 0
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List.of(
 				new TsdbClient.TelemetryRow(start, 60.0, 2),
 				new TsdbClient.TelemetryRow(start + 600_000L, 60.0, 2),
-				new TsdbClient.TelemetryRow(start + 600 * 60_000L, 60.0, 1),
-				new TsdbClient.TelemetryRow(start + 610 * 60_000L, 60.0, 1)));
+				new TsdbClient.TelemetryRow(start + 1_200_000L, 60.0, 1),
+				new TsdbClient.TelemetryRow(start + 1_800_000L, 60.0, 1)));
 
 		RevenueSummary s = svc.summary(10L, "DAY", DAY);
 
-		assertEquals(10.0, s.getDischargeEnergy(), 1e-9);
+		assertEquals(20.0, s.getDischargeEnergy(), 1e-9);
 		assertEquals(10.0, s.getChargeEnergy(), 1e-9);
 		assertEquals(0.0, s.getArbitrageRevenue(), 1e-9);
 	}
@@ -1024,11 +1023,22 @@ class EmsRevenueServiceTest {
 		PcsDevice pcs = new PcsDevice(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
 		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of(pcs));
 		when(planMapper.selectList(any())).thenReturn(List.of());
-		when(priceMapper.selectList(any())).thenReturn(List.of());
+		EmsElectricityPrice tier = new EmsElectricityPrice();
+		tier.setPriceId(1L);
+		tier.setTenantId(7L);
+		tier.setStationId(10L);
+		tier.setPriceType("PEAK");
+		tier.setStartTime(java.time.LocalTime.of(0, 0));
+		tier.setEndTime(java.time.LocalTime.of(0, 30));
+		tier.setPrice(new BigDecimal("1.0"));
+		tier.setValidFrom(DAY);
+		tier.setValidTo(DAY);
+		tier.setStatus(1);
+		when(priceMapper.selectList(any())).thenReturn(List.of(tier));
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List.of(
 				new TsdbClient.TelemetryRow(start, 60.0, 2),
-				new TsdbClient.TelemetryRow(start + 600_000L, 60.0, 2))); // 10 kWh 放电，无电价
+				new TsdbClient.TelemetryRow(start + 600_000L, 60.0, 2))); // 10 kWh 放电 @1.0 → 收益 10
 		EmsStationMeta meta = new EmsStationMeta();
 		meta.setStationId(10L);
 		meta.setInvestmentAmount(new BigDecimal("365000"));
@@ -1038,7 +1048,8 @@ class EmsRevenueServiceTest {
 		RevenueSummary s = svc.summary(10L, "DAY", DAY);
 
 		assertTrue(s.isHasInvestment());
-		assertNotNull(s.getPaybackYears());
+		assertEquals(10.0, s.getArbitrageRevenue(), 1e-9);
+		assertNotNull(s.getPaybackYears()); // 365000 ÷ (10×365) = 100 年
 	}
 
 	@Test
@@ -1053,7 +1064,8 @@ class EmsRevenueServiceTest {
 		when(planMapper.selectList(any())).thenReturn(List.of(plan));
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 		when(writer.read(anyLong(), any())).thenReturn(List.of(
-				new com.energyx.ems.util.PlanPoint(java.time.LocalTime.of(0, 0), "DISCHARGE", 60, 80)));
+				new com.energyx.ems.util.PlanPoint(java.time.LocalTime.of(0, 0), "DISCHARGE", 60, 80),
+				new com.energyx.ems.util.PlanPoint(java.time.LocalTime.of(0, 10), "DISCHARGE", 60, 80)));
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List.of(
 				new TsdbClient.TelemetryRow(start, 60.0, null),
