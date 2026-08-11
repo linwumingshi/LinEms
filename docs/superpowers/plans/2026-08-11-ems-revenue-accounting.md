@@ -165,6 +165,46 @@ class TsdbClientTest {
 	}
 
 	@Test
+	void history_page2FailureReturnsEmpty() {
+		// 第 1 页满 1000 行、total=2000，第 2 页业务失败 → 整体返回空列表（不返回部分数据）
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+		java.util.ArrayList<TsdbHistoryRecordDto> page1 = new java.util.ArrayList<>();
+		for (int i = 0; i < 1000; i++)
+			page1.add(row(start + i * 60_000L, 50.0, 2));
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), eq("asc"), eq(1), eq(1000)))
+			.thenReturn(Result.ok(view(2000, page1)));
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), eq("asc"), eq(2), eq(1000)))
+			.thenReturn(Result.fail(com.energyx.common.exception.ErrorCode.PARAM_INVALID, "boom"));
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
+	@Test
+	void history_nullResultReturnsEmpty() {
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt(), anyInt()))
+			.thenReturn(null);
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
+	@Test
+	void history_nullRecordsReturnsEmpty() {
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		TsdbHistoryViewDto v = new TsdbHistoryViewDto();
+		v.setTotal(0);
+		v.setRecords(null);
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt(), anyInt()))
+			.thenReturn(Result.ok(v));
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
+	@Test
 	void history_emptyRecordsReturnsEmpty() {
 		TsdbFeignClient feign = mock(TsdbFeignClient.class);
 		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt(), anyInt()))
@@ -305,11 +345,11 @@ public class TsdbClient {
 				if (result == null || !result.isSuccess()) {
 					log.warn("TSDB 查询失败 deviceId={} date={} code={} msg={}", deviceId, date,
 							result == null ? -1 : result.getCode(), result == null ? "null" : result.getMessage());
-					break;
+					return List.of(); // 任一步失败返回空列表（含中分页失败，空列表可检测、部分数据会静默少算收益）
 				}
 				TsdbHistoryViewDto view = result.getData();
 				if (view == null || view.getRecords() == null || view.getRecords().isEmpty()) {
-					break;
+					return List.of();
 				}
 				total = view.getTotal();
 				for (TsdbHistoryRecordDto rec : view.getRecords()) {
@@ -342,7 +382,7 @@ public class TsdbClient {
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -pl energy-ems test -Dtest='TsdbClientTest' -Dsurefire.failIfNoSpecifiedTests=false`
-Expected: PASS（6 条）
+Expected: PASS（9 条）
 
 - [ ] **Step 5: 格式 + 提交**
 
@@ -2069,3 +2109,5 @@ git commit -m "feat(ems-frontend): P1-1 收益核算页面（KPI 卡片 + 趋势
 - `EmsStationMetaService.getByStation/upsert` 在 Task 3 定义、Task 4 消费 ✅
 - 前端类型字段与后端 DTO（RevenueSummary/RevenueTrendPoint/RevenueDetailRow/EmsStationMeta）字段名逐一对齐 ✅
 - `RevenueCalculator.aggregateDay` 入参顺序（date, rows, planAction, price）Task 2 定义与 Task 4 调用一致 ✅
+
+**评审修复（Task 1 review 后）：** 中分页失败分支 `break` → `return List.of()`（Global Constraint「任一步失败返回空列表」原代码自相矛盾），并补 3 条回归测试（page2 失败/null Result/null records）。
