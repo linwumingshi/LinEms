@@ -77,3 +77,16 @@ services:
   #     - ./init:/docker-entrypoint-initdb.d   # 首次启动自动执行 sql/mysql/*.sql
   #   command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
   #   restart: unless-stopped
+
+  xxl-job-admin:
+    # xxl-job 调度中心：复用本机 MySQL（127.0.0.1:3306）的 xxl_job 库
+    image: xuxueli/xxl-job-admin:2.4.1
+    container_name: ems-xxl-job-admin
+    environment:
+      # PARAMS 中 root&QAQ 的 & 在 shell 变量展开后仅作普通字符，无需转义（word expansion 不再做语法解析）
+      PARAMS: '--spring.datasource.url=jdbc:mysql://host.docker.internal:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=root&QAQ'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 容器内解析宿主机 IP（Windows/macOS 可省，Linux 必需）
+    ports:
+      - "8099:8080"
+    restart: unless-stopped
