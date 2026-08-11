@@ -116,6 +116,11 @@ public final class Connector {
         return identity.clientId();
     }
 
+    /** 当前模拟的产品标识（REPL 按产品感知生成随机属性集）。 */
+    public String productKey() {
+        return identity.productKey();
+    }
+
     public String broker() {
         return host + ":" + port;
     }

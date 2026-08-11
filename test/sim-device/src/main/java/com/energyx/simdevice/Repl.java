@@ -22,9 +22,6 @@ import java.util.Random;
  */
 public final class Repl {
 
-    /** 固定属性字段集（与 test/stress ThroughputLoad 一致）。 */
-    private static final String[] FIELDS = {"soc", "voltage", "current", "power", "temp", "runMode"};
-
     private final Connector connector;
     private final PendingCommands pending;
     private final BufferedReader in;
@@ -149,9 +146,18 @@ public final class Repl {
     // 参数辅助
     // ------------------------------------------------------------------
 
-    /** 随机一组 6 字段属性（与 stress ThroughputLoad 分布一致）。 */
+    /** 按当前产品生成随机属性（METER → 仅 importPower；其余 → PCS 六字段）。 */
     private Map<String, Object> randomProps() {
+        return randomProps(connector.productKey(), random);
+    }
+
+    /** 产品感知随机属性集（包可见，单测目标）：METER 只报 importPower，其余按 PCS 六字段。 */
+    static Map<String, Object> randomProps(String productKey, Random random) {
         Map<String, Object> props = new LinkedHashMap<>();
+        if ("snd_ess_meter".equals(productKey)) {
+            props.put("importPower", 500 + random.nextInt(3000));
+            return props;
+        }
         props.put("soc", 40 + random.nextInt(60));
         props.put("voltage", 200 + random.nextInt(50));
         props.put("current", random.nextInt(40));
