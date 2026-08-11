@@ -41,6 +41,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -74,6 +75,8 @@ public class EmsPlanService {
 
 	private final PcsDeviceMapper pcsDeviceMapper;
 
+	private final ShadowClient shadowClient;
+
 	/** PCS 产品标识（下发目标从设备表按 productKey + device_type=PCS 解析，P0-2） */
 	@Value("${energyx.ems.product-key:snd_ess_pcs}")
 	private String productKey;
@@ -87,7 +90,8 @@ public class EmsPlanService {
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
 			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
-			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer, PcsDeviceMapper pcsDeviceMapper) {
+			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer, PcsDeviceMapper pcsDeviceMapper,
+			ShadowClient shadowClient) {
 		this.strategyMapper = strategyMapper;
 		this.priceMapper = priceMapper;
 		this.constraintMapper = constraintMapper;
@@ -99,6 +103,7 @@ public class EmsPlanService {
 		this.distributedLock = distributedLock;
 		this.kafkaProducer = kafkaProducer;
 		this.pcsDeviceMapper = pcsDeviceMapper;
+		this.shadowClient = shadowClient;
 	}
 
 	/** 生成计划：查策略 → 电价 → 安全约束 → PlanGenerator 出点序列 → 包络校验 → 写 TDengine → 计划头落库。 */
@@ -133,7 +138,8 @@ public class EmsPlanService {
 		if (priceDriven && prices.isEmpty()) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "该电站 " + planDate + " 未配置生效的分时电价（status=1 且在有效期内）");
 		}
-		List<PlanPoint> points = PlanGenerator.generate(toInput(strategy, constraint, prices));
+		double socInit = resolveInitialSoc(tenant, stationId, constraint);
+		List<PlanPoint> points = PlanGenerator.generate(toInput(strategy, constraint, prices, socInit));
 		if (points == null || points.isEmpty()) {
 			// 无点即无输入产出：plan_type/total_energy 必须有真实动作点推导，空计划不落库（P0-4 守输入输出契约）
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "所选策略类型不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略，无独立计划产出）");
@@ -530,12 +536,38 @@ public class EmsPlanService {
 		return BigDecimal.valueOf(energyKwh).setScale(3, RoundingMode.HALF_UP);
 	}
 
-	private PlanInput toInput(EmsStrategy strategy, EmsConstraint c, List<EmsElectricityPrice> prices) {
+	/**
+	 * 解析计划初始 SOC（P0-7）：优先取电站 PCS 设备影子实时上报值（clamp 进包络 [socMin, socMax]）， 无设备/无 soc/查询失败 →
+	 * 回退包络中点。影子为尽力增强，绝不因查询失败阻断生成。
+	 */
+	private double resolveInitialSoc(Long tenantId, Long stationId, EmsConstraint c) {
+		double fallback = c.getSocMax().doubleValue() / 2;
+		try {
+			List<PcsDevice> devices = pcsDeviceMapper.selectByStation(tenantId, stationId, productKey);
+			if (devices == null || devices.isEmpty()) {
+				return fallback;
+			}
+			for (PcsDevice dev : devices) {
+				Optional<Double> soc = shadowClient.reportedSoc(dev.deviceId());
+				if (soc != null && soc.isPresent()) {
+					double min = c.getSocMin().doubleValue();
+					double max = c.getSocMax().doubleValue();
+					return Math.max(min, Math.min(max, soc.get()));
+				}
+			}
+			return fallback;
+		}
+		catch (Exception e) {
+			log.warn("解析初始 SOC 失败，回退包络中点 stationId={}: {}", stationId, e.getMessage());
+			return fallback;
+		}
+	}
+
+	private PlanInput toInput(EmsStrategy strategy, EmsConstraint c, List<EmsElectricityPrice> prices, double socInit) {
 		return new PlanInput(strategy.getStrategyType(), strategy.getConfig(), prices.stream()
 			.map(p -> new PriceTier(p.getStartTime(), p.getEndTime(), p.getPriceType(), p.getPrice().doubleValue()))
-			.toList(), c.getSocMax().doubleValue() / 2, // 初始 SOC 取包络中点（后续可接影子实时值）
-				c.getSocMin().doubleValue(), c.getSocMax().doubleValue(), c.getChargePowerMax().doubleValue(),
-				c.getDischargePowerMax().doubleValue());
+			.toList(), socInit, c.getSocMin().doubleValue(), c.getSocMax().doubleValue(),
+				c.getChargePowerMax().doubleValue(), c.getDischargePowerMax().doubleValue());
 	}
 
 }

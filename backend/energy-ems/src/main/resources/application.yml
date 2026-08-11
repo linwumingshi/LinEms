@@ -57,8 +57,6 @@ energyx:
     username: root
     password: ${TDENGINE_PASSWORD:taosdata}
     plan-db: iot_ems
-  ems:
-    command-base-url: http://127.0.0.1:8114
 
 management:
   endpoints:
