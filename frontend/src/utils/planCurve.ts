@@ -20,7 +20,8 @@ export async function fetchActualCurve(
     endTime: end,
     order: 'asc',
     page: 1,
-    size: 2000,
+    // size 上限 1000（后端校验 1~1000）；计划日 5min 粒度 288 点，1000 足够覆盖
+    size: 1000,
   })
   const times: string[] = []
   const power: number[] = []

@@ -245,7 +245,8 @@ async function loadCurve(seq: number): Promise<void> {
       endTime: end,
       order: 'asc',
       page: 1,
-      size: 2000,
+      // size 上限 1000（后端校验 1~1000）；24h×5min=288 点，1000 足够覆盖
+      size: 1000,
     })
     if (seq !== stationSeq) return
     const times: string[] = []
