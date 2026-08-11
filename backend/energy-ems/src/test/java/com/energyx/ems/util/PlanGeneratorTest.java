@@ -144,7 +144,7 @@ class PlanGeneratorTest {
 		assertTrue(discharges.size() < 120); // 到达下限即停：远小于 10h 满窗 120 点
 		assertTrue(discharges.stream().allMatch(p -> p.powerKw() == 100.0));
 		// 尾点 STANDBY 携带最终 SOC：generate() 将近似演进一槽越界 clamp 回包络，恒为 10.0
-		assertEquals(10.0, points.get(points.size() - 1).socTarget(), 1e-9);
+		assertEquals(10.0, points.get(points.size() - 1).socTarget(), 0.0);
 	}
 
 }
