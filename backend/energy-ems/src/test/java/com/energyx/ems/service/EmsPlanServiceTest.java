@@ -62,6 +62,7 @@ class EmsPlanServiceTest {
 		s.setStationId(10L);
 		s.setTenantId(7L);
 		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],"
 				+ "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"22:00\",\"powerLimit\":80}],"
 				+ "\"socRange\":{\"min\":10,\"max\":90}}");
@@ -225,6 +226,7 @@ class EmsPlanServiceTest {
 		s.setStationId(10L);
 		s.setTenantId(7L);
 		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -258,6 +260,7 @@ class EmsPlanServiceTest {
 		s.setStationId(10L);
 		s.setTenantId(7L);
 		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -299,6 +302,7 @@ class EmsPlanServiceTest {
 		s.setStationId(10L);
 		s.setTenantId(7L);
 		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}],"
 				+ "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"20:00\",\"powerLimit\":80}]}"); // 手工模式
 		when(stratMapper.selectById(1L)).thenReturn(s);
@@ -325,6 +329,27 @@ class EmsPlanServiceTest {
 		assertTrue(sql.contains("status"));
 		assertTrue(sql.contains("valid_from"));
 		assertTrue(sql.contains("valid_to"));
+	}
+
+	@Test
+	void generate_rejectsDraftStrategy() throws Exception {
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(0); // 草稿 → 显式指定也拒绝
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, mock(EmsElectricityPriceMapper.class),
+				mock(EmsConstraintMapper.class), mock(EmsPlanMapper.class), mock(EmsExecutionRecordMapper.class),
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)));
+
+		BusinessException ex = assertThrows(BusinessException.class,
+				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
+		assertTrue(ex.getMessage().contains("未启用"));
 	}
 
 }

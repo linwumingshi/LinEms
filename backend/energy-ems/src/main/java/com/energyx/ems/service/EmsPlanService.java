@@ -375,7 +375,13 @@ public class EmsPlanService {
 
 	private EmsStrategy resolveStrategy(Long stationId, Long strategyId) {
 		if (strategyId != null) {
-			return strategyMapper.selectById(strategyId);
+			EmsStrategy s = strategyMapper.selectById(strategyId);
+			// 显式指定策略时同样强制 status=1：草稿/停用策略不能生成计划（P0-5d）
+			if (s != null && s.getStatus() != 1) {
+				throw new BusinessException(ErrorCode.CONFLICT,
+						"策略未启用（status=" + s.getStatus() + "），不能生成计划: strategyId=" + strategyId);
+			}
+			return s;
 		}
 		return strategyMapper.selectOne(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStationId, stationId)
 			.eq(EmsStrategy::getStatus, 1)
