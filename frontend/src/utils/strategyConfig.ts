@@ -102,7 +102,7 @@ export function validatePeakValleySaveable(config: string): string[] {
   if (obj?.priceDriven === true) return [] // 电价驱动：窗口可空，功率缺省回退包络
   const issues = validatePeakValleyConfig(config)
   if (issues.length) return issues
-  if ((obj.chargeWindows?.length ?? 0) === 0 && (obj.dischargeWindows?.length ?? 0) === 0) {
+  if ((obj?.chargeWindows?.length ?? 0) === 0 && (obj?.dischargeWindows?.length ?? 0) === 0) {
     return ['请至少配置一个充电或放电窗口']
   }
   return []
