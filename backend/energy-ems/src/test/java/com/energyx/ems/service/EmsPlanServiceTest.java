@@ -1,11 +1,16 @@
 package com.energyx.ems.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.ems.entity.EmsConstraint;
+import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.entity.EmsExecutionRecord;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStrategy;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.energyx.ems.mapper.EmsConstraintMapper;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
@@ -13,7 +18,9 @@ import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
 import com.energyx.ems.util.PlanPoint;
 import com.energyx.ems.util.TdenginePlanWriter;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -28,6 +35,16 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class EmsPlanServiceTest {
+
+	/**
+	 * LambdaQueryWrapper.getSqlSegment() 需实体表元信息（列名映射）；纯 Mockito 无 Spring 启动， 手动注册
+	 * EmsElectricityPrice 的 TableInfo，供电价过滤断言取 SQL 段。
+	 */
+	@BeforeAll
+	static void registerElectricityPriceTableInfo() {
+		TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+				EmsElectricityPrice.class);
+	}
 
 	@Test
 	void generate_createsPlanAndWritesPoints() throws Exception {
@@ -193,6 +210,121 @@ class EmsPlanServiceTest {
 		svc.refreshPlanStatus(1L);
 
 		assertEquals(4, plan.getStatus()); // 失败
+	}
+
+	@Test
+	void generate_priceDrivenWithoutEffectivePricesThrows() throws Exception {
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsElectricityPriceMapper priceMapper = mock(EmsElectricityPriceMapper.class);
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("PEAK_VALLEY");
+		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+		when(priceMapper.selectList(any())).thenReturn(List.of()); // 无生效电价
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)));
+
+		BusinessException ex = assertThrows(BusinessException.class,
+				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
+		assertTrue(ex.getMessage().contains("未配置生效的分时电价"));
+	}
+
+	@Test
+	void generate_priceDrivenWritesPriceSnapshotParam() throws Exception {
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsElectricityPriceMapper priceMapper = mock(EmsElectricityPriceMapper.class);
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("PEAK_VALLEY");
+		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+
+		EmsElectricityPrice p = new EmsElectricityPrice();
+		p.setPriceType("VALLEY");
+		p.setStartTime(LocalTime.of(0, 0));
+		p.setEndTime(LocalTime.of(8, 0));
+		p.setPrice(new BigDecimal("0.3"));
+		when(priceMapper.selectList(any())).thenReturn(List.of(p));
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)));
+
+		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
+
+		assertNotNull(plan.getPlanParam());
+		assertTrue(plan.getPlanParam().contains("priceSnapshot"));
+		assertTrue(plan.getPlanParam().contains("VALLEY"));
+	}
+
+	@Test
+	void generate_filtersPricesByStatusAndValidity() throws Exception {
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsElectricityPriceMapper priceMapper = mock(EmsElectricityPriceMapper.class);
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("PEAK_VALLEY");
+		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}],"
+				+ "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"20:00\",\"powerLimit\":80}]}"); // 手工模式
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+		when(priceMapper.selectList(any())).thenReturn(List.of()); // 手工模式：电价空不报错
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)));
+
+		svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<LambdaQueryWrapper<EmsElectricityPrice>> captor = ArgumentCaptor
+			.forClass(LambdaQueryWrapper.class);
+		verify(priceMapper).selectList(captor.capture());
+		String sql = captor.getValue().getSqlSegment();
+		assertTrue(sql.contains("status"));
+		assertTrue(sql.contains("valid_from"));
+		assertTrue(sql.contains("valid_to"));
 	}
 
 }

@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.energyx.common.redis.DistributedLock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.ems.entity.EmsConstraint;
@@ -112,7 +114,15 @@ public class EmsPlanService {
 		}
 		List<EmsElectricityPrice> prices = priceMapper
 			.selectList(new LambdaQueryWrapper<EmsElectricityPrice>().eq(EmsElectricityPrice::getTenantId, tenant)
-				.eq(EmsElectricityPrice::getStationId, stationId));
+				.eq(EmsElectricityPrice::getStationId, stationId)
+				.eq(EmsElectricityPrice::getStatus, 1)
+				.le(EmsElectricityPrice::getValidFrom, planDate)
+				.ge(EmsElectricityPrice::getValidTo, planDate)
+				.orderByAsc(EmsElectricityPrice::getStartTime));
+		boolean priceDriven = isPriceDriven(strategy.getConfig());
+		if (priceDriven && prices.isEmpty()) {
+			throw new BusinessException(ErrorCode.NOT_FOUND, "该电站 " + planDate + " 未配置生效的分时电价（status=1 且在有效期内）");
+		}
 		List<PlanPoint> points = PlanGenerator.generate(toInput(strategy, constraint, prices));
 		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint.getSocMin().doubleValue(),
 				constraint.getSocMax().doubleValue(), constraint.getChargePowerMax().doubleValue(),
@@ -134,7 +144,7 @@ public class EmsPlanService {
 		plan.setPlanDate(planDate);
 		plan.setPlanType(3); // 混合
 		plan.setStatus(0); // 待执行
-		plan.setPlanParam(strategy.getConfig());
+		plan.setPlanParam(priceDriven ? buildPriceDrivenParam(strategy.getConfig(), prices) : strategy.getConfig());
 		planMapper.insert(plan);
 		log.info("生成计划 planId={} stationId={} 点数={}", plan.getPlanId(), stationId, points.size());
 		return plan;
@@ -371,6 +381,37 @@ public class EmsPlanService {
 			.eq(EmsStrategy::getStatus, 1)
 			.orderByDesc(EmsStrategy::getPriority)
 			.last("LIMIT 1"));
+	}
+
+	private boolean isPriceDriven(String config) {
+		try {
+			return JSON.readTree(config).path("priceDriven").asBoolean(false);
+		}
+		catch (Exception e) {
+			return false;
+		}
+	}
+
+	/**
+	 * priceDriven 计划：plan_param = { ...config,
+	 * priceSnapshot:[{priceType,start,end,price}] }；序列化失败回退原 config。
+	 */
+	private String buildPriceDrivenParam(String config, List<EmsElectricityPrice> prices) {
+		try {
+			ObjectNode node = (ObjectNode) JSON.readTree(config);
+			ArrayNode snapshot = node.putArray("priceSnapshot");
+			for (EmsElectricityPrice p : prices) {
+				ObjectNode tier = snapshot.addObject();
+				tier.put("priceType", p.getPriceType());
+				tier.put("start", p.getStartTime().toString());
+				tier.put("end", p.getEndTime().toString());
+				tier.put("price", p.getPrice().doubleValue());
+			}
+			return JSON.writeValueAsString(node);
+		}
+		catch (Exception e) {
+			return config;
+		}
 	}
 
 	private PlanInput toInput(EmsStrategy strategy, EmsConstraint c, List<EmsElectricityPrice> prices) {
