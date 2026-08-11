@@ -43,6 +43,7 @@ async function load(): Promise<void> {
     records.value = []
     savings.value = null
     config.value = null
+    refreshChart()
     return
   }
   loading.value = true
