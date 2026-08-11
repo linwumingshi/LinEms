@@ -52,26 +52,29 @@ function checkWindow(w: unknown, i: number): string | null {
   return null
 }
 
-/** PEAK_VALLEY 结构化校验：窗口数组、字段格式、start<end、powerLimit>0。空窗口列表允许——「至少一个充电或放电窗口」由 validatePeakValleySaveable 在保存时强制。 */
+/** PEAK_VALLEY 结构化校验：窗口数组、字段格式、start<end、powerLimit>0。空窗口列表允许——「至少一个充电或放电窗口」由 validatePeakValleySaveable 在保存时强制。电价驱动（priceDriven=true）窗口可空：缺省数组视作空数组（generator 不读窗口，功率回退包络）。 */
 export function parsePeakValleyConfig(value: unknown): ParsePeakValleyResult {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return { ok: false, error: '缺少 chargeWindows 或 dischargeWindows 数组' }
   }
   const obj = value as Record<string, unknown>
+  const priceDriven = obj.priceDriven === true
   if (!Array.isArray(obj.chargeWindows) || !Array.isArray(obj.dischargeWindows)) {
-    return { ok: false, error: '缺少 chargeWindows 或 dischargeWindows 数组' }
+    if (!priceDriven) return { ok: false, error: '缺少 chargeWindows 或 dischargeWindows 数组' }
   }
+  const chargeList = Array.isArray(obj.chargeWindows) ? obj.chargeWindows : []
   const chargeWindows: TimeWindow[] = []
-  for (let i = 0; i < obj.chargeWindows.length; i++) {
-    const err = checkWindow(obj.chargeWindows[i], i + 1)
+  for (let i = 0; i < chargeList.length; i++) {
+    const err = checkWindow(chargeList[i], i + 1)
     if (err) return { ok: false, error: err }
-    chargeWindows.push(obj.chargeWindows[i] as TimeWindow)
+    chargeWindows.push(chargeList[i] as TimeWindow)
   }
+  const dischargeList = Array.isArray(obj.dischargeWindows) ? obj.dischargeWindows : []
   const dischargeWindows: TimeWindow[] = []
-  for (let i = 0; i < obj.dischargeWindows.length; i++) {
-    const err = checkWindow(obj.dischargeWindows[i], i + 1)
+  for (let i = 0; i < dischargeList.length; i++) {
+    const err = checkWindow(dischargeList[i], i + 1)
     if (err) return { ok: false, error: err }
-    dischargeWindows.push(obj.dischargeWindows[i] as TimeWindow)
+    dischargeWindows.push(dischargeList[i] as TimeWindow)
   }
   const rest: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {

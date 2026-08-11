@@ -35,6 +35,13 @@ const jsonError = ref('')
 /** 非空不可解析 → 强制 JSON 模式的 info 提示开关 */
 const forceJson = ref(false)
 
+/** 电价驱动开关与功率（PEAK_VALLEY 结构化模式）；三键从 rest 读写，序列化经 rest 保留 */
+const priceDriven = ref(false)
+const chargePower = ref<number | undefined>(undefined)
+const dischargePower = ref<number | undefined>(undefined)
+/** initFromConfig 批量回填三键时临时禁用 watch，防多余 emit */
+let initializing = false
+
 const isPeakValley = computed(() => props.strategyType === 'PEAK_VALLEY')
 
 /** 包络软警告（不阻断）：窗口功率超站点安全约束上限 */
@@ -83,6 +90,13 @@ function initFromConfig() {
     mode.value = 'form'
     form.value = { chargeWindows: [], dischargeWindows: [] }
     rest.value = {}
+    // 空配置重置三键：组件跨弹窗复用（el-dialog 未 destroy-on-close），
+    // 前一个 priceDriven 配置残留会令开关虚亮且 rest 无 priceDriven → 保存丢意图
+    initializing = true
+    priceDriven.value = false
+    chargePower.value = undefined
+    dischargePower.value = undefined
+    initializing = false
     issues.value = []
     forceJson.value = false
     return
@@ -104,6 +118,11 @@ function initFromConfig() {
   mode.value = 'form'
   form.value = structured.config
   rest.value = structured.rest
+  initializing = true
+  priceDriven.value = structured.rest.priceDriven === true
+  chargePower.value = typeof structured.rest.chargePower === 'number' ? (structured.rest.chargePower as number) : undefined
+  dischargePower.value = typeof structured.rest.dischargePower === 'number' ? (structured.rest.dischargePower as number) : undefined
+  initializing = false
   issues.value = []
   forceJson.value = false
 }
@@ -134,6 +153,11 @@ function switchMode(m: Mode) {
     }
     form.value = structured.config
     rest.value = structured.rest
+    initializing = true
+    priceDriven.value = structured.rest.priceDriven === true
+    chargePower.value = typeof structured.rest.chargePower === 'number' ? (structured.rest.chargePower as number) : undefined
+    dischargePower.value = typeof structured.rest.dischargePower === 'number' ? (structured.rest.dischargePower as number) : undefined
+    initializing = false
     forceJson.value = false
     mode.value = 'form'
   }
@@ -193,6 +217,17 @@ watch(
   { deep: true },
 )
 
+watch([priceDriven, chargePower, dischargePower], () => {
+  if (initializing || !isPeakValley.value) return
+  const next: Record<string, unknown> = { ...rest.value, priceDriven: priceDriven.value }
+  if (chargePower.value !== undefined) next.chargePower = chargePower.value
+  else delete next.chargePower
+  if (dischargePower.value !== undefined) next.dischargePower = dischargePower.value
+  else delete next.dischargePower
+  rest.value = next
+  emitConfig()
+})
+
 initFromConfig()
 </script>
 
@@ -207,35 +242,57 @@ initFromConfig()
 
     <!-- 结构化模式（仅 PEAK_VALLEY 可达） -->
     <template v-if="isPeakValley && mode === 'form'">
-      <div v-for="group in windowGroups" :key="group.key" class="window-group">
-        <div class="group-head">
-          <span class="group-label">{{ group.label }}</span>
-          <el-button link type="primary" size="small" @click="addWindow(group.key)">{{ group.addLabel }}</el-button>
-        </div>
-        <div v-if="form[group.key].length === 0" class="group-empty">暂无窗口</div>
-        <div v-for="(w, i) in form[group.key]" :key="i" class="window-row">
-          <el-time-picker v-model="w.start" format="HH:mm" value-format="HH:mm" placeholder="开始" :clearable="false" style="width: 100px" />
-          <span class="sep">至</span>
-          <el-time-picker v-model="w.end" format="HH:mm" value-format="HH:mm" placeholder="结束" :clearable="false" style="width: 100px" />
-          <el-input-number v-model="w.powerLimit" :min="0.1" :precision="1" :step="1" style="width: 120px" />
-          <span class="unit">kW</span>
-          <el-button link type="danger" size="small" @click="removeWindow(group.key, i)">删除</el-button>
-        </div>
+      <div class="price-drive-bar">
+        <span class="group-label">电价驱动</span>
+        <el-switch v-model="priceDriven" size="small" />
+        <span class="drive-hint">开启后按分时电价自动推导谷充峰放窗口</span>
       </div>
-      <el-alert
-        v-if="issues.length"
-        type="error"
-        :closable="false"
-        class="block-alert"
-        :title="issues.join('；')"
-      />
-      <el-alert
-        v-if="warnings.length"
-        type="warning"
-        :closable="false"
-        class="warn-alert"
-        :title="warnings.join('；')"
-      />
+
+      <div v-if="priceDriven" class="power-fields">
+        <div class="power-row">
+          <span class="group-label">充电功率</span>
+          <el-input-number v-model="chargePower" :min="0.1" :precision="1" :step="1" :placeholder="'留空回退包络上限'" style="width: 140px" />
+          <span class="unit">kW</span>
+        </div>
+        <div class="power-row">
+          <span class="group-label">放电功率</span>
+          <el-input-number v-model="dischargePower" :min="0.1" :precision="1" :step="1" :placeholder="'留空回退包络上限'" style="width: 140px" />
+          <span class="unit">kW</span>
+        </div>
+        <el-alert v-if="warnings.length" type="warning" :closable="false" class="warn-alert" :title="warnings.join('；')" />
+      </div>
+
+      <template v-else>
+        <div v-for="group in windowGroups" :key="group.key" class="window-group">
+          <div class="group-head">
+            <span class="group-label">{{ group.label }}</span>
+            <el-button link type="primary" size="small" @click="addWindow(group.key)">{{ group.addLabel }}</el-button>
+          </div>
+          <div v-if="form[group.key].length === 0" class="group-empty">暂无窗口</div>
+          <div v-for="(w, i) in form[group.key]" :key="i" class="window-row">
+            <el-time-picker v-model="w.start" format="HH:mm" value-format="HH:mm" placeholder="开始" :clearable="false" style="width: 100px" />
+            <span class="sep">至</span>
+            <el-time-picker v-model="w.end" format="HH:mm" value-format="HH:mm" placeholder="结束" :clearable="false" style="width: 100px" />
+            <el-input-number v-model="w.powerLimit" :min="0.1" :precision="1" :step="1" style="width: 120px" />
+            <span class="unit">kW</span>
+            <el-button link type="danger" size="small" @click="removeWindow(group.key, i)">删除</el-button>
+          </div>
+        </div>
+        <el-alert
+          v-if="issues.length"
+          type="error"
+          :closable="false"
+          class="block-alert"
+          :title="issues.join('；')"
+        />
+        <el-alert
+          v-if="warnings.length"
+          type="warning"
+          :closable="false"
+          class="warn-alert"
+          :title="warnings.join('；')"
+        />
+      </template>
     </template>
 
     <!-- JSON 模式（非 PEAK_VALLEY 恒为 JSON；PEAK_VALLEY 切出/不可解析时） -->
@@ -308,6 +365,25 @@ initFromConfig()
 }
 .warn-alert {
   margin-top: 8px;
+}
+.price-drive-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.drive-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.power-fields {
+  margin-bottom: 8px;
+}
+.power-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 .json-toolbar {
   display: flex;

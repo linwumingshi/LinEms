@@ -44,6 +44,16 @@ describe('strategyConfig', () => {
     expect(parsePeakValleyConfig({ chargeWindows: {}, dischargeWindows: [] }).ok).toBe(false)
   })
 
+  it('parsePeakValleyConfig：priceDriven=true 缺窗口数组 → 视作空数组', () => {
+    const r = parsePeakValleyConfig({ priceDriven: true, chargePower: 80 })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.config.chargeWindows).toHaveLength(0)
+      expect(r.config.dischargeWindows).toHaveLength(0)
+      expect(r.rest).toEqual({ priceDriven: true, chargePower: 80 })
+    }
+  })
+
   it('parsePeakValleyConfig：坏时间格式', () => {
     expect(parsePeakValleyConfig({ chargeWindows: [{ start: '25:00', end: '06:00', powerLimit: 1 }], dischargeWindows: [] }).ok).toBe(false)
     expect(parsePeakValleyConfig({ chargeWindows: [{ start: '02:00', end: '06:60', powerLimit: 1 }], dischargeWindows: [] }).ok).toBe(false)

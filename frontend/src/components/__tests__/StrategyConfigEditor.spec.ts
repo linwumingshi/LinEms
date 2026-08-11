@@ -38,4 +38,21 @@ describe('StrategyConfigEditor', () => {
     const wrapper = mountEditor(config, 'PEAK_VALLEY')
     expect(wrapper.findAll('.window-row')).toHaveLength(1)
   })
+
+  it('峰谷 + priceDriven config → 渲染电价驱动开关与功率输入，无窗口表', () => {
+    const config = JSON.stringify({ priceDriven: true, chargePower: 80 })
+    const wrapper = mountEditor(config, 'PEAK_VALLEY')
+    expect(wrapper.find('.price-drive-bar').exists()).toBe(true)
+    expect(wrapper.findAll('.window-row')).toHaveLength(0)
+  })
+
+  it('峰谷 + 手工 config → 渲染窗口表，无功率输入', () => {
+    const config = JSON.stringify({
+      chargeWindows: [{ start: '02:00', end: '06:00', powerLimit: 100 }],
+      dischargeWindows: [],
+    })
+    const wrapper = mountEditor(config, 'PEAK_VALLEY')
+    expect(wrapper.findAll('.window-row')).toHaveLength(1)
+    expect(wrapper.find('.power-fields').exists()).toBe(false)
+  })
 })
