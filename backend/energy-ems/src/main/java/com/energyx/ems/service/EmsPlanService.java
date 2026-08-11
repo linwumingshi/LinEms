@@ -24,7 +24,7 @@ import com.energyx.ems.util.PriceTier;
 import com.energyx.ems.util.TdenginePlanWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
+import com.xxl.job.core.handler.annotation.XxlJob;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 计划生成编排：生成 → 安全包络校验 → TDengine 点序列 → 计划头落库 → 下发（复用 energy-command）。 租户取自策略行（@Scheduled
+ * 计划生成编排：生成 → 安全包络校验 → TDengine 点序列 → 计划头落库 → 下发（复用 energy-command）。 租户取自策略行（xxl-job
  * 线程无请求租户上下文，见 [[multi-tenant-isolation]]）； 约束/电价查询显式按该租户过滤，避免定时线程跨租户读到同 stationId 数据。
  */
 @Slf4j
@@ -140,8 +140,11 @@ public class EmsPlanService {
 		return plan;
 	}
 
-	/** 每日 00:05 为启用策略的电站生成次日计划（定时线程无租户上下文，遍历全量启用策略）。R-01 分布式锁：多实例仅一个实例执行，防重复生成/下发。 */
-	@Scheduled(cron = "0 5 0 * * *")
+	/**
+	 * 每日 00:05 生成次日计划（xxl-job 触发，admin cron=0 5 0 * * *）。定时线程无租户上下文，遍历全量启用策略。R-01
+	 * 分布式锁：多实例仅一个实例执行，防重复生成/下发。
+	 */
+	@XxlJob("emsDailyPlanGenerate")
 	public void generateDailyPlans() {
 		// 锁 TTL 600s：覆盖全量策略生成+校验+TDengine 写的最坏耗时（100 电站级）
 		distributedLock.runIfAcquired("scheduled:ems-daily-plan", 600, this::doGenerateDailyPlans);

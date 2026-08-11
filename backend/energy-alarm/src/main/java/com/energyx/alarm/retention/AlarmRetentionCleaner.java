@@ -4,7 +4,7 @@ import com.energyx.common.redis.DistributedLock;
 import com.energyx.common.retention.DataRetention;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
+import com.xxl.job.core.handler.annotation.XxlJob;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -31,8 +31,8 @@ public class AlarmRetentionCleaner {
 		this.distributedLock = distributedLock;
 	}
 
-	/** 每日 03:30 清理 180 天前的 iot_alarm_record 数据 */
-	@Scheduled(cron = "0 30 3 * * *")
+	/** 每日 03:30 清理 180 天前的 iot_alarm_record 数据（xxl-job 触发，admin cron=0 30 3 * * *） */
+	@XxlJob("alarmRetentionClean")
 	public void scheduledClean() {
 		distributedLock.runIfAcquired(LOCK_KEY, 600, () -> {
 			int deleted = DataRetention.cleanByTime(jdbc, "iot_alarm_record", "triggered_time",
