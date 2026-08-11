@@ -108,6 +108,66 @@ public final class TdengineSqlBuilder {
 				+ cols + ") VALUES (" + vals + ")";
 	}
 
+	/**
+	 * 构造属性超级表建表语句（首条消息落库前自动建表，列按消息携带属性动态推导）。 列定义：公共列(ts/msg_id/data_type) +
+	 * 消息属性列(FLOAT)；TAG 四件套。后续消息带新列时 需 ALTER（当前按产品建表后新列不自动追加，列演进见建表时机注：建表在首条消息时，后续新
+	 * 属性列由物模型变更走 ALTER 流程——本方法只保证「超级表存在」这一前置）。
+	 */
+	public static String buildCreatePropertyStable(String productKey, String db, java.util.Set<String> identifiers) {
+		require(isSafeKey(productKey), "productKey 非法: " + productKey);
+		StringBuilder sb = new StringBuilder("CREATE STABLE IF NOT EXISTS ").append(db)
+			.append(".st_prop_")
+			.append(productKey)
+			.append(" (ts TIMESTAMP, msg_id NCHAR(64), data_type NCHAR(16)");
+		for (String id : identifiers) {
+			if (isSafeColumn(id)) {
+				sb.append(", `").append(id).append("` FLOAT");
+			}
+		}
+		sb.append(") TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), product_key NCHAR(64))");
+		return sb.toString();
+	}
+
+	/**
+	 * 从批量 INSERT 语句解析需自动建表的属性超级表：{stable → 本批 INSERT 携带的属性列集}。 正则匹配
+	 * {@code USING db.st_prop_xxx ... (ts, msg_id, data_type, col1, col2) VALUES} 的
+	 * stable 名与列名段，属性列 = 列名段剔除公共列（ts/msg_id/data_type）。建表依赖本方法保证
+	 * 「超级表存在」前置，列仅来自首条消息集——后续新列需 ALTER（与 buildCreatePropertyStable 注释一致）。
+	 */
+	public static java.util.Map<String, java.util.Set<String>> extractPropertyStables(String batchSql, String db) {
+		java.util.Map<String, java.util.Set<String>> result = new java.util.LinkedHashMap<>();
+		if (batchSql == null) {
+			return result;
+		}
+		java.util.regex.Matcher m = STABLE_INSERT_PATTERN.matcher(batchSql);
+		while (m.find()) {
+			String stable = m.group(1);
+			String colsRaw = m.group(2);
+			java.util.Set<String> cols = new java.util.LinkedHashSet<>();
+			for (String c : colsRaw.split(",")) {
+				String id = c.trim().replace("`", "");
+				if (!id.isEmpty() && !COMMON_COLUMN_SET.contains(id)) {
+					cols.add(id);
+				}
+			}
+			result.merge(stable, cols, (a, b) -> {
+				a.addAll(b);
+				return a;
+			});
+		}
+		return result;
+	}
+
+	/**
+	 * INSERT...USING db.st_prop_xxx TAGS (...) (列名段) VALUES 匹配：组1=stable 名（含 st_prop_
+	 * 前缀），组2=列名段
+	 */
+	private static final java.util.regex.Pattern STABLE_INSERT_PATTERN = java.util.regex.Pattern
+		.compile("USING\\s+\\S+?\\.(st_prop_[A-Za-z0-9_]+)\\s+TAGS\\s*\\([^)]*\\)\\s*\\(([^)]*)\\)");
+
+	/** 公共列集合（建表/白名单排除） */
+	private static final java.util.Set<String> COMMON_COLUMN_SET = java.util.Set.of("ts", "msg_id", "data_type");
+
 	/** 构造事件落库语句（st_event，payload JSON 列） */
 	public static String buildEventInsert(ThingEventMessage m, String db, ObjectMapper om) {
 		require(m.getDeviceId() != null, "deviceId 为空，无法落库");

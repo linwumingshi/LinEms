@@ -1,6 +1,7 @@
 package com.energyx.tsdb.writer;
 
 import com.energyx.tsdb.config.TsdbProperties;
+import com.energyx.tsdb.sql.TdengineSqlBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -45,6 +46,11 @@ public class TdengineWriter implements TsdbWriter {
 				return;
 			}
 			catch (SQLException e) {
+				// 超级表不存在（REST 9731 / JDBC 0x2603）：按本批 INSERT 携带的属性自动建表后重试
+				if (isTableMissing(e) && attempt == 0 && autoCreateStables(sql)) {
+					log.info("[Tsdb] 已自动建属性超级表，重试写入");
+					continue;
+				}
 				attempt++;
 				closeQuietly();
 				if (attempt >= 2) {
@@ -55,6 +61,32 @@ public class TdengineWriter implements TsdbWriter {
 				log.warn("[Tsdb] TDengine 写入异常，重建连接重试 errorCode={} sqlState={}", e.getErrorCode(), e.getSQLState(), e);
 			}
 		}
+	}
+
+	/** 从批内 INSERT 解析属性超级表并逐个 CREATE STABLE IF NOT EXISTS；返回是否建了表 */
+	private boolean autoCreateStables(String sql) throws Exception {
+		java.util.Map<String, java.util.Set<String>> stables = TdengineSqlBuilder.extractPropertyStables(sql,
+				props.getRawDb());
+		if (stables.isEmpty()) {
+			return false;
+		}
+		Connection conn = getConnection();
+		try (Statement st = conn.createStatement()) {
+			for (java.util.Map.Entry<String, java.util.Set<String>> e : stables.entrySet()) {
+				String ddl = TdengineSqlBuilder.buildCreatePropertyStable(e.getKey().substring("st_prop_".length()),
+						props.getRawDb(), e.getValue());
+				st.execute(ddl);
+				log.info("[Tsdb] 自动建属性超级表 stable={} columns={}", e.getKey(), e.getValue());
+			}
+		}
+		return true;
+	}
+
+	/** 判定 TDengine「表不存在」错误：REST 错误码 9731 或 JDBC 0x2603 / 消息含 Table does not exist */
+	private static boolean isTableMissing(SQLException e) {
+		String msg = e.getMessage();
+		return e.getErrorCode() == 9731 || e.getErrorCode() == 0x2603
+				|| (msg != null && msg.contains("Table does not exist"));
 	}
 
 	private Connection getConnection() throws SQLException {

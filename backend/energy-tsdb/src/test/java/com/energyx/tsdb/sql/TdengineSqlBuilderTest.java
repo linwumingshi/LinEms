@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -139,6 +140,42 @@ class TdengineSqlBuilderTest {
 		assertEquals("'it\\'s'", TdengineSqlBuilder.strLiteral("it's"));
 		assertEquals("'a\\\\b'", TdengineSqlBuilder.strLiteral("a\\b"));
 		assertEquals("NULL", TdengineSqlBuilder.strLiteral(null));
+	}
+
+	@Test
+	void buildCreatePropertyStable_shouldEmitPublicColumnsPlusPropsAndTags() {
+		String ddl = TdengineSqlBuilder.buildCreatePropertyStable("snd_ess_meter", "iot_tsdb_raw",
+				java.util.Set.of("importPower", "temp"));
+
+		assertTrue(ddl.startsWith("CREATE STABLE IF NOT EXISTS iot_tsdb_raw.st_prop_snd_ess_meter ("), ddl);
+		assertTrue(ddl.contains("ts TIMESTAMP, msg_id NCHAR(64), data_type NCHAR(16)"), ddl);
+		assertTrue(ddl.contains("`importPower` FLOAT"), ddl);
+		assertTrue(ddl.contains("`temp` FLOAT"), ddl);
+		assertTrue(ddl.endsWith("TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), "
+				+ "product_key NCHAR(64))"), ddl);
+	}
+
+	@Test
+	void extractPropertyStables_shouldParseStableAndColumnsFromBatch() {
+		String insert = "INSERT INTO iot_tsdb_raw.dev_1 USING iot_tsdb_raw.st_prop_testMeter TAGS ('1','','','testMeter') "
+				+ "(ts, msg_id, data_type, `importPower`, `temp`) VALUES (1722859200000, 'm1', 'report', 123.0, 25.5)\n"
+				+ "INSERT INTO iot_tsdb_raw.dev_2 USING iot_tsdb_raw.st_prop_testMeter TAGS ('2','','','testMeter') "
+				+ "(ts, msg_id, data_type, `importPower`) VALUES (1722859200001, 'm2', 'report', 88.0)";
+
+		java.util.Map<String, java.util.Set<String>> stables = TdengineSqlBuilder.extractPropertyStables(insert,
+				"iot_tsdb_raw");
+
+		assertEquals(1, stables.size());
+		java.util.Set<String> cols = stables.get("st_prop_testMeter");
+		assertNotNull(cols);
+		// 公共列被剔除，两行 INSERT 的属性列并集
+		assertEquals(java.util.Set.of("importPower", "temp"), cols);
+	}
+
+	@Test
+	void extractPropertyStables_emptyOrNoInsert_shouldReturnEmpty() {
+		assertTrue(TdengineSqlBuilder.extractPropertyStables(null, "iot_tsdb_raw").isEmpty());
+		assertTrue(TdengineSqlBuilder.extractPropertyStables("SELECT 1", "iot_tsdb_raw").isEmpty());
 	}
 
 }

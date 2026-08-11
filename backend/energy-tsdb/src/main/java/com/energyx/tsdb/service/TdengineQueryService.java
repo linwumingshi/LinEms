@@ -160,6 +160,14 @@ public class TdengineQueryService {
 				break;
 			}
 			catch (SQLException e) {
+				// 表不存在（TDengine REST 9731 / JDBC 0x2603）：该产品尚无任何数据落库，
+				// 视为「无属性列」而非查询错误——上层据此返回空结果而非 500
+				if (isTableMissing(e)) {
+					log.info("[Tsdb] 超级表不存在视为空数据 productKey={}", productKey);
+					columnCache.put(productKey, whitelist);
+					columnCacheLoadedAt.put(productKey, now);
+					return whitelist;
+				}
 				attempt++;
 				closeQuietly();
 				if (attempt >= 2) {
@@ -171,6 +179,13 @@ public class TdengineQueryService {
 		columnCache.put(productKey, whitelist);
 		columnCacheLoadedAt.put(productKey, now);
 		return whitelist;
+	}
+
+	/** 判定 TDengine「表不存在」错误：REST 错误码 9731 或 JDBC 0x2603 / 消息含 Table does not exist */
+	private boolean isTableMissing(SQLException e) {
+		String msg = e.getMessage();
+		return e.getErrorCode() == 9731 || e.getErrorCode() == 0x2603
+				|| (msg != null && msg.contains("Table does not exist"));
 	}
 
 	private Connection getConnection() throws SQLException {
