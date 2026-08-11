@@ -530,6 +530,17 @@ class RevenueCalculatorTest {
 		assertEquals("RUN_MODE", r.slots().get(0).source());
 		assertEquals("PLAN", r.slots().get(1).source());
 	}
+
+	@Test
+	void standbyRunModeFallsBackToPlanAndSourcePlan() {
+		// runMode==0（待机）非 1/2 → 方向回退计划 DISCHARGE；source 必须标 PLAN（非 RUN_MODE）
+		Function<LocalTime, String> plan = t -> "DISCHARGE";
+		RevenueDailyResult r = RevenueCalculator.aggregateDay(DAY,
+				List.of(row(0, 60, 0), row(10, 60, 0)), plan, NO_PRICE);
+
+		assertEquals(10.0, r.dischargeEnergy(), 1e-9);
+		assertEquals("PLAN", r.slots().get(0).source());
+	}
 }
 ```
 
@@ -629,8 +640,9 @@ public final class RevenueCalculator {
 			chargeEnergy += "CHARGE".equals(action) ? energy : 0;
 			dischargeEnergy += "DISCHARGE".equals(action) ? energy : 0;
 			revenue += slotRevenue;
-			slots.add(new RevenueSlot(time, action, energy, unitPrice, slotRevenue,
-					row.runMode() != null ? "RUN_MODE" : "PLAN"));
+			// 方向来源：方向确实由 runMode 决定（1充/2放）才标 RUN_MODE；runMode==0 待机回退计划 → PLAN
+			String source = row.runMode() != null && (row.runMode() == 1 || row.runMode() == 2) ? "RUN_MODE" : "PLAN";
+			slots.add(new RevenueSlot(time, action, energy, unitPrice, slotRevenue, source));
 		}
 		return new RevenueDailyResult(date, chargeEnergy, dischargeEnergy, revenue, slots);
 	}
@@ -676,7 +688,7 @@ public final class RevenueCalculator {
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `mvn -pl energy-ems test -Dtest='RevenueCalculatorTest' -Dsurefire.failIfNoSpecifiedTests=false`
-Expected: PASS（9 条）
+Expected: PASS（10 条）
 
 - [ ] **Step 5: 格式 + 提交**
 
