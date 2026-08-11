@@ -32,8 +32,9 @@ class StrategyConfigValidatorTest {
 	}
 
 	@Test
-	void nonPeakValleyTypeOnlyRequiresJsonObject() {
-		List<String> issues = StrategyConfigValidator.validate("{\"any\":true}", "DEMAND", CHARGE_MAX, DISCHARGE_MAX);
+	void nonGeneratableTypeOnlyRequiresJsonObject() {
+		// DR（事件驱动）/SOC_CTRL（约束型）：不可生成（P0-4），仅要求合法 JSON 对象
+		List<String> issues = StrategyConfigValidator.validate("{\"any\":true}", "DR", CHARGE_MAX, DISCHARGE_MAX);
 		assertTrue(issues.isEmpty());
 	}
 
@@ -122,6 +123,88 @@ class StrategyConfigValidatorTest {
 				+ "\"dischargeWindows\":[]}";
 		List<String> issues = StrategyConfigValidator.validate(config, "PEAK_VALLEY", null, null);
 		assertTrue(issues.isEmpty());
+	}
+
+	// —— P0-4：DEMAND / TIME 结构化校验 ——
+
+	private static List<String> demand(String config) {
+		return StrategyConfigValidator.validate(config, "DEMAND", CHARGE_MAX, DISCHARGE_MAX);
+	}
+
+	private static List<String> time(String config) {
+		return StrategyConfigValidator.validate(config, "TIME", CHARGE_MAX, DISCHARGE_MAX);
+	}
+
+	@Test
+	void demandValidWindowsPass() {
+		String config = "{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],"
+				+ "\"dischargeWindows\":[{\"start\":\"08:00\",\"end\":\"11:00\",\"powerLimit\":80}],"
+				+ "\"demandLimit\":500}";
+		assertTrue(demand(config).isEmpty());
+	}
+
+	@Test
+	void demandMissingWindowsRejected() {
+		assertEquals("缺少 chargeWindows 或 dischargeWindows 数组", demand("{}").get(0));
+		assertEquals("请至少配置一个充电或放电窗口", demand("{\"chargeWindows\":[],\"dischargeWindows\":[]}").get(0));
+	}
+
+	@Test
+	void demandInvalidDemandLimitRejected() {
+		String config = "{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],"
+				+ "\"dischargeWindows\":[],\"demandLimit\":0}";
+		assertTrue(demand(config).stream().anyMatch(i -> i.contains("demandLimit 必须大于 0")));
+	}
+
+	@Test
+	void timeValidSchedulePass() {
+		String config = "{\"schedule\":[{\"start\":\"08:00\",\"end\":\"09:00\",\"action\":\"CHARGE\",\"power\":80},"
+				+ "{\"start\":\"14:00\",\"end\":\"15:00\",\"action\":\"DISCHARGE\",\"power\":60},"
+				+ "{\"start\":\"20:00\",\"end\":\"21:00\",\"action\":\"STANDBY\"}]}";
+		assertTrue(time(config).isEmpty());
+	}
+
+	@Test
+	void timeMissingScheduleRejected() {
+		assertEquals("缺少 schedule 时间段数组", time("{}").get(0));
+		assertEquals("缺少 schedule 时间段数组", time("{\"schedule\":[]}").get(0));
+	}
+
+	@Test
+	void timeInvalidActionRejected() {
+		String config = "{\"schedule\":[{\"start\":\"08:00\",\"end\":\"09:00\",\"action\":\"FLAT\",\"power\":80}]}";
+		assertTrue(time(config).stream().anyMatch(i -> i.contains("action 必须为 CHARGE/DISCHARGE/STANDBY")));
+	}
+
+	@Test
+	void timeSlotStartGteEndRejected() {
+		String config = "{\"schedule\":[{\"start\":\"09:00\",\"end\":\"08:00\",\"action\":\"CHARGE\",\"power\":80}]}";
+		assertTrue(time(config).stream().anyMatch(i -> i.contains("结束时间必须晚于开始时间")));
+	}
+
+	@Test
+	void timeOnlyStandbySlotsRejected() {
+		String config = "{\"schedule\":[{\"start\":\"20:00\",\"end\":\"21:00\",\"action\":\"STANDBY\"}]}";
+		assertTrue(time(config).stream().anyMatch(i -> i.contains("请至少配置一个充电或放电时段")));
+	}
+
+	@Test
+	void timeZeroPowerRejected() {
+		String config = "{\"schedule\":[{\"start\":\"08:00\",\"end\":\"09:00\",\"action\":\"CHARGE\",\"power\":0}]}";
+		assertTrue(time(config).stream().anyMatch(i -> i.contains("功率 power 必须大于 0")));
+	}
+
+	@Test
+	void timePowerExceedsEnvelopeRejected() {
+		String config = "{\"schedule\":[{\"start\":\"08:00\",\"end\":\"09:00\",\"action\":\"CHARGE\",\"power\":150}]}";
+		assertTrue(time(config).stream().anyMatch(i -> i.contains("功率超过安全包络上限 100")));
+	}
+
+	@Test
+	void demandWindowsPowerExceedsEnvelopeRejected() {
+		String config = "{\"chargeWindows\":[],"
+				+ "\"dischargeWindows\":[{\"start\":\"08:00\",\"end\":\"11:00\",\"powerLimit\":120}]}";
+		assertTrue(demand(config).stream().anyMatch(i -> i.contains("放电窗口 1 的功率上限超过安全包络上限 80")));
 	}
 
 }

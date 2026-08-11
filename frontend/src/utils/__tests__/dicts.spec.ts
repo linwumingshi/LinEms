@@ -44,10 +44,10 @@ describe('dicts', () => {
 
   it('策略可生成性判定（与后端 PlanGenerator.java 支持集合对齐）', () => {
     expect(isStrategyGeneratable('PEAK_VALLEY')).toBe(true)
-    expect(isStrategyGeneratable('DEMAND')).toBe(false)
+    expect(isStrategyGeneratable('DEMAND')).toBe(true)
+    expect(isStrategyGeneratable('TIME')).toBe(true)
     expect(isStrategyGeneratable('DR')).toBe(false)
     expect(isStrategyGeneratable('SOC_CTRL')).toBe(false)
-    expect(isStrategyGeneratable('TIME')).toBe(false)
     expect(isStrategyGeneratable(undefined)).toBe(false)
     expect(isStrategyGeneratable('')).toBe(false)
   })

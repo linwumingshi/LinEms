@@ -65,7 +65,7 @@ export function resourceTypeText(t?: string | null): string {
 }
 
 /** 可生成调度计划的策略类型（与后端 PlanGenerator.java 支持集合对齐；后端新增支持时同步此数组） */
-export const STRATEGY_GENERATABLE_TYPES: string[] = ['PEAK_VALLEY']
+export const STRATEGY_GENERATABLE_TYPES: string[] = ['PEAK_VALLEY', 'DEMAND', 'TIME']
 export function isStrategyGeneratable(type?: string): boolean {
   return !!type && STRATEGY_GENERATABLE_TYPES.includes(type)
 }

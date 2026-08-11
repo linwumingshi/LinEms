@@ -3,8 +3,11 @@ import {
   parseJsonConfig,
   parsePeakValleyConfig,
   serializePeakValley,
+  validateDemandConfig,
   validatePeakValleyConfig,
   validatePeakValleySaveable,
+  validateStrategyConfig,
+  validateTimeConfig,
 } from '@/utils/strategyConfig'
 
 describe('strategyConfig', () => {
@@ -130,5 +133,78 @@ describe('strategyConfig', () => {
     const back = JSON.parse(s)
     expect(back.priceDriven).toBe(true)
     expect(back.chargePower).toBe(80)
+  })
+
+  describe('validateDemandConfig（P0-4 需量管理）', () => {
+    const valid = `{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],"dischargeWindows":[{"start":"08:00","end":"11:00","powerLimit":200}],"demandLimit":500}`
+
+    it('合法窗口 → []', () => {
+      expect(validateDemandConfig(valid)).toEqual([])
+    })
+
+    it('空窗口 / 缺窗口 → 拦截', () => {
+      expect(validateDemandConfig('{"chargeWindows":[],"dischargeWindows":[]}')).toEqual(['请至少配置一个充电或放电窗口'])
+      expect(validateDemandConfig('{}')).toEqual(['缺少 chargeWindows 或 dischargeWindows 数组'])
+    })
+
+    it('demandLimit 非法 → 拦截', () => {
+      expect(validateDemandConfig(valid.replace('500', '0'))).toEqual(['需量限值 demandLimit 必须大于 0'])
+    })
+
+    it('priceDriven=true 空窗口仍拦截（DEMAND 不支持电价驱动）', () => {
+      expect(validateDemandConfig('{"priceDriven":true}')).toEqual(['请至少配置一个充电或放电窗口'])
+    })
+  })
+
+  describe('validateTimeConfig（P0-4 时间策略）', () => {
+    const valid = `{"schedule":[{"start":"08:00","end":"09:00","action":"CHARGE","power":100},{"start":"14:00","end":"15:00","action":"DISCHARGE","power":80},{"start":"20:00","end":"21:00","action":"STANDBY"}]}`
+
+    it('合法 schedule（含 STANDBY 段） → []', () => {
+      expect(validateTimeConfig(valid)).toEqual([])
+    })
+
+    it('缺 schedule / 空数组 → 拦截', () => {
+      expect(validateTimeConfig('{}')).toEqual(['缺少 schedule 时间段数组'])
+      expect(validateTimeConfig('{"schedule":[]}')).toEqual(['缺少 schedule 时间段数组'])
+    })
+
+    it('非法 action / 时间序 → 拦截', () => {
+      expect(validateTimeConfig('{"schedule":[{"start":"08:00","end":"09:00","action":"FLAT","power":80}]}')).toEqual([
+        '时段 1 的 action 必须为 CHARGE/DISCHARGE/STANDBY',
+      ])
+      expect(validateTimeConfig('{"schedule":[{"start":"09:00","end":"08:00","action":"CHARGE","power":80}]}')).toEqual([
+        '时段 1 的结束时间必须晚于开始时间',
+      ])
+    })
+
+    it('仅 STANDBY 段 / 缺 power → 拦截', () => {
+      expect(validateTimeConfig('{"schedule":[{"start":"20:00","end":"21:00","action":"STANDBY"}]}')).toEqual([
+        '请至少配置一个充电或放电时段',
+      ])
+      expect(validateTimeConfig('{"schedule":[{"start":"08:00","end":"09:00","action":"CHARGE"}]}')).toEqual([
+        '时段 1 的功率 power 必须大于 0',
+      ])
+    })
+  })
+
+  describe('validateStrategyConfig 分发（P0-4）', () => {
+    it('PEAK_VALLEY 走峰谷闸', () => {
+      expect(validateStrategyConfig('{"chargeWindows":[],"dischargeWindows":[]}', 'PEAK_VALLEY')).toEqual([
+        '请至少配置一个充电或放电窗口',
+      ])
+      expect(validateStrategyConfig('{"priceDriven":true}', 'PEAK_VALLEY')).toEqual([])
+    })
+
+    it('DEMAND / TIME 走各自闸', () => {
+      expect(validateStrategyConfig('{}', 'DEMAND')).toEqual(['缺少 chargeWindows 或 dischargeWindows 数组'])
+      expect(validateStrategyConfig('{}', 'TIME')).toEqual(['缺少 schedule 时间段数组'])
+    })
+
+    it('DR / SOC_CTRL 仅要求非空合法 JSON 对象', () => {
+      expect(validateStrategyConfig('', 'DR')).toEqual(['请填写配置 JSON'])
+      expect(validateStrategyConfig('{bad', 'SOC_CTRL')[0]).toMatch(/不是合法 JSON/)
+      expect(validateStrategyConfig('{"event":"x"}', 'DR')).toEqual([])
+      expect(validateStrategyConfig('{"minSoc":20,"maxSoc":80}', 'SOC_CTRL')).toEqual([])
+    })
   })
 })

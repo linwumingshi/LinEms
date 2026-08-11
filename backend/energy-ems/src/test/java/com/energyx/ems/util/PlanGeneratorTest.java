@@ -147,4 +147,75 @@ class PlanGeneratorTest {
 		assertEquals(10.0, points.get(points.size() - 1).socTarget(), 0.0);
 	}
 
+	@Test
+	void demand_windowsProduceChargeDischarge() {
+		// 需量削峰：谷段充电备能 + 需量时段放电，窗口形状同峰谷
+		PlanInput in = new PlanInput("DEMAND", """
+				{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],
+				 "dischargeWindows":[{"start":"08:00","end":"11:00","powerLimit":200}],
+				 "demandLimit":500}
+				""", List.of(), 50.0, 10.0, 90.0, 100.0, 200.0);
+		List<PlanPoint> points = PlanGenerator.generate(in);
+		assertNotNull(points);
+		assertFalse(points.isEmpty());
+		boolean hasCharge = points.stream().anyMatch(p -> p.action().equals("CHARGE"));
+		boolean hasDischarge = points.stream().anyMatch(p -> p.action().equals("DISCHARGE"));
+		assertTrue(hasCharge && hasDischarge);
+		PlanPoint charge = points.stream().filter(p -> p.action().equals("CHARGE")).findFirst().orElseThrow();
+		assertEquals(100.0, charge.powerKw(), 1e-9); // 充电窗口 powerLimit
+		PlanPoint discharge = points.stream().filter(p -> p.action().equals("DISCHARGE")).findFirst().orElseThrow();
+		assertEquals(200.0, discharge.powerKw(), 1e-9); // 放电窗口 powerLimit
+		assertTrue(points.stream().allMatch(p -> p.socTarget() >= 10 && p.socTarget() <= 90));
+		assertEquals(LocalTime.of(23, 55), points.get(points.size() - 1).time());
+		assertEquals("STANDBY", points.get(points.size() - 1).action());
+	}
+
+	@Test
+	void time_scheduleExplicitActions() {
+		// 时间策略：CHARGE 时段出充电点、DISCHARGE 时段出放电点、STANDBY 时段不产点
+		PlanInput in = new PlanInput("TIME", """
+				{"schedule":[
+				  {"start":"08:00","end":"09:00","action":"CHARGE","power":100},
+				  {"start":"14:00","end":"15:00","action":"DISCHARGE","power":80},
+				  {"start":"20:00","end":"21:00","action":"STANDBY","power":0}
+				]}
+				""", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
+		List<PlanPoint> points = PlanGenerator.generate(in);
+		List<PlanPoint> charges = points.stream().filter(p -> p.action().equals("CHARGE")).toList();
+		assertEquals(12, charges.size()); // 1h/5min = 12 点
+		assertTrue(charges.stream().allMatch(p -> p.powerKw() == 100.0));
+		List<PlanPoint> discharges = points.stream().filter(p -> p.action().equals("DISCHARGE")).toList();
+		assertEquals(12, discharges.size());
+		assertTrue(discharges.stream().allMatch(p -> p.powerKw() == 80.0));
+		// STANDBY 时段（20:00-21:00）不产点
+		assertTrue(points.stream()
+			.noneMatch(p -> !p.time().isBefore(LocalTime.of(20, 0)) && p.time().isBefore(LocalTime.of(21, 0))));
+		assertTrue(points.stream().allMatch(p -> p.socTarget() >= 10 && p.socTarget() <= 90));
+		assertEquals(LocalTime.of(23, 55), points.get(points.size() - 1).time());
+		assertEquals("STANDBY", points.get(points.size() - 1).action());
+	}
+
+	@Test
+	void time_powerFallsBackToEnvelopeWhenMissing() {
+		// 时段缺 power：充电回退 chargePowerMax、放电回退 dischargePowerMax
+		PlanInput in = new PlanInput("TIME", """
+				{"schedule":[
+				  {"start":"08:00","end":"08:05","action":"CHARGE"},
+				  {"start":"14:00","end":"14:05","action":"DISCHARGE"}
+				]}
+				""", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
+		List<PlanPoint> points = PlanGenerator.generate(in);
+		PlanPoint charge = points.stream().filter(p -> p.action().equals("CHARGE")).findFirst().orElseThrow();
+		assertEquals(100.0, charge.powerKw(), 1e-9);
+		PlanPoint discharge = points.stream().filter(p -> p.action().equals("DISCHARGE")).findFirst().orElseThrow();
+		assertEquals(80.0, discharge.powerKw(), 1e-9);
+	}
+
+	@Test
+	void unsupportedTypeReturnsEmpty() {
+		// DR（事件驱动）/SOC_CTRL（约束型）：生成期不可独立产点（P0-4 标注不可用）
+		PlanInput in = new PlanInput("DR", "{\"event\":\"x\"}", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
+		assertTrue(PlanGenerator.generate(in).isEmpty());
+	}
+
 }

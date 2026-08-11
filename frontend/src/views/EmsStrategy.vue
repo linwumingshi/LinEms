@@ -6,7 +6,7 @@ import type { EmsConstraint, EmsStrategy, Station } from '@/types/models'
 import { isStrategyGeneratable } from '@/utils/dicts'
 import { loadStations, stationName } from '@/utils/stationDict'
 import StrategyConfigEditor from '@/components/StrategyConfigEditor.vue'
-import { parseJsonConfig, validatePeakValleySaveable } from '@/utils/strategyConfig'
+import { validateStrategyConfig } from '@/utils/strategyConfig'
 import { constraintReady } from '@/utils/planGate'
 
 const loading = ref(false)
@@ -121,20 +121,13 @@ async function save() {
   if (!editing.value.stationId) e.stationId = '请选择电站'
   const raw = editing.value.config ?? ''
   if (!e.strategyType) {
-    if (editing.value.strategyType === 'PEAK_VALLEY') {
-      const issues = validatePeakValleySaveable(raw)
-      if (issues.length) e.config = issues[0]
-    } else if (!raw.trim()) {
-      e.config = '请填写配置 JSON' // 非峰谷空配置：非「非法 JSON」，明确提示
-    } else {
-      const r = parseJsonConfig(raw)
-      if (!r.ok) e.config = r.error
-    }
+    const issues = validateStrategyConfig(raw, editing.value.strategyType)
+    if (issues.length) e.config = issues[0]
   }
   if (Object.keys(e).length) { errs.value = e; return }
   // —— 以下保持不变：非可生成类型 warning、payload 构造、strategyCreate/Update、toast、load ——
   if (editing.value.strategyType && !isStrategyGeneratable(editing.value.strategyType)) {
-    ElMessage.warning('当前仅峰谷套利可生成计划，其余类型可保存但不可生成')
+    ElMessage.warning('该策略类型暂不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略），可保存但不可生成')
   }
   // 只提交后端 DTO 字段：整行 row 含 tenantId/status/createTime 等未知字段，
   // 后端 ObjectMapper 未关 FAIL_ON_UNKNOWN_PROPERTIES → 400 请求体格式错误（冒烟 4.2/5.2 发现）
@@ -187,7 +180,7 @@ async function switchStatus(row: EmsStrategy, status: number) {
 
 async function generatePlan(row: EmsStrategy) {
   if (!isStrategyGeneratable(row.strategyType)) {
-    ElMessage.warning('该策略类型暂不支持生成计划（后端仅实现峰谷套利）')
+    ElMessage.warning('该策略类型暂不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略）')
     return
   }
   if (!(await constraintReady(row.stationId))) {
@@ -250,7 +243,7 @@ onMounted(() => {
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="primary" @click="copyStrategy(row)">复制</el-button>
-            <el-tooltip :disabled="isStrategyGeneratable(row.strategyType)" content="该策略类型暂不支持生成计划（后端仅实现峰谷套利）">
+            <el-tooltip :disabled="isStrategyGeneratable(row.strategyType)" content="该策略类型暂不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略）">
               <span>
                 <el-button v-if="row.status === 1" link type="success" :disabled="!isStrategyGeneratable(row.strategyType)" @click="generatePlan(row)">生成计划</el-button>
               </span>

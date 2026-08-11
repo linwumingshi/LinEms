@@ -11,8 +11,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 计划生成器：把启用策略解析为 24h 充放电点序列（5 分钟粒度）。 纯函数：不碰 DB / MQTT，输入输出全在方法签名，便于单测。
- * 本期只实现峰谷套利（PEAK_VALLEY）；其余策略类型返回空列表，留给后续 AI 服务扩展。
+ * 计划生成器：把启用策略解析为 24h 充放电点序列（5 分钟粒度）。 纯函数：不碰 DB / MQTT，输入输出全在方法签名，便于单测。 P0-4 落地后支持
+ * PEAK_VALLEY（峰谷套利，含电价驱动）、DEMAND（需量削峰）、TIME（时间策略）三种可生成类型；
+ * DR（事件驱动）/SOC_CTRL（约束型）生成期无法独立产点，返回空列表（前端标注不可生成）。
  */
 public final class PlanGenerator {
 
@@ -25,25 +26,32 @@ public final class PlanGenerator {
 	}
 
 	/**
-	 * 峰谷套利：默认手工窗口模式（谷段充电窗口出 CHARGE 点，峰段放电窗口出 DISCHARGE 点，窗口功率 = min(window.powerLimit,
-	 * 包络上限)）；当 config.priceDriven=true 时改走分时电价驱动分支（谷充峰放）。 SOC 演进为近似 （YAGNI：精确 SOC
-	 * 属模型层），但点内 socTarget 恒在 [socMin, socMax]。
+	 * 按策略类型生成点序列（P0-4）：PEAK_VALLEY 峰谷套利（手工窗口/电价驱动两分支）；DEMAND 需量削峰（窗口形状同峰谷，语义为 谷段充电备能 +
+	 * 需量时段放电削峰）；TIME 时间策略（schedule 时间段显式动作）。 DR / SOC_CTRL 及未知类型返回空列表 （生成期无独立动作语义）。 SOC
+	 * 演进为近似（YAGNI：精确 SOC 属模型层），但点内 socTarget 恒在 [socMin, socMax]。
 	 * @param in 计划输入（策略类型 / config JSON / 电价 / 初始 SOC / 安全包络）
 	 * @return 按时间升序的点序列
 	 */
 	public static List<PlanPoint> generate(PlanInput in) {
-		if (!"PEAK_VALLEY".equals(in.strategyType())) {
-			return List.of();
-		}
 		List<PlanPoint> points = new ArrayList<>();
 		try {
 			JsonNode cfg = MAPPER.readTree(in.config());
 			double soc = in.socInit();
-			if (cfg.path("priceDriven").asBoolean(false)) {
-				soc = generatePriceDriven(in, cfg, soc, points);
-			}
-			else {
-				soc = generateByWindows(in, cfg, soc, points);
+			switch (in.strategyType()) {
+				case "DEMAND" -> soc = generateByWindows(in, cfg, soc, points);
+				case "TIME" -> soc = generateBySchedule(in, cfg, soc, points);
+				case "PEAK_VALLEY" -> {
+					if (cfg.path("priceDriven").asBoolean(false)) {
+						soc = generatePriceDriven(in, cfg, soc, points);
+					}
+					else {
+						soc = generateByWindows(in, cfg, soc, points);
+					}
+				}
+				default -> {
+					// DR（事件驱动）/SOC_CTRL（约束型）：生成期无法独立产点，返回空计划（P0-4 标注不可用）
+					return List.of();
+				}
 			}
 			// 当日尾点锚定待机（保证前端图时间轴完整）；SOC 收进包络，防近似演进一槽越界被安全包络校验拒绝
 			soc = Math.min(in.socMax(), Math.max(in.socMin(), soc));
@@ -55,6 +63,40 @@ public final class PlanGenerator {
 			throw new IllegalArgumentException("策略配置解析失败: " + e.getMessage(), e);
 		}
 		return points;
+	}
+
+	/**
+	 * 时间策略：按 schedule 时间段显式动作。 段动作 CHARGE/DISCHARGE，功率 = slot.power（缺省/<=0 回退对应包络上限）；
+	 * STANDBY 段不产点（尾点锚定已表达待机），仅作"该时段不动作"语义标注。 返回演进后的 SOC。
+	 */
+	private static double generateBySchedule(PlanInput in, JsonNode cfg, double soc, List<PlanPoint> points) {
+		for (JsonNode slot : cfg.path("schedule")) {
+			String action = slot.path("action").asText("STANDBY");
+			LocalTime start = LocalTime.parse(slot.path("start").asText());
+			LocalTime end = LocalTime.parse(slot.path("end").asText());
+			if ("STANDBY".equals(action)) {
+				continue;
+			}
+			double power = slot.path("power").asDouble(0);
+			if (power <= 0) {
+				power = "CHARGE".equals(action) ? in.chargePowerMax() : in.dischargePowerMax();
+			}
+			for (LocalTime t = start; t.isBefore(end); t = t.plusMinutes(SLOT_MIN)) {
+				if ("CHARGE".equals(action)) {
+					if (soc >= in.socMax())
+						break;
+					points.add(new PlanPoint(t, "CHARGE", power, soc));
+					soc += power * SLOT_MIN / 60.0 * 0.01;
+				}
+				else {
+					if (soc <= in.socMin())
+						break;
+					points.add(new PlanPoint(t, "DISCHARGE", power, soc));
+					soc -= power * SLOT_MIN / 60.0 * 0.01;
+				}
+			}
+		}
+		return soc;
 	}
 
 	/** 手工窗口模式（原逻辑原样提取）：逐窗口出点，返回演进后的 SOC。 */

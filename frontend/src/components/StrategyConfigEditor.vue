@@ -44,6 +44,29 @@ let initializing = false
 
 const isPeakValley = computed(() => props.strategyType === 'PEAK_VALLEY')
 
+/** JSON 模式示例占位（按策略类型给模板，DEMAND/TIME 走 JSON 编辑，见 P0-4） */
+const jsonPlaceholder = computed(() => {
+  switch (props.strategyType) {
+    case 'DEMAND':
+      return '{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],"dischargeWindows":[{"start":"08:00","end":"11:00","powerLimit":200}],"demandLimit":500}'
+    case 'TIME':
+      return '{"schedule":[{"start":"08:00","end":"09:00","action":"CHARGE","power":100},{"start":"14:00","end":"15:00","action":"DISCHARGE","power":80}]}'
+    default:
+      return '{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}]}'
+  }
+})
+
+/** JSON 模式 schema 提示（DEMAND/TIME 首行说明字段语义） */
+const jsonHint = computed(() => {
+  if (props.strategyType === 'DEMAND') {
+    return '需量管理：chargeWindows 谷段充电备能；dischargeWindows 需量时段放电削峰；demandLimit 可选（kW）'
+  }
+  if (props.strategyType === 'TIME') {
+    return '时间策略：schedule 为时间段数组，每段 {start, end, action: CHARGE/DISCHARGE/STANDBY, power}，至少一个充/放时段'
+  }
+  return ''
+})
+
 /** 包络软警告（不阻断）：窗口功率超站点安全约束上限 */
 const warnings = computed(() => {
   const list: string[] = []
@@ -304,11 +327,12 @@ initFromConfig()
         class="mode-alert"
         title="配置无法解析，已切换到 JSON 模式（结构化编辑会覆盖原配置）"
       />
+      <el-alert v-if="jsonHint" type="info" :closable="false" class="mode-alert" :title="jsonHint" />
       <el-input
         :model-value="props.modelValue"
         type="textarea"
         :rows="6"
-        placeholder='{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}]}'
+        :placeholder="jsonPlaceholder"
         @update:model-value="onJsonInput($event as string)"
       />
       <div class="json-toolbar">
