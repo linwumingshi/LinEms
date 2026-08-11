@@ -18,7 +18,7 @@
 
 | 条件 | 说明 |
 |---|---|
-| **PCS 设备** | 在线 PCS（productKey=`snd_ess_pcs`），其功率遥测（TSDB `power`，kW）与 `runMode`（0待机/1充电/2放电）是电量与方向的来源 |
+| **PCS 设备** | 在线 PCS（productKey=`snd_ess_pcs`、**`station_id`=所选电站**），其功率遥测（TSDB `power`，kW）与 `runMode`（0待机/1充电/2放电）是电量与方向的来源。EMS 按站查设备，`station_id` 为空则对该电站不可见 |
 | **runMode 上报** | 决定充/放方向。缺失时回退当日计划动作，两者皆无的槽位**不参与**核算 |
 | **电价** | 当日计划为电价驱动且带 `plan_param.priceSnapshot` → 用快照档；否则用电价表 `status=1` 且有效期覆盖当日的档位。无电价的槽位**计电量、收益记 0** |
 | **储能系统** | 收益页依赖 energy-tsdb（遥测历史，Feign 按 Nacos 服务名 `energy-tsdb` 解析）与已生成的计划（供方向回退与电价快照） |
@@ -84,6 +84,51 @@
 2. `GET /api/ems/revenue/summary?stationId&periodType=DAY&date`，核对收益 = `Σ(放电|P|×Δt×峰价) − Σ(充电|P|×Δt×谷价)`
 3. 停掉 `runMode` 上报 → 方向回退计划动作，收益仍可算（明细表 source 显示 `PLAN`）
 4. 设置投资额 → 回本周期卡片给出数值；日/月/年切换 → 图表与卡片随之变化
+
+### 7.1 用模拟器端到端模拟（推荐）
+
+**① 准备电站**（页面「电站管理」创建，或 `POST /api/station`，同需量管理手册 §7.1；记 <stationId>）。
+
+**② 造数注册 PCS（挂到该电站，避开默认 sim-dev-000001）**：
+
+```bash
+source deploy/env/local.env
+java -jar test/stress/target/stress.jar seed --product snd_ess_pcs --count 1 --start-index 3 --station <stationId> --tenant 1
+#   → sim-dev-000003（PCS @ <stationId>）
+```
+
+**③ 配置当日分时电价**（收益按电价表或计划电价快照计价；这里用电价表 `POST /api/ems/price`）：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/ems/price -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -d '[
+    {"tenantId":1,"stationId":<stationId>,"priceType":"VALLEY","startTime":"00:00","endTime":"08:00","price":0.3,"validFrom":"2026-08-11","validTo":"2026-08-11","status":1},
+    {"tenantId":1,"stationId":<stationId>,"priceType":"PEAK","startTime":"08:00","endTime":"12:00","price":1.2,"validFrom":"2026-08-11","validTo":"2026-08-11","status":1}
+  ]'
+```
+
+**④ 起模拟 PCS 定向上报（谷段充电、峰段放电）**：
+
+```bash
+cd test/sim-device
+./sim-device.sh --device sim-dev-000003
+# sim-dev> report power=500 runMode=1     # 00:30 谷段充电（runMode 1=充电）
+# sim-dev> report power=500 runMode=2     # 09:00 峰段放电（runMode 2=放电）
+# sim-dev> report power=0  runMode=0      # 09:30 收盘：给上一条放电样本一个后继采样点
+```
+
+> 收益按实际遥测积分：`energy = |power| × Δt`（左采样点覆盖到下一采样，**末条采样无后继不计**、相邻间隔钳制 1h）。
+> 上面 3 条的口径：00:30 充电样本 Δt=1h（钳制）→ 500 kWh × 谷价 0.3 = 成本 150 元；09:00 放电样本 Δt=0.5h
+> → 250 kWh × 峰价 1.2 = 收益 300 元；净值 +150 元。方向由 `runMode` 定，明细表 `source=RUN_MODE`。
+
+**⑤ 验证**：
+- `GET /api/ems/revenue/summary?stationId=<stationId>&periodType=DAY&date=2026-08-11`
+  → chargeEnergy / dischargeEnergy / arbitrageRevenue 非 0
+- `GET /api/ems/revenue/detail?stationId=<stationId>&date=2026-08-11` → 明细 `source=RUN_MODE`，峰段收益 = 放电×峰价、谷段 = 充电×谷价
+- 页面「收益核算」选该电站 → KPI 卡片 / 图表 / 单日对账明细可见
+
+> **要点**：收益按**实际遥测**而非计划功率；`runMode` 缺失才回退计划动作。不设电价则计电量、收益记 0。
+> 默认设备 `sim-dev-000001`（station_id=NULL）不会被任何电站查询命中，别拿它模拟本功能。
 
 ## 八、已知边界（使用注意）
 

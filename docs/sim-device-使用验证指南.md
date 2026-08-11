@@ -65,6 +65,23 @@ java -jar test/stress/target/stress.jar seed \
   --count 1000 --product snd_ess_pcs --secret-base sanduo-stress
 ```
 
+**METER 表计设备（需量管理模拟需要）**：energy-product `V2__seed_meter.sql` 只种子了产品与物模型
+（productKey=`snd_ess_meter`，唯一属性 `importPower`，单位 kW），**不注册设备行**。需量管理按
+`station_id` 找表计，所以 seed 时要带 `--station` 挂到电站、并用 `--start-index` 避开默认设备
+`sim-dev-000001`（已被 PCS 占用，`ON DUPLICATE` 不会换产品）：
+
+```bash
+java -jar test/stress/target/stress.jar seed \
+  --product snd_ess_meter --count 1 --start-index 2 --station <电站ID> --tenant 1
+# → 注册 sim-dev-000002（METER @ 该电站），密钥 = deriveSecret("sanduo-stress", 2)
+```
+
+> **按电站查询（EMS 需量/收益模拟的硬前置）**：EMS 的需量检测、削峰、收益核算都按
+> `es_device.iot_device.station_id` 查设备（不联 `iot_station_device` 关联表）。要让模拟设备被这些
+> 功能命中，**seed 必须带 `--station <电站ID>`**，且该电站须已存在（页面创建或 `POST /api/station`）。
+> 默认设备 `sim-dev-000001`（station_id 为 NULL）不会被任何电站查询命中，别拿它模拟需量/收益。
+> `--start-index N` 从序号 N 造起，多产品/多电站造数时精确错开设备名与号段。
+
 **设备身份派生规则**（`test/stress/.../Secrets.java`，与 sim-device 完全一致）：
 
 | 项 | 值 | 说明 |
@@ -115,7 +132,7 @@ sim-dev>
 
 | 命令 | 示例 | 行为 |
 |---|---|---|
-| `report [k=v ...]` | `report soc=52 voltage=215 current=10` | 发布属性到 `up/property`（QoS0）；无参数 = 从 `{soc,voltage,current,power,temp,runMode}` 随机一组 |
+| `report [k=v ...]` | `report soc=52 voltage=215 current=10` | 发布属性到 `up/property`（QoS0）；无参数 = 按产品随机一组（METER 只报 `importPower`，PCS 报 `{soc,voltage,current,power,temp,runMode}`） |
 | `event` | `event overTemp 1 10001 temp=85` | 发布事件到 `up/event`（severity 默认 1） |
 | `lifecycle` | `lifecycle online 10.0.0.5` | 发布上下线事件到 `up/lifecycle`（offline 同上） |
 | `status` | `status` | 连接态 / clientId / broker / 待处理命令数 / autoack 状态 |
@@ -162,6 +179,23 @@ SELECT count(*) FROM st_prop_snd_ess_pcs WHERE tbname='dev_8000000000000000001';
 tail -f deploy/logs/energy-tsdb.log    # 属性/时序摄取
 tail -f deploy/logs/energy-access.log  # 上行解析
 ```
+
+### 3.2 模拟 METER 表计上报（需量管理数据源）
+
+需量管理读表计 `importPower`（用电功率 kW）做 15 分钟槽位均值。连接一个 **METER 设备**后上报（无参数 = 按产品随机，只报 `importPower`）：
+
+```bash
+# 须用已 seed 的 METER 设备（如 sim-dev-000002，见 §1.3）
+cd test/sim-device
+./sim-device.sh --product snd_ess_meter --device sim-dev-000002
+```
+
+```text
+sim-dev> report                    # 随机 importPower（500-3499）
+sim-dev> report importPower=2500   # 指定用电功率，造超限尖峰
+```
+
+> 上报属性须命中设备所属产品的物模型（METER 仅 `importPower`），否则 access 侧 ModelValidator 拒绝入库。
 
 ---
 
@@ -310,6 +344,8 @@ sim-dev> connect          # 或 reconnect
 - 交互式模拟器设计：`docs/superpowers/specs/2026-08-07-sim-device-design.md`
 - 设备端 SDK：`sdk/java/src/main/java/com/energyx/device/`（MqttDevice / DeviceIdentity / HmacAuth）
 - 造数/压测工具：`test/stress/`（`seed` / `connect` / `throughput` / `control` 子命令）
+- 需量管理使用手册：`docs/manuals/2026-08-11-ems-demand-management.md`（§7.1 模拟器端到端模拟）
+- 收益核算使用手册：`docs/manuals/2026-08-11-ems-revenue-accounting.md`（§7.1 模拟器端到端模拟）
 - 指令中心：`backend/energy-command/`（CommandController / CommandService / CommandState）
 - 控制链路演练（自动判定 P99）：`test/drill/05-command-p99.sh`
 - 设备接入 Broker：`docs/design/Phase4-自研MQTTBroker.md`
