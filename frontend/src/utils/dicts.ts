@@ -70,6 +70,29 @@ export function isStrategyGeneratable(type?: string): boolean {
   return !!type && STRATEGY_GENERATABLE_TYPES.includes(type)
 }
 
+/** 分时电价类型：中文 + 标签色（与后端 ems_electricity_price.price_type / PlanGenerator 档位推导对齐） */
+export const PRICE_TYPE_TEXT: Record<string, string> = {
+  DEEP: '深谷',
+  VALLEY: '低谷',
+  FLAT: '平段',
+  PEAK: '高峰',
+  PEEK: '尖峰',
+}
+export const PRICE_TYPE_TAG: Record<string, 'info' | 'primary' | 'success' | 'warning' | 'danger'> = {
+  DEEP: 'primary',
+  VALLEY: 'success',
+  FLAT: 'info',
+  PEAK: 'warning',
+  PEEK: 'danger',
+}
+/** 电价类型中文（未知回退原 code；空回退 '—'） */
+export function priceTypeText(t?: string | null): string {
+  return t ? (PRICE_TYPE_TEXT[t] ?? t) : '—'
+}
+export function priceTypeTag(t?: string | null): 'info' | 'primary' | 'success' | 'warning' | 'danger' {
+  return t ? (PRICE_TYPE_TAG[t] ?? 'info') : 'info'
+}
+
 /** 电站电网类型下拉（后端 Station.gridType 备注：工商业/园区/电网侧） */
 export const GRID_TYPE_OPTIONS = ['工商业', '园区', '电网侧']
 

@@ -40,4 +40,10 @@ public class EmsPriceController {
 		return Result.ok();
 	}
 
+	@DeleteMapping("/{priceId}")
+	public Result<Void> delete(@PathVariable Long priceId) {
+		service.delete(priceId);
+		return Result.ok();
+	}
+
 }

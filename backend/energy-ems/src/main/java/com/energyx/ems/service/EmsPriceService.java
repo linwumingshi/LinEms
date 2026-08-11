@@ -71,6 +71,12 @@ public class EmsPriceService extends ServiceImpl<EmsElectricityPriceMapper, EmsE
 		updateById(p);
 	}
 
+	/** 删除档位；不存在抛 NOT_FOUND。 */
+	public void delete(Long priceId) {
+		if (!removeById(priceId))
+			throw new BusinessException(ErrorCode.NOT_FOUND, "电价档位不存在: " + priceId);
+	}
+
 	private static String upsertKey(Long stationId, LocalTime startTime) {
 		return stationId + ":" + startTime;
 	}

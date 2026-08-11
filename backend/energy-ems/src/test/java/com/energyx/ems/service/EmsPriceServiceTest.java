@@ -3,6 +3,7 @@ package com.energyx.ems.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.energyx.common.exception.BusinessException;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
 import com.energyx.ems.entity.EmsElectricityPrice;
@@ -101,6 +102,26 @@ class EmsPriceServiceTest {
 		ArgumentCaptor<EmsElectricityPrice> ins = ArgumentCaptor.forClass(EmsElectricityPrice.class);
 		verify(mapper).insert(ins.capture());
 		assertEquals(LocalTime.of(11, 0), ins.getValue().getStartTime()); // 仅新档插入
+	}
+
+	@Test
+	void delete_removesExisting() {
+		EmsElectricityPriceMapper mapper = mock(EmsElectricityPriceMapper.class);
+		when(mapper.deleteById(1L)).thenReturn(1);
+		EmsPriceService svc = newService(mapper);
+
+		svc.delete(1L);
+
+		verify(mapper).deleteById(1L);
+	}
+
+	@Test
+	void delete_missingThrows() {
+		EmsElectricityPriceMapper mapper = mock(EmsElectricityPriceMapper.class);
+		when(mapper.deleteById(99L)).thenReturn(0);
+		EmsPriceService svc = newService(mapper);
+
+		assertThrows(BusinessException.class, () -> svc.delete(99L));
 	}
 
 	@Test

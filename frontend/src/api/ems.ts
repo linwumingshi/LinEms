@@ -23,8 +23,14 @@ export const emsApi = {
   /** GET /api/ems/price/page 电价分页查询 */
   pricePage(params: Record<string, unknown>): Promise<PageResult<EmsElectricityPrice>> { return http.get('/api/ems/price/page', { params }) },
 
-  /** POST /api/ems/price 批量保存电价 */
+  /** POST /api/ems/price 批量保存电价（upsert 幂等：同站同 startTime 原位更新） */
   priceSave(body: EmsElectricityPrice[]): Promise<void> { return http.post('/api/ems/price', body) },
+
+  /** PUT /api/ems/price/{id} 更新电价档位 */
+  priceUpdate(id: string, body: Partial<EmsElectricityPrice>): Promise<void> { return http.put(`/api/ems/price/${id}`, body) },
+
+  /** DELETE /api/ems/price/{id} 删除电价档位 */
+  priceDelete(id: string): Promise<void> { return http.delete(`/api/ems/price/${id}`) },
 
   /** GET /api/ems/constraint 查询站点约束 */
   constraintGet(stationId: string): Promise<EmsConstraint> { return http.get(`/api/ems/constraint?stationId=${stationId}`) },

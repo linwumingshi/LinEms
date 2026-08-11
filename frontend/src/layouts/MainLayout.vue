@@ -52,6 +52,7 @@ const menus: MenuItem[] = [
     title: 'EMS 能源管理',
     children: [
       { path: '/ems/strategy', title: '策略管理' },
+      { path: '/ems/price', title: '分时电价' },
       { path: '/ems/constraint', title: '安全约束' },
       { path: '/ems/plan', title: '充放电计划' },
     ],
