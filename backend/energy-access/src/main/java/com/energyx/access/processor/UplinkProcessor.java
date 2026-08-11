@@ -10,7 +10,7 @@ import com.energyx.access.model.ModelValidator;
 import com.energyx.access.model.ThingModel;
 import com.energyx.access.model.ThingModelCache;
 import com.energyx.access.publish.EventPublisher;
-import com.energyx.common.kafka.KafkaRecordHandler;
+import com.energyx.common.kafka.BytesKafkaRecordHandler;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.LifecycleMessage;
 import com.energyx.common.message.RawMessage;
@@ -27,12 +27,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 设备上行报文处理器（消费 mqtt.router 的 PUBLISH 信封）。
+ * 设备上行报文处理器（消费 mqtt.uplink 的二进制信封）。
  *
  * <p>
  * 流水线（Phase 1 §6.1 / Phase 4 §1.2）： <pre>
@@ -52,7 +51,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-public class UplinkProcessor implements KafkaRecordHandler {
+public class UplinkProcessor implements BytesKafkaRecordHandler {
 
 	private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<LinkedHashMap<String, Object>>() {
 	};
@@ -84,12 +83,12 @@ public class UplinkProcessor implements KafkaRecordHandler {
 	}
 
 	@Override
-	public void handle(ConsumerRecord<String, String> record) throws Exception {
+	public void handle(ConsumerRecord<String, byte[]> record) throws Exception {
 		RouterEnvelope envelope;
 		try {
-			// 阶段 2：二进制信封（magic 0xE9 0x01）；StringDeserializer 读回的 String 按
-			// ISO-8859-1 还原字节无损（ByteArraySerializer 写出的原始字节）。兼容期 JSON 自动探测。
-			byte[] raw = record.value().getBytes(StandardCharsets.ISO_8859_1);
+			// 阶段 2：二进制信封（magic 0xE9 0x01）。消费端 ByteArrayDeserializer 保字节无损；
+			// 兼容期 JSON 自动探测（RouterEnvelopeCodec.decode 按 magic 自识别）。
+			byte[] raw = record.value();
 			envelope = RouterEnvelopeCodec.decode(raw, objectMapper);
 		}
 		catch (Exception e) {
