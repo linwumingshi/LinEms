@@ -84,7 +84,8 @@ services:
     container_name: ems-xxl-job-admin
     environment:
       # PARAMS 中 root&QAQ 的 & 在 shell 变量展开后仅作普通字符，无需转义（word expansion 不再做语法解析）
-      PARAMS: '--spring.datasource.url=jdbc:mysql://host.docker.internal:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=root&QAQ'
+      # accessToken 必须与 6 个执行器模块 application.yml 的 xxl.job.accessToken 一致（energyx-xxl-job-token）
+      PARAMS: '--spring.datasource.url=jdbc:mysql://host.docker.internal:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=root&QAQ --xxl.job.accessToken=energyx-xxl-job-token'
     extra_hosts:
       - "host.docker.internal:host-gateway"   # 容器内解析宿主机 IP（Windows/macOS 可省，Linux 必需）
     ports:

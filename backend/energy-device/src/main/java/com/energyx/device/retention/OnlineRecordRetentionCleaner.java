@@ -37,7 +37,7 @@ public class OnlineRecordRetentionCleaner {
 	@XxlJob("deviceOnlineRetentionClean")
 	public void scheduledClean() {
 		distributedLock.runIfAcquired(LOCK_KEY, 600, () -> {
-			int deleted = DataRetention.cleanByTime(jdbc, "iot_device_online_record", "create_time",
+			int deleted = DataRetention.cleanByTime(jdbc, "iot_device_online_record", "report_time",
 					LocalDateTime.now().minusDays(KEEP_DAYS), 500);
 			if (deleted > 0) {
 				log.info("[Retention] 清理 iot_device_online_record {} 条", deleted);
