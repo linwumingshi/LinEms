@@ -8,7 +8,7 @@ import { useEChart } from '@/composables/useEChart'
 import type { EmsElectricityPrice, EmsExecutionRecord, EmsPlan, EmsPlanPoint, EmsStrategy, Station } from '@/types/models'
 import { loadStations, stationName } from '@/utils/stationDict'
 import { constraintReady } from '@/utils/planGate'
-import { fetchActualCurve } from '@/utils/planCurve'
+import { fetchActualCurve, mergeCurves } from '@/utils/planCurve'
 
 const router = useRouter()
 
@@ -27,10 +27,8 @@ const execRecords = ref<EmsExecutionRecord[]>([])
 const chartEl = ref<HTMLElement>()
 const { chart, render } = useEChart(chartEl)
 
-/** 实际功率曲线（TSDB 采样点）；未匹配下发设备或拉取失败为 null，波形正常渲染但不叠加实际系列 */
+/** 实际功率曲线（TSDB 采样点）；电站未登记 PCS 或拉取失败为 null，波形正常渲染但不叠加实际系列 */
 const actualCurve = ref<{ times: string[]; power: number[] } | null>(null)
-/** 下发设备名：与后端 energyx.ems.device-name 对齐（缺省 ess-dev-01），按 deviceName 反查设备 */
-const PCS_DEVICE_NAME = 'ess-dev-01'
 
 /** 名称化：电站/策略 id → 名称映射（查不到回退裸 id） */
 const stations = ref<Station[]>([])
@@ -175,23 +173,24 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
   }
 }
 
-/** 反查下发设备（energyx.ems.device-name 对应设备）拿 deviceId + productKey，拉当日实际功率曲线 */
+/** 反查电站 PCS 下发设备（deviceType=PCS + stationId）拉当日实际功率曲线；多 PCS 按时刻求和（P0-2 按电站解析下发目标） */
 async function loadActualCurve(plan: EmsPlan): Promise<void> {
   actualCurve.value = null
   try {
-    // keyword 过滤只拉目标设备，避免设备数超过一页时目标设备落选；仍按 deviceName 精确匹配双保险
-    const page = await deviceApi.page({ pageNum: 1, pageSize: 20, keyword: PCS_DEVICE_NAME })
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 50, stationId: plan.stationId, deviceType: 'PCS' })
     // 计划 ID 守卫：响应回来时已切换到其他计划，丢弃过期响应，不 set 不重绘
     if (selected.value?.planId !== plan.planId) return
-    const dev = page.records.find((d) => d.deviceName === PCS_DEVICE_NAME)
-    if (!dev) {
-      // 设备列表未匹配到下发设备：不展示实际曲线，波形照常渲染
+    const pcsDevices = page.records.filter((d) => d.deviceType === 'PCS')
+    if (!pcsDevices.length) {
+      // 电站未登记 PCS 下发设备：不展示实际曲线，波形照常渲染
       return
     }
-    const curve = await fetchActualCurve(String(dev.deviceId), dev.productKey, plan.planDate.slice(0, 10))
+    const curves = await Promise.all(
+      pcsDevices.map((d) => fetchActualCurve(String(d.deviceId), d.productKey, plan.planDate.slice(0, 10))),
+    )
     // 二次守卫：TSDB 拉取期间也可能切换计划，同样丢弃过期响应
     if (selected.value?.planId !== plan.planId) return
-    actualCurve.value = curve
+    actualCurve.value = mergeCurves(curves)
   } catch {
     // 拉取失败降级：无实际曲线不阻断波形；仅当仍是当前计划才清空，避免清掉新计划已拉到的曲线
     if (selected.value?.planId === plan.planId) actualCurve.value = null

@@ -20,6 +20,8 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.mapper.PcsDeviceMapper;
+import com.energyx.ems.model.PcsDevice;
 import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.energyx.ems.util.PlanGenerator;
 import com.energyx.ems.util.PlanInput;
@@ -70,11 +72,11 @@ public class EmsPlanService {
 
 	private final EmsKafkaProducer kafkaProducer;
 
+	private final PcsDeviceMapper pcsDeviceMapper;
+
+	/** PCS 产品标识（下发目标从设备表按 productKey + device_type=PCS 解析，P0-2） */
 	@Value("${energyx.ems.product-key:snd_ess_pcs}")
 	private String productKey;
-
-	@Value("${energyx.ems.device-name:}")
-	private String deviceName;
 
 	/** 执行记录 params 列为 MySQL JSON，必须真实 JSON 序列化（不能 Map.toString）。 */
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -85,7 +87,7 @@ public class EmsPlanService {
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
 			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
-			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer) {
+			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer, PcsDeviceMapper pcsDeviceMapper) {
 		this.strategyMapper = strategyMapper;
 		this.priceMapper = priceMapper;
 		this.constraintMapper = constraintMapper;
@@ -96,6 +98,7 @@ public class EmsPlanService {
 		this.commandClient = commandClient;
 		this.distributedLock = distributedLock;
 		this.kafkaProducer = kafkaProducer;
+		this.pcsDeviceMapper = pcsDeviceMapper;
 	}
 
 	/** 生成计划：查策略 → 电价 → 安全约束 → PlanGenerator 出点序列 → 包络校验 → 写 TDengine → 计划头落库。 */
@@ -225,15 +228,18 @@ public class EmsPlanService {
 		if (plan.getStatus() != 0) {
 			throw new BusinessException(ErrorCode.CONFLICT, "计划状态非待执行: " + plan.getStatus());
 		}
-		if (deviceName == null || deviceName.isBlank()) {
-			throw new BusinessException(ErrorCode.BAD_REQUEST, "未配置下发设备 energyx.ems.device-name");
+		List<PcsDevice> devices = resolveDispatchDevices(plan);
+		if (devices == null || devices.isEmpty()) {
+			// 消除旧"未配置下发设备 energyx.ems.device-name"裸报错：电站级上下文 + 修复指引（P0-2）
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "电站 " + plan.getStationId()
+					+ " 未配置可下发的 PCS 设备（device_type=PCS, product_key=" + productKey + "），请在设备管理中登记后重试");
 		}
 		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
 		validateEnvelope(plan, points);
 		// 受理：置执行中，后续由调度器到点下发（先置位防重复受理）
 		plan.setStatus(1);
 		planMapper.updateById(plan);
-		int sent = dispatchDuePoints(plan);
+		int sent = dispatchDuePoints(plan, devices);
 		// 立即推进一次：全部点已错过窗口/已终态时马上收敛，不必等调度器下一轮
 		refreshPlanStatus(planId);
 		log.info("下发计划受理成功 planId={} stationId={} 立即下发点数={}", planId, plan.getStationId(), sent);
@@ -241,12 +247,28 @@ public class EmsPlanService {
 	}
 
 	/**
-	 * 到点下发：把计划点序列中「已到时刻」且未下发的点逐一下发（含补发窗口）， 写执行记录。 幂等：按 (plan_id, plan_time)
+	 * 到点下发（调度器路径）：把计划点序列中「已到时刻」且未下发的点逐一下发（含补发窗口）， 写执行记录。 一电站多 PCS：每台 PCS
+	 * 各建一条执行记录（device_id 真实，P0-2）。 幂等：按 (plan_id, plan_time, device_id)
 	 * 唯一键查重，调度器重复触发不会重复下发。
 	 * @param plan 执行中计划（status=1）
-	 * @return 本次新下发点数
+	 * @return 本次新下发点数（点 × 设备）
 	 */
 	public int dispatchDuePoints(EmsPlan plan) {
+		List<PcsDevice> devices = resolveDispatchDevices(plan);
+		if (devices == null || devices.isEmpty()) {
+			log.warn("计划 {} 电站 {} 无可下发 PCS 设备，跳过本轮下发", plan.getPlanId(), plan.getStationId());
+			return 0;
+		}
+		return dispatchDuePoints(plan, devices);
+	}
+
+	/**
+	 * 到点下发核心：对每个到点时刻的计划点，向每台 PCS 设备逐一下发指令并写执行记录。
+	 * @param plan 执行中计划（status=1）
+	 * @param devices 已解析的电站 PCS 下发目标（非空）
+	 * @return 本次新下发点数（点 × 设备）
+	 */
+	private int dispatchDuePoints(EmsPlan plan, List<PcsDevice> devices) {
 		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
 		LocalTime now = LocalTime.now();
 		int sent = 0;
@@ -261,37 +283,50 @@ public class EmsPlanService {
 			if (now.minusMinutes(DISPATCH_WINDOW_MIN).isAfter(p.time())) {
 				continue;
 			}
-			if (execMapper.selectByPlanAndTime(plan.getPlanId(), p.time()) != null) {
-				continue; // 该点已下发，跳过
-			}
 			Map<String, Object> params = new HashMap<>();
 			params.put("action", p.action());
 			params.put("power", p.powerKw());
 			params.put("socTarget", p.socTarget());
 			params.put("time", p.time().toString()); // 携带计划点时刻，供设备侧定时执行语义
-			try {
-				String paramsJson = JSON.writeValueAsString(params); // 列类型 JSON，必须真实 JSON
-				String commandId = commandClient.dispatch(productKey, deviceName, p.action(), params, 0L);
-				EmsExecutionRecord rec = new EmsExecutionRecord();
-				rec.setTenantId(plan.getTenantId());
-				rec.setPlanId(plan.getPlanId());
-				rec.setCommandId(commandId);
-				rec.setPlanTime(p.time());
-				rec.setDeviceId(0L);
-				rec.setAction(p.action());
-				rec.setState(1); // 已下发，待 ACK
-				rec.setParams(paramsJson);
-				execMapper.insert(rec);
-				sent++;
-			}
-			catch (BusinessException e) {
-				log.warn("下发点失败 time={} action={} msg={}", p.time(), p.action(), e.getMessage());
-			}
-			catch (JsonProcessingException e) {
-				throw new BusinessException(ErrorCode.BAD_REQUEST, "下发参数序列化失败: " + e.getMessage());
+			for (PcsDevice dev : devices) {
+				if (execMapper.selectByPlanTimeAndDevice(plan.getPlanId(), p.time(), dev.deviceId()) != null) {
+					continue; // 该点该设备已下发，跳过
+				}
+				try {
+					String paramsJson = JSON.writeValueAsString(params); // 列类型 JSON，必须真实
+																			// JSON
+					String commandId = commandClient.dispatch(dev.productKey(), dev.deviceName(), p.action(), params,
+							0L);
+					EmsExecutionRecord rec = new EmsExecutionRecord();
+					rec.setTenantId(plan.getTenantId());
+					rec.setPlanId(plan.getPlanId());
+					rec.setCommandId(commandId);
+					rec.setPlanTime(p.time());
+					rec.setDeviceId(dev.deviceId());
+					rec.setAction(p.action());
+					rec.setState(1); // 已下发，待 ACK
+					rec.setParams(paramsJson);
+					execMapper.insert(rec);
+					sent++;
+				}
+				catch (BusinessException e) {
+					log.warn("下发点失败 time={} action={} deviceId={} msg={}", p.time(), p.action(), dev.deviceId(),
+							e.getMessage());
+				}
+				catch (JsonProcessingException e) {
+					throw new BusinessException(ErrorCode.BAD_REQUEST, "下发参数序列化失败: " + e.getMessage());
+				}
 			}
 		}
 		return sent;
+	}
+
+	/**
+	 * 解析计划下发目标：从设备表查电站所属 PCS（productKey + device_type=PCS，status 激活/在线）。 空结果不抛错，由调用方决定
+	 * 语义：受理时抛电站级可操作错误，调度/状态推进时跳过并告警（P0-2）。
+	 */
+	private List<PcsDevice> resolveDispatchDevices(EmsPlan plan) {
+		return pcsDeviceMapper.selectByStation(plan.getTenantId(), plan.getStationId(), productKey);
 	}
 
 	/**
@@ -304,11 +339,21 @@ public class EmsPlanService {
 		if (plan == null || plan.getStatus() != 1) {
 			return; // 非执行中无需推进
 		}
+		List<PcsDevice> devices = pcsDeviceMapper.selectByStation(plan.getTenantId(), plan.getStationId(), productKey);
+		if (devices == null || devices.isEmpty()) {
+			// 下发目标异常消失（受理后设备被删/禁用），不收敛避免误判完成
+			log.warn("计划 {} 电站 {} 无 PCS 下发设备，状态不推进", planId, plan.getStationId());
+			return;
+		}
 		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
 		List<PlanPoint> actionable = points.stream().filter(p -> !"STANDBY".equals(p.action())).toList();
 		List<EmsExecutionRecord> records = execMapper.selectByPlanId(planId);
-		Set<LocalTime> dispatched = records.stream().map(EmsExecutionRecord::getPlanTime).collect(Collectors.toSet());
-		boolean allDispatched = actionable.stream().allMatch(p -> dispatched.contains(p.time()));
+		// 一点多 PCS：每点每设备一条记录，全部设备的点都已下发才算"全部下发"
+		Set<String> dispatched = records.stream()
+			.map(r -> r.getPlanTime() + ":" + r.getDeviceId())
+			.collect(Collectors.toSet());
+		boolean allDispatched = actionable.stream()
+			.allMatch(p -> devices.stream().allMatch(d -> dispatched.contains(p.time() + ":" + d.deviceId())));
 		// 错过下发窗口：计划日已过，或今日所有点时刻均已过 10min 补发窗口（今日计划晚下发不再补发过期点）
 		LocalTime now = LocalTime.now();
 		boolean allPointsPassed = actionable.stream()
@@ -317,19 +362,21 @@ public class EmsPlanService {
 		if (!allDispatched && planDateOver) {
 			// 已过下发窗口但有点未下发：补记超时记录，收敛不悬挂
 			for (PlanPoint p : actionable) {
-				if (dispatched.contains(p.time())) {
-					continue;
+				for (PcsDevice d : devices) {
+					if (dispatched.contains(p.time() + ":" + d.deviceId())) {
+						continue;
+					}
+					EmsExecutionRecord rec = new EmsExecutionRecord();
+					rec.setTenantId(plan.getTenantId());
+					rec.setPlanId(planId);
+					rec.setCommandId("");
+					rec.setPlanTime(p.time());
+					rec.setDeviceId(d.deviceId());
+					rec.setAction(p.action());
+					rec.setState(4); // 超时（错过下发窗口）
+					rec.setParams(null); // 未实际下发，无参数（JSON 列不允许空串，null 合法）
+					execMapper.insert(rec);
 				}
-				EmsExecutionRecord rec = new EmsExecutionRecord();
-				rec.setTenantId(plan.getTenantId());
-				rec.setPlanId(planId);
-				rec.setCommandId("");
-				rec.setPlanTime(p.time());
-				rec.setDeviceId(0L);
-				rec.setAction(p.action());
-				rec.setState(4); // 超时（错过下发窗口）
-				rec.setParams(null); // 未实际下发，无参数（JSON 列不允许空串，null 合法）
-				execMapper.insert(rec);
 			}
 			records = execMapper.selectByPlanId(planId);
 			allDispatched = true;

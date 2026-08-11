@@ -11,9 +11,10 @@ import java.util.List;
 
 public interface EmsExecutionRecordMapper extends BaseMapper<EmsExecutionRecord> {
 
-	/** 按计划 + 计划点时刻查执行记录（调度器到点下发查重锚点，配合 uk_exec_plan_time） */
-	@Select("SELECT * FROM ems_execution_record WHERE plan_id = #{planId} AND plan_time = #{planTime}")
-	EmsExecutionRecord selectByPlanAndTime(@Param("planId") Long planId, @Param("planTime") LocalTime planTime);
+	/** 按计划 + 计划点时刻 + 设备查执行记录（调度器到点下发查重锚点，配合 uk_exec_plan_time_dev；一电站多 PCS 一点一条/设备） */
+	@Select("SELECT * FROM ems_execution_record WHERE plan_id = #{planId} AND plan_time = #{planTime} AND device_id = #{deviceId}")
+	EmsExecutionRecord selectByPlanTimeAndDevice(@Param("planId") Long planId, @Param("planTime") LocalTime planTime,
+			@Param("deviceId") Long deviceId);
 
 	/** 按指令 ID 查执行记录（ACK 回写定位） */
 	@Select("SELECT * FROM ems_execution_record WHERE command_id = #{commandId}")

@@ -17,6 +17,8 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.mapper.PcsDeviceMapper;
+import com.energyx.ems.model.PcsDevice;
 import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.energyx.ems.util.PlanPoint;
 import com.energyx.ems.util.TdenginePlanWriter;
@@ -80,7 +82,8 @@ class EmsPlanServiceTest {
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
-				validator, writer, commandClient, new DistributedLock(mock(StringRedisTemplate.class)), kafkaProducer);
+				validator, writer, commandClient, new DistributedLock(mock(StringRedisTemplate.class)), kafkaProducer,
+				mock(PcsDeviceMapper.class));
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
 		assertNotNull(plan);
@@ -122,7 +125,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -142,8 +146,8 @@ class EmsPlanServiceTest {
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, mock(EmsExecutionRecordMapper.class),
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
-		ReflectionTestUtils.setField(svc, "deviceName", "ess-dev-01");
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		assertThrows(BusinessException.class, () -> svc.dispatch(1L));
 	}
@@ -153,6 +157,7 @@ class EmsPlanServiceTest {
 		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
 		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
 		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);
 		TdenginePlanWriter writer = mock(TdenginePlanWriter.class);
 		CommandClient commandClient = mock(CommandClient.class);
 
@@ -171,33 +176,40 @@ class EmsPlanServiceTest {
 		constraint.setDischargePowerMax(new BigDecimal("80"));
 		when(constraintMapper.selectOne(any())).thenReturn(constraint);
 
+		// 电站 10 从设备表解析到 1 台 PCS 下发设备（P0-2）
+		PcsDevice pcs = new PcsDevice(5001L, 7L, "snd_ess_pcs", "ess-dev-01", 3);
+		when(pcsMapper.selectByStation(eq(7L), eq(10L), any())).thenReturn(List.of(pcs));
+
 		// 点序列：一个已到时刻的点（触发下发）+ 一个未来点（调度器稍后处理）
 		when(writer.read(eq(10L), any(LocalDate.class)))
 			.thenReturn(List.of(new PlanPoint(LocalTime.now().minusMinutes(1), "CHARGE", 50, 40),
 					new PlanPoint(LocalTime.now().plusHours(2), "DISCHARGE", 60, 50)));
-		when(execMapper.selectByPlanAndTime(anyLong(), any())).thenReturn(null);
+		when(execMapper.selectByPlanTimeAndDevice(anyLong(), any(), anyLong())).thenReturn(null);
 		when(execMapper.selectByPlanId(1L)).thenReturn(List.of()); // 受理后状态推进：尚无记录，未到收敛条件
 		when(commandClient.dispatch(anyString(), anyString(), anyString(), anyMap(), anyLong())).thenReturn("cmd-1001");
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				constraintMapper, planMapper, execMapper, new SafetyEnvelopeValidator(), writer, commandClient,
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
-		ReflectionTestUtils.setField(svc, "deviceName", "ess-dev-01");
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class), pcsMapper);
 		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
 
 		int sent = svc.dispatch(1L);
 
-		assertEquals(1, sent); // 仅到点的一个点被下发
+		assertEquals(1, sent); // 仅到点的一个点被下发（1 台 PCS）
 		verify(planMapper).updateById(any(EmsPlan.class)); // 状态置执行中
-		verify(commandClient, times(1)).dispatch(anyString(), anyString(), eq("CHARGE"), anyMap(), anyLong());
-		verify(execMapper)
-			.insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getPlanTime() != null && r.getState() == 1)); // 执行记录带点时刻
+		// 下发目标是设备表的 PCS（device_id 真实，非硬编码 0）
+		verify(commandClient, times(1)).dispatch(eq("snd_ess_pcs"), eq("ess-dev-01"), eq("CHARGE"), anyMap(),
+				anyLong());
+		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(
+				r -> r.getPlanTime() != null && r.getState() == 1 && r.getDeviceId() == 5001L)); // 执行记录带点时刻与真实
+																									// device_id
 	}
 
 	@Test
 	void refreshPlanStatus_marksCompletedWhenAllPointsTerminal() throws Exception {
 		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
 		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);
 		TdenginePlanWriter writer = mock(TdenginePlanWriter.class);
 
 		EmsPlan plan = new EmsPlan();
@@ -208,18 +220,22 @@ class EmsPlanServiceTest {
 		plan.setStatus(1); // 执行中
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
+		// 电站 10 的 PCS 下发设备（状态推进须能解析到，否则不收敛）
+		when(pcsMapper.selectByStation(eq(7L), eq(10L), any()))
+			.thenReturn(List.of(new PcsDevice(5001L, 7L, "snd_ess_pcs", "ess-dev-01", 3)));
 		when(writer.read(eq(10L), any(LocalDate.class)))
 			.thenReturn(List.of(new PlanPoint(LocalTime.of(2, 0), "CHARGE", 50, 40)));
 		EmsExecutionRecord rec = new EmsExecutionRecord();
 		rec.setPlanId(1L);
 		rec.setPlanTime(LocalTime.of(2, 0));
+		rec.setDeviceId(5001L);
 		rec.setState(2); // 成功
 		when(execMapper.selectByPlanId(1L)).thenReturn(List.of(rec));
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, execMapper, new SafetyEnvelopeValidator(), writer,
 				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)),
-				mock(EmsKafkaProducer.class));
+				mock(EmsKafkaProducer.class), pcsMapper);
 
 		svc.refreshPlanStatus(1L);
 
@@ -231,6 +247,7 @@ class EmsPlanServiceTest {
 	void refreshPlanStatus_marksFailedWhenAnyPointFailed() throws Exception {
 		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
 		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);
 		TdenginePlanWriter writer = mock(TdenginePlanWriter.class);
 
 		EmsPlan plan = new EmsPlan();
@@ -241,18 +258,21 @@ class EmsPlanServiceTest {
 		plan.setStatus(1);
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
+		when(pcsMapper.selectByStation(eq(7L), eq(10L), any()))
+			.thenReturn(List.of(new PcsDevice(5001L, 7L, "snd_ess_pcs", "ess-dev-01", 3)));
 		when(writer.read(eq(10L), any(LocalDate.class)))
 			.thenReturn(List.of(new PlanPoint(LocalTime.of(2, 0), "CHARGE", 50, 40)));
 		EmsExecutionRecord rec = new EmsExecutionRecord();
 		rec.setPlanId(1L);
 		rec.setPlanTime(LocalTime.of(2, 0));
+		rec.setDeviceId(5001L);
 		rec.setState(3); // 失败
 		when(execMapper.selectByPlanId(1L)).thenReturn(List.of(rec));
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, execMapper, new SafetyEnvelopeValidator(), writer,
 				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)),
-				mock(EmsKafkaProducer.class));
+				mock(EmsKafkaProducer.class), pcsMapper);
 
 		svc.refreshPlanStatus(1L);
 
@@ -286,7 +306,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		BusinessException ex = assertThrows(BusinessException.class,
 				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
@@ -326,7 +347,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -363,7 +385,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -391,11 +414,87 @@ class EmsPlanServiceTest {
 		EmsPlanService svc = new EmsPlanService(stratMapper, mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), mock(EmsPlanMapper.class), mock(EmsExecutionRecordMapper.class),
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
 
 		BusinessException ex = assertThrows(BusinessException.class,
 				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
 		assertTrue(ex.getMessage().contains("未启用"));
+	}
+
+	@Test
+	void dispatch_rejectsWhenStationHasNoPcsDevice() throws Exception {
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);
+
+		EmsPlan plan = new EmsPlan();
+		plan.setPlanId(1L);
+		plan.setTenantId(7L);
+		plan.setStationId(10L);
+		plan.setPlanDate(LocalDate.now());
+		plan.setStatus(0); // 待执行
+		when(planMapper.selectById(1L)).thenReturn(plan);
+		when(pcsMapper.selectByStation(eq(7L), eq(10L), any())).thenReturn(List.of()); // 电站未登记
+																						// PCS
+
+		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
+				mock(EmsConstraintMapper.class), planMapper, mock(EmsExecutionRecordMapper.class),
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class), pcsMapper);
+		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
+
+		// 消除旧"未配置下发设备 energyx.ems.device-name"裸报错：电站级上下文 + 修复指引（P0-2）
+		BusinessException ex = assertThrows(BusinessException.class, () -> svc.dispatch(1L));
+		assertTrue(ex.getMessage().contains("未配置可下发的 PCS 设备"));
+		assertTrue(ex.getMessage().contains("电站 10"));
+	}
+
+	@Test
+	void dispatch_multiPcsDispatchesToEachPcs() throws Exception {
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);
+		TdenginePlanWriter writer = mock(TdenginePlanWriter.class);
+		CommandClient commandClient = mock(CommandClient.class);
+
+		EmsPlan plan = new EmsPlan();
+		plan.setPlanId(1L);
+		plan.setTenantId(7L);
+		plan.setStationId(10L);
+		plan.setPlanDate(LocalDate.now());
+		plan.setStatus(0);
+		when(planMapper.selectById(1L)).thenReturn(plan);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+
+		// 一电站 2 台 PCS：每个到点对每台各下一条（P0-2 支持一电站多 PCS）
+		when(pcsMapper.selectByStation(eq(7L), eq(10L), any()))
+			.thenReturn(List.of(new PcsDevice(5001L, 7L, "snd_ess_pcs", "ess-dev-01", 3),
+					new PcsDevice(5002L, 7L, "snd_ess_pcs", "ess-dev-02", 3)));
+		when(writer.read(eq(10L), any(LocalDate.class)))
+			.thenReturn(List.of(new PlanPoint(LocalTime.now().minusMinutes(1), "DISCHARGE", 60, 50)));
+		when(execMapper.selectByPlanTimeAndDevice(anyLong(), any(), anyLong())).thenReturn(null);
+		when(execMapper.selectByPlanId(1L)).thenReturn(List.of());
+		when(commandClient.dispatch(anyString(), anyString(), anyString(), anyMap(), anyLong())).thenReturn("cmd-1");
+
+		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
+				constraintMapper, planMapper, execMapper, new SafetyEnvelopeValidator(), writer, commandClient,
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class), pcsMapper);
+		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
+
+		int sent = svc.dispatch(1L);
+
+		assertEquals(2, sent); // 1 个到点 × 2 台 PCS = 2 条下发
+		verify(commandClient, times(2)).dispatch(anyString(), anyString(), eq("DISCHARGE"), anyMap(), anyLong());
+		verify(execMapper, times(2)).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getState() == 1));
+		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getDeviceId() == 5001L));
+		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getDeviceId() == 5002L));
 	}
 
 }

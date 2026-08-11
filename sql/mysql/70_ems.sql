@@ -107,11 +107,14 @@ CREATE TABLE `ems_execution_record` (
   `tenant_id`    BIGINT      NOT NULL,
   `plan_id`      BIGINT      NOT NULL,
   `command_id`   VARCHAR(64) NOT NULL COMMENT '对应 iot_command',
+  `plan_time`    TIME        NOT NULL DEFAULT '00:00' COMMENT '计划点时刻（5min粒度，调度器到点下发锚点）',
   `device_id`    BIGINT      NOT NULL,
   `action`       VARCHAR(32) NOT NULL COMMENT 'CHARGE/DISCHARGE/STANDBY',
+  `state`        TINYINT     NOT NULL DEFAULT 0 COMMENT '0待下发 1已下发 2成功 3失败 4超时',
   `params`       JSON                 DEFAULT NULL,
   `result`       JSON                 DEFAULT NULL COMMENT '执行回执',
   `execute_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`exec_id`),
-  KEY `idx_exec_plan` (`plan_id`)
+  KEY `idx_exec_plan` (`plan_id`),
+  UNIQUE KEY `uk_exec_plan_time_dev` (`plan_id`, `plan_time`, `device_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='策略执行记录';

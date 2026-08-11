@@ -31,3 +31,17 @@ export async function fetchActualCurve(
   }
   return { times, power }
 }
+
+/**
+ * 多台 PCS 实际功率曲线按时刻聚合：同刻功率求和，时间并集升序（P0-2 一电站多 PCS）。
+ * 0 台返回空曲线；1 台原样返回。空曲线由调用方当 null 处理。
+ */
+export function mergeCurves(curves: { times: string[]; power: number[] }[]): { times: string[]; power: number[] } {
+  if (curves.length <= 1) return curves[0] ?? { times: [], power: [] }
+  const byTime = new Map<string, number>()
+  for (const c of curves) {
+    c.times.forEach((t, i) => byTime.set(t, (byTime.get(t) ?? 0) + Number(c.power[i] ?? 0)))
+  }
+  const times = [...byTime.keys()].sort()
+  return { times, power: times.map((t) => byTime.get(t)!) }
+}
