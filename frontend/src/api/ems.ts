@@ -1,5 +1,5 @@
 import http from './http'
-import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsExecutionRecord, EmsConstraint, EmsElectricityPrice, PageResult, RevenueSummary, RevenueTrendPoint, RevenueDetailRow, EmsStationMeta } from '@/types/models'
+import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsExecutionRecord, EmsConstraint, EmsElectricityPrice, PageResult, RevenueSummary, RevenueTrendPoint, RevenueDetailRow, EmsStationMeta, DemandSavingsView, EmsDemandConfig, EmsDemandRecord } from '@/types/models'
 
 /** EMS 储能策略 API（网关路由 /api/ems/** → energy-ems） */
 export const emsApi = {
@@ -69,4 +69,24 @@ export const emsApi = {
 
   /** PUT /api/ems/revenue/meta 保存电站投资元数据 */
   revenueMetaPut(body: Partial<EmsStationMeta>): Promise<EmsStationMeta> { return http.put('/api/ems/revenue/meta', body) },
+
+  /** GET /api/ems/demand/records 某日 96 槽位需量记录 */
+  demandRecords(stationId: string, date: string): Promise<EmsDemandRecord[]> {
+    return http.get('/api/ems/demand/records', { params: { stationId, date } })
+  },
+
+  /** GET /api/ems/demand/config 站点需量配置（未配置返回 null） */
+  demandConfigGet(stationId: string): Promise<EmsDemandConfig | null> {
+    return http.get('/api/ems/demand/config', { params: { stationId } })
+  },
+
+  /** PUT /api/ems/demand/config 保存需量配置（upsert） */
+  demandConfigPut(body: Partial<EmsDemandConfig>): Promise<EmsDemandConfig> {
+    return http.put('/api/ems/demand/config', body)
+  },
+
+  /** GET /api/ems/demand/savings 需量节省估算 */
+  demandSavings(params: Record<string, unknown>): Promise<DemandSavingsView> {
+    return http.get('/api/ems/demand/savings', { params })
+  },
 }

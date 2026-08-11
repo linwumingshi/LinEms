@@ -302,6 +302,54 @@ export interface EmsStationMeta {
   updateTime?: string
 }
 
+// ---------------- 需量管理（P1-2） ----------------
+
+export interface EmsDemandConfig {
+  demandConfigId?: string
+  tenantId?: string
+  stationId: string
+  /** 需量限值 kW（>0 启用检测） */
+  demandLimitKw: number | null
+  /** 需量费率 ¥/kW·月 */
+  demandRate: number | null
+  createTime?: string
+  updateTime?: string
+}
+
+export interface EmsDemandRecord {
+  demandRecordId?: string
+  tenantId?: string
+  stationId: string
+  /** 槽位起点（yyyy-MM-ddTHH:mm:ss） */
+  windowStart: string
+  /** 槽位终点 */
+  windowEnd: string
+  /** 槽位实际需量（15min 平均功率 kW） */
+  demandKw: number
+  /** 限值快照 kW */
+  limitKw: number | null
+  overLimit: boolean
+  /** 削峰放电功率 kW */
+  shavedKw: number
+  /** NONE/SHED/SHED_FAILED/ALARM_ONLY */
+  action: string
+  createTime?: string
+}
+
+export interface DemandSavingsView {
+  stationId: string
+  /** DAY/MONTH/YEAR */
+  periodType: string
+  startDate: string
+  endDate: string
+  /** 实际最大需量 kW */
+  actualMaxKw: number
+  /** 未削峰最大需量 kW */
+  unshavedMaxKw: number
+  /** 节省金额 元 */
+  savings: number
+}
+
 // ---------------- 电站 Station ----------------
 
 /** 电站资产（iot_station；stationId 为 Long，序列化为字符串，同雪花约定） */
