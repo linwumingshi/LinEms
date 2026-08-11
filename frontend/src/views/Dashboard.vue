@@ -144,8 +144,8 @@ const stations = ref<Station[]>([])
 const selectedStation = ref('')
 /** 选中电站下的设备（一次取回 200 条，覆盖单站设备规模） */
 const stationDevices = ref<Device[]>([])
-/** 遥测 KPI：功率为站内 PCS 求和，其余为均值；onlineDevices 为有属性上报的 PCS 台数 */
-const telemetry = ref({ soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0 })
+/** 遥测 KPI：功率为站内 PCS 求和，其余为均值；onlineDevices 为有属性上报的 PCS 台数；mode1/2Count 为 runMode 聚合计数（1=充电/2=放电） */
+const telemetry = ref({ soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0, mode1Count: 0, mode2Count: 0 })
 
 /** 加载电站列表（现有 API 方法名为 stationPage） */
 async function loadStations(): Promise<void> {
@@ -157,14 +157,23 @@ async function loadStations(): Promise<void> {
   }
 }
 
-/** 按选中电站拉取站下设备（后端 DeviceQuery 支持 stationId 过滤） */
-async function loadStationDevices(): Promise<void> {
+/** 按选中电站拉取站下设备（后端 DeviceQuery 支持 stationId 过滤）；失败时清空设备并归零遥测，避免残留上一站数据 */
+async function loadStationDevices(seq: number): Promise<void> {
   if (!selectedStation.value) {
     stationDevices.value = []
     return
   }
-  const page = await deviceApi.page({ pageNum: 1, pageSize: 200, stationId: selectedStation.value })
-  stationDevices.value = page.records
+  try {
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 200, stationId: selectedStation.value })
+    if (seq !== stationSeq) return
+    stationDevices.value = page.records
+  } catch (e) {
+    // 过期请求直接丢弃，由最新一次切换负责自身状态
+    if (seq !== stationSeq) return
+    stationDevices.value = []
+    telemetry.value = { soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0, mode1Count: 0, mode2Count: 0 }
+    throw e
+  }
 }
 
 /** 取影子 reported 中某键的数值；缺失或非数值按 0 计 */
@@ -186,15 +195,23 @@ function sum(shadows: ShadowView[], key: string): number {
   return shadows.reduce((acc, s) => acc + numOf(s.reported, key), 0)
 }
 
-/** 聚合遥测 KPI：取站下全部 PCS 影子（productKey 含 meter 判为电表，其余为 PCS） */
-async function loadTelemetry(): Promise<void> {
+/** 聚合遥测 KPI：取站下全部 PCS 影子（productKey 含 meter 判为电表，其余为 PCS）；同时统计 runMode 计数供功率语义色判定 */
+async function loadTelemetry(seq: number): Promise<void> {
   const pcs = stationDevices.value.filter((d) => !d.productKey?.includes('meter'))
   if (pcs.length === 0) {
-    telemetry.value = { soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0 }
+    telemetry.value = { soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0, mode1Count: 0, mode2Count: 0 }
     return
   }
   const shadows = await Promise.all(pcs.map((d) => shadowApi.getShadow(String(d.deviceId)).catch(() => null)))
+  if (seq !== stationSeq) return
   const reported = shadows.filter((s): s is ShadowView => !!s?.reported)
+  // 功率为恒正标量，充/放方向由 runMode 表达：1=充电 2=放电，待机 0 与缺失不计数
+  let mode1Count = 0
+  let mode2Count = 0
+  for (const s of reported) {
+    if (s.reported.runMode === 1) mode1Count++
+    else if (s.reported.runMode === 2) mode2Count++
+  }
   telemetry.value = {
     soc: avg(reported, 'soc'),
     power: sum(reported, 'power'),
@@ -202,6 +219,8 @@ async function loadTelemetry(): Promise<void> {
     current: avg(reported, 'current'),
     temp: avg(reported, 'temp'),
     onlineDevices: reported.length,
+    mode1Count,
+    mode2Count,
   }
 }
 
@@ -209,7 +228,7 @@ async function loadTelemetry(): Promise<void> {
 const curveData = ref<{ times: string[]; soc: number[]; power: number[]; temp: number[] }>({ times: [], soc: [], power: [], temp: [] })
 
 /** 加载近 24h 属性历史：首台非电表设备（PCS 判定与 Task 1 一致）；无 PCS 时曲线置空 */
-async function loadCurve(): Promise<void> {
+async function loadCurve(seq: number): Promise<void> {
   const pcs = stationDevices.value.find((d) => !d.productKey?.includes('meter'))
   if (!pcs) {
     curveData.value = { times: [], soc: [], power: [], temp: [] }
@@ -228,6 +247,7 @@ async function loadCurve(): Promise<void> {
       page: 1,
       size: 2000,
     })
+    if (seq !== stationSeq) return
     const times: string[] = []
     const soc: number[] = []
     const power: number[] = []
@@ -240,6 +260,8 @@ async function loadCurve(): Promise<void> {
     }
     curveData.value = { times, soc, power, temp }
   } catch (e) {
+    // 过期请求直接丢弃，由最新一次切换负责自身状态
+    if (seq !== stationSeq) return
     // 曲线失败不阻断后续收益加载：置空并渲染空态，避免残留上一站旧数据
     curveData.value = { times: [], soc: [], power: [], temp: [] }
     renderTelemetryChart()
@@ -286,35 +308,47 @@ function todayStr(): string {
 }
 
 /** 加载电站当日收益汇总；未选电站时置空；失败单独提示，不阻断曲线等其余加载 */
-async function loadRevenue(): Promise<void> {
+async function loadRevenue(seq: number): Promise<void> {
   if (!selectedStation.value) {
     revenue.value = null
     return
   }
   try {
-    revenue.value = await emsApi.revenueSummary({
+    const r = await emsApi.revenueSummary({
       stationId: selectedStation.value,
       periodType: 'DAY',
       date: todayStr(),
     })
+    if (seq !== stationSeq) return
+    revenue.value = r
   } catch (e) {
+    // 过期请求直接丢弃，由最新一次切换负责自身状态
+    if (seq !== stationSeq) return
     revenue.value = null
     ElMessage.error(`收益加载失败：${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
-/** 电站切换：先取站下设备与遥测 KPI（关键路径），再加载曲线与当日收益（各自容错） */
+/** 电站切换请求序号：递增，仅最新一次请求可写入遥测/曲线/收益，过期响应直接丢弃 */
+let stationSeq = 0
+
+/** 电站切换：先取站下设备与遥测 KPI（关键路径），再加载曲线与当日收益（各自容错）；seq 守卫丢弃过期响应 */
 async function onStationChange(): Promise<void> {
+  const seq = ++stationSeq
   try {
-    await loadStationDevices()
-    await loadTelemetry()
+    await loadStationDevices(seq)
+    if (seq !== stationSeq) return
+    await loadTelemetry(seq)
+    if (seq !== stationSeq) return
   } catch (e) {
     ElMessage.error(`遥测加载失败：${e instanceof Error ? e.message : String(e)}`)
     return
   }
-  await loadCurve()
+  await loadCurve(seq)
+  if (seq !== stationSeq) return
   renderTelemetryChart()
-  await loadRevenue()
+  await loadRevenue(seq)
+  if (seq !== stationSeq) return
 }
 
 onMounted(() => {
@@ -356,7 +390,7 @@ onMounted(() => {
           </div>
           <div class="ex-readout">
             <span class="ex-readout-label">功率</span>
-            <span class="ex-readout-value" :class="telemetry.power >= 0 ? 'charge' : 'discharge'"><b class="ex-num">{{ telemetry.power.toFixed(1) }}</b><em>kW</em></span>
+            <span class="ex-readout-value" :class="telemetry.mode2Count > telemetry.mode1Count ? 'discharge' : telemetry.mode1Count > 0 ? 'charge' : ''"><b class="ex-num">{{ telemetry.power.toFixed(1) }}</b><em>kW</em></span>
           </div>
           <div class="ex-readout">
             <span class="ex-readout-label">电压</span>
