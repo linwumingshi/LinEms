@@ -130,4 +130,43 @@ class TsdbClientTest {
 		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
 	}
 
+	@Test
+	void history_page2FailureReturnsEmpty() {
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+		// 两页：page1 满 1000 行 total=2000，page2 业务失败 → 返回空列表而非部分 1000 行
+		java.util.ArrayList<TsdbHistoryRecordDto> page1 = new java.util.ArrayList<>();
+		for (int i = 0; i < 1000; i++)
+			page1.add(row(start + i * 60_000L, 50.0, 2));
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), eq("asc"), eq(1), eq(1000)))
+			.thenReturn(Result.ok(view(2000, page1)));
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), eq("asc"), eq(2), eq(1000)))
+			.thenReturn(Result.fail(com.energyx.common.exception.ErrorCode.PARAM_INVALID, "boom"));
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
+	@Test
+	void history_nullResultReturnsEmpty() {
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt(),
+				anyInt()))
+			.thenReturn(null);
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
+	@Test
+	void history_nullRecordsReturnsEmpty() {
+		TsdbFeignClient feign = mock(TsdbFeignClient.class);
+		when(feign.history(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt(),
+				anyInt()))
+			.thenReturn(Result.ok(view(0, null)));
+		TsdbClient client = newClient(feign);
+
+		assertTrue(client.history(9L, "snd_ess_pcs", DAY).isEmpty());
+	}
+
 }

@@ -48,11 +48,11 @@ public class TsdbClient {
 				if (result == null || !result.isSuccess()) {
 					log.warn("TSDB 查询失败 deviceId={} date={} code={} msg={}", deviceId, date,
 							result == null ? -1 : result.getCode(), result == null ? "null" : result.getMessage());
-					break;
+					return List.of();
 				}
 				TsdbHistoryViewDto view = result.getData();
 				if (view == null || view.getRecords() == null || view.getRecords().isEmpty()) {
-					break;
+					return List.of();
 				}
 				total = view.getTotal();
 				for (TsdbHistoryRecordDto rec : view.getRecords()) {
