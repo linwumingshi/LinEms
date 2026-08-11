@@ -9,7 +9,7 @@ import java.util.HexFormat;
  * 模拟设备身份派生：设备名 / 密钥统一算法，保证造数工具与压测工具对同一批设备可复现。
  *
  * <ul>
- *   <li>deviceName = {@code sim-dev-%0{width}d}，width = max(6, 位数(count))；</li>
+ *   <li>deviceName = {@code sim-dev-%0{width}d}，width = max(6, 位数(maxIndex))；</li>
  *   <li>deviceSecret = hex(SHA-256(secretBase + ":" + index))，64 位十六进制。</li>
  * </ul>
  */
@@ -18,9 +18,9 @@ public final class Secrets {
     private Secrets() {
     }
 
-    /** 第 index（1..count）台设备名。 */
-    public static String deviceName(int index, int count) {
-        int width = Math.max(6, String.valueOf(count).length());
+    /** 第 index（1..maxIndex）台设备名；maxIndex = 批量造数的最大序号（start-index + count - 1）。 */
+    public static String deviceName(int index, int maxIndex) {
+        int width = Math.max(6, String.valueOf(maxIndex).length());
         return String.format("sim-dev-%0" + width + "d", index);
     }
 

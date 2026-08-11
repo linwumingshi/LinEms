@@ -22,6 +22,8 @@ import java.sql.Statement;
  *       避免「删 A 设备后重加 A」残留吊销凭据导致连不上（uk_cred_device 无 deleted 列）；</li>
  *   <li>device_secret 由 {@link Secrets#deriveSecret} 确定性派生，压测工具可复现；</li>
  *   <li>device.status=2（已激活离线）满足 Broker「仅 2/3 允许接入」的状态校验；</li>
+ *   <li>--start-index N 从序号 N 开始造数（默认 1）：多产品造数时避开已占用设备名/号段
+ *       （如默认 PCS 已占 sim-dev-000001），并配合 --station 把设备挂到电站；</li>
  *   <li>分批 executeBatch（500 行/批），10 万级造数秒级完成。</li>
  * </ul>
  */
@@ -37,6 +39,9 @@ public final class SeedDevices {
     }
 
     public static int run(Args args) throws SQLException {
+        if (args.startIndex < 1) {
+            throw new IllegalArgumentException("start-index 必须 ≥ 1，当前: " + args.startIndex);
+        }
         try (Connection conn = DriverManager.getConnection(args.jdbcUrl, args.user, args.password)) {
             checkProductExists(conn, args.productKey);
             int inserted = 0;
@@ -52,9 +57,10 @@ public final class SeedDevices {
                                  + "auth_status = 1, fail_count = 0")) {
 
                 long baseId = args.deviceIdBase;
-                for (int i = 1; i <= args.count; i++) {
+                int maxIndex = args.startIndex + args.count - 1;
+                for (int i = args.startIndex; i <= maxIndex; i++) {
                     long deviceId = baseId + i;
-                    String name = Secrets.deviceName(i, args.count);
+                    String name = Secrets.deviceName(i, maxIndex);
                     dev.setLong(1, deviceId);
                     dev.setLong(2, args.tenantId);
                     dev.setObject(3, args.enterpriseId == null ? null : args.enterpriseId);
@@ -118,6 +124,7 @@ public final class SeedDevices {
         String productKey = "snd_ess_pcs";
         String deviceType = "PCS";
         int count = 1000;
+        int startIndex = 1;
         String secretBase = "sanduo-stress";
         long deviceIdBase = DEVICE_ID_BASE;
 

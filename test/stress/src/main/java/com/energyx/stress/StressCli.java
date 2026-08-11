@@ -72,6 +72,7 @@ public final class StressCli {
         a.productKey = str(o, "product", "snd_ess_pcs");
         a.deviceType = str(o, "device-type", "PCS");
         a.count = num(o, "count", 1000);
+        a.startIndex = num(o, "start-index", 1);
         a.secretBase = str(o, "secret-base", "sanduo-stress");
         a.deviceIdBase = o.containsKey("device-id-base")
                 ? lng(o, "device-id-base", SeedDevices.DEVICE_ID_BASE) : SeedDevices.DEVICE_ID_BASE;
@@ -193,13 +194,17 @@ public final class StressCli {
 
                   seed        设备造数注册（写入 es_device 库）
                       --count 10000 --product snd_ess_pcs --tenant 1
-                      --secret-base sanduo-stress --jdbc-url <url> --user root --password ${MYSQL_PASSWORD}
+                      --station <stationId> --start-index <N> --secret-base sanduo-stress
+                      --jdbc-url <url> --user root --password ${MYSQL_PASSWORD}
+                      # --station 把设备挂到电站（EMS 需量/收益按站查询必需）；
+                      # --start-index 从序号 N 造起（默认 1），多产品造数避开已占用设备名/号段
                   connect     连接压测（建连速率 / 延迟分位 / 保持连接）
                       --count 100000 --concurrency 500 --host 127.0.0.1 --port 1883
                       --subscribe false --hold-seconds 60 --io-threads 16
                       --tls --tls-skip-verify | --tls --tls-cert <server-cert.pem>
                   throughput  吞吐压测（目标 = count × rate msg/s）
                       --count 10000 --rate 20 --duration 60 --workers 8
+                      --product snd_ess_pcs|snd_ess_meter   # METER 只报 importPower
                   control     控制链路 P99（命令下发→设备 ACK→SUCCESS，目标 P99 ≤ 500ms）
                       --count 200 --concurrency 50 --gateway http://127.0.0.1:8000 --timeout 10000
 

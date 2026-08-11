@@ -24,7 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * 20000 台 × 25 msg/s = 50 万 msg/s。压测端只度量「设备 → Broker 受理」，端到端处理
  * 与积压请对照 Broker 统计与 Kafka 消费 lag（见 Phase8 文档）。</p>
  *
- * <p>属性使用物模型已登记标识（soc/voltage/current/power/temp/runMode），
+ * <p>属性产品感知：PCS 报物模型六字段（soc/voltage/current/power/temp/runMode）；
+ * METER（--product snd_ess_meter）只报 importPower。均使用物模型已登记标识，
  * 保证 access 侧 ModelValidator 校验通过、链路真实生效。</p>
  */
 public final class ThroughputLoad {
@@ -85,7 +86,7 @@ public final class ThroughputLoad {
                     for (int k = sliceStart; k < sliceEnd; k++) {
                         MqttDevice dev = devices.get(k);
                         try {
-                            dev.publishProperty(props(rnd));
+                            dev.publishProperty(props(args.productKey, rnd));
                             published.incrementAndGet();
                         } catch (Exception e) {
                             failed.incrementAndGet();
@@ -149,7 +150,11 @@ public final class ThroughputLoad {
         return failed.get() > 0 ? 1 : 0;
     }
 
-    private static Map<String, Object> props(ThreadLocalRandom rnd) {
+    /** 按产品生成随机属性：METER 只报 importPower（用电功率），其余按 PCS 六字段。 */
+    private static Map<String, Object> props(String productKey, ThreadLocalRandom rnd) {
+        if ("snd_ess_meter".equals(productKey)) {
+            return Map.of("importPower", 500 + rnd.nextInt(3000));
+        }
         return Map.of(
                 "soc", 40 + rnd.nextInt(60),
                 "voltage", 200 + rnd.nextInt(50),
