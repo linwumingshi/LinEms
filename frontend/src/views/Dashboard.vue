@@ -2,10 +2,13 @@
 import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { alarmApi } from '@/api/alarm'
+import { deviceApi } from '@/api/device'
+import { shadowApi } from '@/api/shadow'
+import { stationApi } from '@/api/station'
 import AlarmLevelTag from '@/components/AlarmLevelTag.vue'
 import { useEChart } from '@/composables/useEChart'
 import { levelText, statusTag, statusText, summarizeRecords, toLocal, typeText } from '@/utils/alarmFormat'
-import type { AlarmRecord } from '@/types/models'
+import type { AlarmRecord, Device, ShadowView, Station } from '@/types/models'
 
 const loading = ref(false)
 const error = ref('')
@@ -131,7 +134,87 @@ watch(
   { deep: true, flush: 'post' },
 )
 
-onMounted(load)
+// ---------------- 电站选择与遥测 KPI（P1-4 储能遥测驾驶舱：影子实时快照聚合） ----------------
+
+/** 电站下拉数据源 */
+const stations = ref<Station[]>([])
+/** 当前选中电站 id（stationId 为 Long，序列化为字符串） */
+const selectedStation = ref('')
+/** 选中电站下的设备（一次取回 200 条，覆盖单站设备规模） */
+const stationDevices = ref<Device[]>([])
+/** 遥测 KPI：功率为站内 PCS 求和，其余为均值；onlineDevices 为有属性上报的 PCS 台数 */
+const telemetry = ref({ soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0 })
+
+/** 加载电站列表（现有 API 方法名为 stationPage） */
+async function loadStations(): Promise<void> {
+  try {
+    const page = await stationApi.stationPage({ pageNum: 1, pageSize: 100 })
+    stations.value = page.records
+  } catch (e) {
+    ElMessage.error(`电站列表加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** 按选中电站拉取站下设备（后端 DeviceQuery 支持 stationId 过滤） */
+async function loadStationDevices(): Promise<void> {
+  if (!selectedStation.value) {
+    stationDevices.value = []
+    return
+  }
+  const page = await deviceApi.page({ pageNum: 1, pageSize: 200, stationId: selectedStation.value })
+  stationDevices.value = page.records
+}
+
+/** 取影子 reported 中某键的数值；缺失或非数值按 0 计 */
+function numOf(rep: Record<string, unknown>, key: string): number {
+  const v = rep[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0
+}
+
+/** 求均值：仅统计有有效数值上报的设备（避免缺失按 0 拉低均值） */
+function avg(shadows: ShadowView[], key: string): number {
+  const vals = shadows.map((s) => numOf(s.reported, key)).filter((n) => n !== 0)
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+}
+
+/** 求和：站级功率 = 各 PCS 功率之和 */
+function sum(shadows: ShadowView[], key: string): number {
+  return shadows.reduce((acc, s) => acc + numOf(s.reported, key), 0)
+}
+
+/** 聚合遥测 KPI：取站下全部 PCS 影子（productKey 含 meter 判为电表，其余为 PCS） */
+async function loadTelemetry(): Promise<void> {
+  const pcs = stationDevices.value.filter((d) => !d.productKey?.includes('meter'))
+  if (pcs.length === 0) {
+    telemetry.value = { soc: 0, power: 0, voltage: 0, current: 0, temp: 0, onlineDevices: 0 }
+    return
+  }
+  const shadows = await Promise.all(pcs.map((d) => shadowApi.getShadow(String(d.deviceId)).catch(() => null)))
+  const reported = shadows.filter((s): s is ShadowView => !!s?.reported)
+  telemetry.value = {
+    soc: avg(reported, 'soc'),
+    power: sum(reported, 'power'),
+    voltage: avg(reported, 'voltage'),
+    current: avg(reported, 'current'),
+    temp: avg(reported, 'temp'),
+    onlineDevices: reported.length,
+  }
+}
+
+/** 电站切换：先取站下设备，再聚合遥测 */
+async function onStationChange(): Promise<void> {
+  try {
+    await loadStationDevices()
+    await loadTelemetry()
+  } catch (e) {
+    ElMessage.error(`遥测加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+onMounted(() => {
+  load()
+  loadStations()
+})
 </script>
 
 <template>
@@ -143,11 +226,42 @@ onMounted(load)
     <header class="ex-page-head">
       <div class="head-title">
         <h1 class="ex-title">设备监控</h1>
-        <p class="ex-sub">告警驾驶舱 · 状态口径为精确计数，图表口径为近 500 条样本窗口</p>
+        <p class="ex-sub">储能遥测驾驶舱 · 遥测为影子实时快照聚合，告警状态为精确计数、图表为近 500 条样本窗口</p>
       </div>
+      <el-select v-model="selectedStation" placeholder="选择电站" filterable clearable style="width: 220px" @change="onStationChange">
+        <el-option v-for="s in stations" :key="s.stationId" :label="s.stationName" :value="s.stationId" />
+      </el-select>
     </header>
 
-    <!-- 仪表读数带 -->
+    <!-- 遥测读数带：PCS 影子实时快照聚合（SOC/功率/电压/电流/温度/在线设备） -->
+    <section class="ex-readout-band" style="--ro-cols: 6" aria-label="储能遥测读数">
+      <div class="ex-readout">
+        <span class="ex-readout-label">SOC</span>
+        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.soc.toFixed(1) }}</b><em>%</em></span>
+      </div>
+      <div class="ex-readout">
+        <span class="ex-readout-label">功率</span>
+        <span class="ex-readout-value" :class="telemetry.power >= 0 ? 'charge' : 'discharge'"><b class="ex-num">{{ telemetry.power.toFixed(1) }}</b><em>kW</em></span>
+      </div>
+      <div class="ex-readout">
+        <span class="ex-readout-label">电压</span>
+        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.voltage.toFixed(1) }}</b><em>V</em></span>
+      </div>
+      <div class="ex-readout">
+        <span class="ex-readout-label">电流</span>
+        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.current.toFixed(1) }}</b><em>A</em></span>
+      </div>
+      <div class="ex-readout">
+        <span class="ex-readout-label">温度</span>
+        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.temp.toFixed(1) }}</b><em>℃</em></span>
+      </div>
+      <div class="ex-readout">
+        <span class="ex-readout-label">在线设备</span>
+        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.onlineDevices }}</b><em>台</em></span>
+      </div>
+    </section>
+
+    <!-- 告警仪表读数带 -->
     <section class="ex-readout-band" style="--ro-cols: 4" aria-label="告警状态计数">
       <div class="ex-readout">
         <span class="ex-readout-label">触发中告警</span>
