@@ -173,9 +173,11 @@ function numOf(rep: Record<string, unknown>, key: string): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
 
-/** 求均值：仅统计有有效数值上报的设备（避免缺失按 0 拉低均值） */
+/** 求均值：仅统计 reported 中键存在且为有限数值的设备（缺失不计入，合法 0 值保留） */
 function avg(shadows: ShadowView[], key: string): number {
-  const vals = shadows.map((s) => numOf(s.reported, key)).filter((n) => n !== 0)
+  const vals = shadows
+    .map((s) => s.reported[key])
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
 }
 
@@ -338,121 +340,140 @@ onMounted(() => {
       </el-select>
     </header>
 
-    <!-- 遥测读数带：PCS 影子实时快照聚合（SOC/功率/电压/电流/温度/在线设备） -->
-    <section class="ex-readout-band" style="--ro-cols: 6" aria-label="储能遥测读数">
-      <div class="ex-readout">
-        <span class="ex-readout-label">SOC</span>
-        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.soc.toFixed(1) }}</b><em>%</em></span>
+    <!-- 遥测区（主）：KPI 读数带 + 时序曲线 + 收益卡，随电站联动 -->
+    <section class="telemetry-section">
+      <!-- 未选电站：引导空态，避免全 0 裸显 -->
+      <div v-if="!selectedStation" class="ex-card telemetry-empty">
+        <p class="telemetry-empty-text">请选择电站以查看实时遥测</p>
       </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">功率</span>
-        <span class="ex-readout-value" :class="telemetry.power >= 0 ? 'charge' : 'discharge'"><b class="ex-num">{{ telemetry.power.toFixed(1) }}</b><em>kW</em></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">电压</span>
-        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.voltage.toFixed(1) }}</b><em>V</em></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">电流</span>
-        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.current.toFixed(1) }}</b><em>A</em></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">温度</span>
-        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.temp.toFixed(1) }}</b><em>℃</em></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">在线设备</span>
-        <span class="ex-readout-value"><b class="ex-num">{{ telemetry.onlineDevices }}</b><em>台</em></span>
-      </div>
+
+      <template v-else>
+        <!-- 遥测读数带：PCS 影子实时快照聚合（SOC/功率/电压/电流/温度/在线设备） -->
+        <section class="ex-readout-band" style="--ro-cols: 6" aria-label="储能遥测读数">
+          <div class="ex-readout">
+            <span class="ex-readout-label">SOC</span>
+            <span class="ex-readout-value"><b class="ex-num">{{ telemetry.soc.toFixed(1) }}</b><em>%</em></span>
+          </div>
+          <div class="ex-readout">
+            <span class="ex-readout-label">功率</span>
+            <span class="ex-readout-value" :class="telemetry.power >= 0 ? 'charge' : 'discharge'"><b class="ex-num">{{ telemetry.power.toFixed(1) }}</b><em>kW</em></span>
+          </div>
+          <div class="ex-readout">
+            <span class="ex-readout-label">电压</span>
+            <span class="ex-readout-value"><b class="ex-num">{{ telemetry.voltage.toFixed(1) }}</b><em>V</em></span>
+          </div>
+          <div class="ex-readout">
+            <span class="ex-readout-label">电流</span>
+            <span class="ex-readout-value"><b class="ex-num">{{ telemetry.current.toFixed(1) }}</b><em>A</em></span>
+          </div>
+          <div class="ex-readout">
+            <span class="ex-readout-label">温度</span>
+            <span class="ex-readout-value"><b class="ex-num">{{ telemetry.temp.toFixed(1) }}</b><em>℃</em></span>
+          </div>
+          <div class="ex-readout">
+            <span class="ex-readout-label">在线设备</span>
+            <span class="ex-readout-value"><b class="ex-num">{{ telemetry.onlineDevices }}</b><em>台</em></span>
+          </div>
+        </section>
+
+        <!-- 近 24h 遥测曲线：首台 PCS 的功率/SOC/温度属性历史（双 y 轴） -->
+        <section class="ex-card chart-card">
+          <div ref="telemetryEl" class="chart"></div>
+          <div v-if="!curveData.times.length" class="chart-empty">暂无遥测曲线数据</div>
+        </section>
+
+        <!-- 今日收益卡：电站级 DAY 周期收益汇总（套利收益/电量） -->
+        <section class="ex-card revenue-card">
+          <div class="ex-card-head">
+            <h2 class="ex-card-title">今日收益（电站级）</h2>
+          </div>
+          <div class="ex-readout-band" style="--ro-cols: 4" aria-label="电站收益读数">
+            <div class="ex-readout">
+              <span class="ex-readout-label">套利收益</span>
+              <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.arbitrageRevenue.toFixed(2) : '—' }}</b><em>元</em></span>
+            </div>
+            <div class="ex-readout">
+              <span class="ex-readout-label">放电量</span>
+              <span class="ex-readout-value discharge"><b class="ex-num">{{ revenue ? revenue.dischargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+            </div>
+            <div class="ex-readout">
+              <span class="ex-readout-label">充电量</span>
+              <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.chargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+            </div>
+            <div class="ex-readout">
+              <span class="ex-readout-label">总电量</span>
+              <span class="ex-readout-value"><b class="ex-num">{{ revenue ? revenue.totalEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+            </div>
+          </div>
+        </section>
+      </template>
     </section>
 
-    <!-- 今日收益卡：电站级 DAY 周期收益汇总（套利收益/电量） -->
-    <section class="ex-card revenue-card">
-      <div class="ex-card-head">
-        <h2 class="ex-card-title">今日收益（电站级）</h2>
-      </div>
-      <div class="ex-readout-band" style="--ro-cols: 4" aria-label="电站收益读数">
+    <!-- 告警区（次）：全局告警统计，不受电站筛选影响 -->
+    <section class="alarm-section">
+      <header class="alarm-section-head">
+        <h2 class="alarm-section-title">告警</h2>
+        <p class="alarm-section-sub">全局统计 · 状态为精确计数，图表与列表为近 500 条样本窗口</p>
+      </header>
+
+      <!-- 告警仪表读数带 -->
+      <section class="ex-readout-band" style="--ro-cols: 4" aria-label="告警状态计数">
         <div class="ex-readout">
-          <span class="ex-readout-label">套利收益</span>
-          <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.arbitrageRevenue.toFixed(2) : '—' }}</b><em>元</em></span>
+          <span class="ex-readout-label">触发中告警</span>
+          <span class="ex-readout-value danger"><b>{{ stats.active }}</b></span>
         </div>
         <div class="ex-readout">
-          <span class="ex-readout-label">放电量</span>
-          <span class="ex-readout-value discharge"><b class="ex-num">{{ revenue ? revenue.dischargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+          <span class="ex-readout-label">已恢复告警</span>
+          <span class="ex-readout-value charge"><b>{{ stats.recovered }}</b></span>
         </div>
         <div class="ex-readout">
-          <span class="ex-readout-label">充电量</span>
-          <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.chargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+          <span class="ex-readout-label">已确认告警</span>
+          <span class="ex-readout-value"><b>{{ stats.acked }}</b></span>
         </div>
         <div class="ex-readout">
-          <span class="ex-readout-label">总电量</span>
-          <span class="ex-readout-value"><b class="ex-num">{{ revenue ? revenue.totalEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+          <span class="ex-readout-label">样本涉及设备数</span>
+          <span class="ex-readout-value discharge"><b>{{ summary.deviceCount }}</b><em>台</em></span>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- 近 24h 遥测曲线：首台 PCS 的功率/SOC/温度属性历史（双 y 轴） -->
-    <section class="ex-card chart-card">
-      <div ref="telemetryEl" class="chart"></div>
-    </section>
+      <!-- 图表区 -->
+      <section class="chart-row">
+        <div class="chart-card ex-card">
+          <div ref="trendEl" class="chart"></div>
+        </div>
+        <div class="chart-card ex-card">
+          <div ref="levelEl" class="chart"></div>
+        </div>
+        <div class="chart-card ex-card">
+          <div ref="statusEl" class="chart"></div>
+        </div>
+      </section>
 
-    <!-- 告警仪表读数带 -->
-    <section class="ex-readout-band" style="--ro-cols: 4" aria-label="告警状态计数">
-      <div class="ex-readout">
-        <span class="ex-readout-label">触发中告警</span>
-        <span class="ex-readout-value danger"><b>{{ stats.active }}</b></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">已恢复告警</span>
-        <span class="ex-readout-value charge"><b>{{ stats.recovered }}</b></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">已确认告警</span>
-        <span class="ex-readout-value"><b>{{ stats.acked }}</b></span>
-      </div>
-      <div class="ex-readout">
-        <span class="ex-readout-label">样本涉及设备数</span>
-        <span class="ex-readout-value discharge"><b>{{ summary.deviceCount }}</b><em>台</em></span>
-      </div>
-    </section>
-
-    <!-- 图表区 -->
-    <section class="chart-row">
-      <div class="chart-card ex-card">
-        <div ref="trendEl" class="chart"></div>
-      </div>
-      <div class="chart-card ex-card">
-        <div ref="levelEl" class="chart"></div>
-      </div>
-      <div class="chart-card ex-card">
-        <div ref="statusEl" class="chart"></div>
-      </div>
-    </section>
-
-    <!-- 最近告警 -->
-    <section class="ex-card list-card">
-      <div class="ex-card-head">
-        <h2 class="ex-card-title">最近告警（样本窗口）</h2>
-      </div>
-      <el-table :data="recentAlarms" size="small" empty-text="暂无告警数据" v-loading="loading">
-        <el-table-column prop="ruleCode" label="规则" width="130" />
-        <el-table-column label="级别" width="80">
-          <template #default="{ row }"><AlarmLevelTag :level="row.level" /></template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="deviceId" label="设备ID" width="90" />
-        <el-table-column prop="type" label="类型" width="70">
-          <template #default="{ row }">{{ typeText(row.type) }}</template>
-        </el-table-column>
-        <el-table-column prop="message" label="内容" show-overflow-tooltip />
-        <el-table-column label="触发时间" width="160">
-          <template #default="{ row }"><span class="ex-num">{{ toLocal(row.triggeredTime) }}</span></template>
-        </el-table-column>
-      </el-table>
+      <!-- 最近告警 -->
+      <section class="ex-card list-card">
+        <div class="ex-card-head">
+          <h2 class="ex-card-title">最近告警（样本窗口）</h2>
+        </div>
+        <el-table :data="recentAlarms" size="small" empty-text="暂无告警数据" v-loading="loading">
+          <el-table-column prop="ruleCode" label="规则" width="130" />
+          <el-table-column label="级别" width="80">
+            <template #default="{ row }"><AlarmLevelTag :level="row.level" /></template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="deviceId" label="设备ID" width="90" />
+          <el-table-column prop="type" label="类型" width="70">
+            <template #default="{ row }">{{ typeText(row.type) }}</template>
+          </el-table-column>
+          <el-table-column prop="message" label="内容" show-overflow-tooltip />
+          <el-table-column label="触发时间" width="160">
+            <template #default="{ row }"><span class="ex-num">{{ toLocal(row.triggeredTime) }}</span></template>
+          </el-table-column>
+        </el-table>
+      </section>
     </section>
   </div>
 </template>
@@ -461,13 +482,64 @@ onMounted(() => {
 .err-alert {
   margin-bottom: 0;
 }
+/* 遥测区（主）：读数带 + 曲线 + 收益卡，卡片间 14px 呼吸（同 ex-page） */
+.telemetry-section,
+.alarm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* 告警区（次）：与遥测区间用外距分隔，弱化视觉权重 */
+.alarm-section {
+  margin-top: 10px;
+}
+.alarm-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alarm-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ex-ink);
+}
+.alarm-section-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ex-ink-2);
+}
+/* 未选电站引导空态 */
+.telemetry-empty {
+  padding: 40px 18px;
+  text-align: center;
+}
+.telemetry-empty-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ex-ink-2);
+  letter-spacing: 0.5px;
+}
 .chart-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
 .chart-card {
+  position: relative;
   padding: 16px 14px 8px;
+}
+/* 曲线空态文本：无数据时覆盖在图表容器上 */
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--ex-ink-3);
+  pointer-events: none;
 }
 .revenue-card {
   padding: 0 18px 18px;
