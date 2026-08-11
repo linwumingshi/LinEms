@@ -35,7 +35,7 @@ export function thingModelStatusText(s: number): string {
 
 export function authStatusText(s: number): string { return s === 1 ? '正常' : s === 2 ? '吊销' : `未知(${s})` }
 
-export const deviceTypeOptions = ['ENERGY_CABINET', 'BATTERY_CLUSTER', 'PCS', 'BMS', 'EMS', 'EDGE_GW']
+export const deviceTypeOptions = ['ENERGY_CABINET', 'BATTERY_CLUSTER', 'PCS', 'BMS', 'EMS', 'EDGE_GW', 'METER']
 export const DEVICE_TYPE_TEXT: Record<string, string> = {
   ENERGY_CABINET: '储能柜',
   BATTERY_CLUSTER: '电池簇',
@@ -43,6 +43,7 @@ export const DEVICE_TYPE_TEXT: Record<string, string> = {
   BMS: '电池管理系统 BMS',
   EMS: '能量管理系统 EMS',
   EDGE_GW: '边缘网关',
+  METER: '进线电能表',
 }
 /** 设备类型中文（未知回退原 code；空回退 '—'） */
 export function deviceTypeText(t?: string | null): string {
