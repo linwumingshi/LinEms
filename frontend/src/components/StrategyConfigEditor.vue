@@ -7,7 +7,12 @@ import {
   parsePeakValleyConfig,
   serializePeakValley,
   validatePeakValleyConfig,
+  validateDemandConfig,
+  parseTimeConfig,
+  serializeTime,
+  validateTimeConfig,
   type PeakValleyConfig,
+  type TimeSlot,
 } from '@/utils/strategyConfig'
 
 const props = withDefaults(defineProps<{
@@ -24,10 +29,20 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 type Mode = 'form' | 'json'
 const mode = ref<Mode>('form')
-/** 结构化模式的可编辑窗口表（仅 PEAK_VALLEY 使用） */
+
+/** 结构化可编辑的策略类型（PEAK_VALLEY/DEMAND/TIME）；DR/SOC_CTRL 仅 JSON（事件驱动/约束型不可生成） */
+const STRUCTURED_TYPES = ['PEAK_VALLEY', 'DEMAND', 'TIME']
+const isStructured = computed(() => STRUCTURED_TYPES.includes(props.strategyType))
+const isPeakValley = computed(() => props.strategyType === 'PEAK_VALLEY')
+const isDemand = computed(() => props.strategyType === 'DEMAND')
+const isTime = computed(() => props.strategyType === 'TIME')
+
+/** 结构化表单状态：窗口表（PEAK_VALLEY/DEMAND）与时段表（TIME）互斥，按类型取用 */
 const form = ref<PeakValleyConfig>({ chargeWindows: [], dischargeWindows: [] })
+const schedule = ref<TimeSlot[]>([])
 /** 上次成功解析保留的未知顶层键（socRange 等），序列化时合并回写 */
 const rest = ref<Record<string, unknown>>({})
+const timeRest = ref<Record<string, unknown>>({})
 /** 阻断性校验问题（内联红显） */
 const issues = ref<string[]>([])
 /** JSON 模式实时语法错误（'' = 通过） */
@@ -39,12 +54,12 @@ const forceJson = ref(false)
 const priceDriven = ref(false)
 const chargePower = ref<number | undefined>(undefined)
 const dischargePower = ref<number | undefined>(undefined)
-/** initFromConfig 批量回填三键时临时禁用 watch，防多余 emit */
+/** 需量限值（DEMAND 结构化模式，可留空）；从 rest.demandLimit 读写，序列化经 rest 保留 */
+const demandLimit = ref<number | null | undefined>(undefined)
+/** initFromConfig 批量回填时临时禁用 watch，防多余 emit */
 let initializing = false
 
-const isPeakValley = computed(() => props.strategyType === 'PEAK_VALLEY')
-
-/** JSON 模式示例占位（按策略类型给模板，DEMAND/TIME 走 JSON 编辑，见 P0-4） */
+/** JSON 模式示例占位（按策略类型给模板） */
 const jsonPlaceholder = computed(() => {
   switch (props.strategyType) {
     case 'DEMAND':
@@ -67,12 +82,23 @@ const jsonHint = computed(() => {
   return ''
 })
 
-/** 包络软警告（不阻断）：窗口功率超站点安全约束上限 */
+/** 包络软警告（不阻断）：窗口/时段功率超站点安全约束上限 */
 const warnings = computed(() => {
   const list: string[] = []
-  if (!isPeakValley.value || !props.envelope) return list
+  if (!props.envelope) return list
   // 先取局部 const：属性收窄不跨 forEach 闭包（strict 下 "possibly null"），局部 const 收窄可跨闭包
   const chargeMax = props.envelope.chargePowerMax
+  const dischargeMax = props.envelope.dischargePowerMax
+  if (isTime.value) {
+    schedule.value.forEach((s, i) => {
+      if (s.action === 'STANDBY' || s.power == null) return
+      const cap = s.action === 'CHARGE' ? chargeMax : dischargeMax
+      if (cap != null && s.power > cap) {
+        list.push(`时段 ${i + 1} 功率 ${s.power} kW 超过站点${s.action === 'CHARGE' ? '充电' : '放电'}功率上限 ${cap} kW`)
+      }
+    })
+    return list
+  }
   if (chargeMax != null) {
     form.value.chargeWindows.forEach((w, i) => {
       if (w.powerLimit > chargeMax) {
@@ -80,7 +106,6 @@ const warnings = computed(() => {
       }
     })
   }
-  const dischargeMax = props.envelope.dischargePowerMax
   if (dischargeMax != null) {
     form.value.dischargeWindows.forEach((w, i) => {
       if (w.powerLimit > dischargeMax) {
@@ -95,30 +120,69 @@ const warnings = computed(() => {
 let lastEmitted: string | null = null
 
 function jsonErrorOf(config: string): string {
-  if (!config.trim()) return '' // 空配置不是错误（新增/非峰谷初始态）
+  if (!config.trim()) return '' // 空配置不是错误（新增/非结构化初始态）
   const r = parseJsonConfig(config)
   return r.ok ? '' : r.error
 }
 
-/** 模式进入规则（spec §3.3 单一权威）：空→结构化空表；非空可解析→结构化；非空不可解析→强制 JSON。 */
+/** 模式进入规则（spec §3.3 单一权威）：结构化类型空→结构化空表；非空可解析→结构化；非空不可解析→强制 JSON；非结构化类型恒 JSON。 */
 function initFromConfig() {
   const raw = props.modelValue ?? ''
-  if (!isPeakValley.value) {
+  if (!isStructured.value) {
     mode.value = 'json'
     jsonError.value = jsonErrorOf(raw)
     forceJson.value = false
     return
   }
+  if (isTime.value) {
+    initTime(raw)
+    return
+  }
+  initWindowsType(raw)
+}
+
+/** TIME：空→结构化空时段表；非空可解析→结构化；非空不可解析→强制 JSON。 */
+function initTime(raw: string) {
+  if (raw.trim() === '') {
+    mode.value = 'form'
+    schedule.value = []
+    timeRest.value = {}
+    issues.value = []
+    forceJson.value = false
+    return
+  }
+  const parsed = parseJsonConfig(raw)
+  if (!parsed.ok) {
+    mode.value = 'json'
+    jsonError.value = parsed.error
+    forceJson.value = true
+    return
+  }
+  const structured = parseTimeConfig(parsed.value)
+  if (!structured.ok) {
+    mode.value = 'json'
+    jsonError.value = structured.error
+    forceJson.value = true
+    return
+  }
+  mode.value = 'form'
+  schedule.value = structured.config.schedule
+  timeRest.value = structured.rest
+  issues.value = []
+  forceJson.value = false
+}
+
+/** PEAK_VALLEY/DEMAND：窗口表 + 各自 rest 键（PV 电价驱动三键 / DEMAND 需量限值）。空配置重置键：组件跨弹窗复用（el-dialog 未 destroy-on-close），前一个配置残留会令开关虚亮且 rest 无对应键 → 保存丢意图。 */
+function initWindowsType(raw: string) {
   if (raw.trim() === '') {
     mode.value = 'form'
     form.value = { chargeWindows: [], dischargeWindows: [] }
     rest.value = {}
-    // 空配置重置三键：组件跨弹窗复用（el-dialog 未 destroy-on-close），
-    // 前一个 priceDriven 配置残留会令开关虚亮且 rest 无 priceDriven → 保存丢意图
     initializing = true
     priceDriven.value = false
     chargePower.value = undefined
     dischargePower.value = undefined
+    demandLimit.value = undefined
     initializing = false
     issues.value = []
     forceJson.value = false
@@ -145,42 +209,69 @@ function initFromConfig() {
   priceDriven.value = structured.rest.priceDriven === true
   chargePower.value = typeof structured.rest.chargePower === 'number' ? (structured.rest.chargePower as number) : undefined
   dischargePower.value = typeof structured.rest.dischargePower === 'number' ? (structured.rest.dischargePower as number) : undefined
+  demandLimit.value = typeof structured.rest.demandLimit === 'number' ? (structured.rest.demandLimit as number) : undefined
   initializing = false
   issues.value = []
   forceJson.value = false
 }
 
 function emitConfig() {
-  const s = serializePeakValley(form.value, rest.value)
+  const s = isTime.value
+    ? serializeTime({ schedule: schedule.value }, timeRest.value)
+    : serializePeakValley(form.value, rest.value)
   lastEmitted = s
   emit('update:modelValue', s)
+}
+
+/** 结构化表单内联校验：空表不给「至少一个」类阻断（新建初始态不吓人），由 EmsStrategy save() 闸兜底。 */
+function computeIssues(): string[] {
+  if (isTime.value) {
+    if (schedule.value.length === 0) return []
+    return validateTimeConfig(serializeTime({ schedule: schedule.value }, timeRest.value))
+  }
+  if (isDemand.value) {
+    if (form.value.chargeWindows.length === 0 && form.value.dischargeWindows.length === 0) return []
+    return validateDemandConfig(serializePeakValley(form.value, rest.value))
+  }
+  return validatePeakValleyConfig(serializePeakValley(form.value, rest.value))
 }
 
 function switchMode(m: Mode) {
   if (m === mode.value) return
   if (m === 'json') {
-    if (isPeakValley.value) emitConfig() // 结构化 → JSON：当前表单序列化入文本域
+    if (isStructured.value) emitConfig() // 结构化 → JSON：当前表单序列化入文本域
     jsonError.value = jsonErrorOf(props.modelValue)
     mode.value = 'json'
   } else {
-    // JSON → 结构化：重新 parse，失败保持 JSON 模式
+    // JSON → 结构化：按类型重新 parse，失败保持 JSON 模式
     const parsed = parseJsonConfig(props.modelValue)
     if (!parsed.ok) {
       ElMessage.error(parsed.error)
       return
     }
-    const structured = parsePeakValleyConfig(parsed.value)
-    if (!structured.ok) {
-      ElMessage.error(structured.error)
-      return
+    if (isTime.value) {
+      const structured = parseTimeConfig(parsed.value)
+      if (!structured.ok) {
+        ElMessage.error(structured.error)
+        return
+      }
+      schedule.value = structured.config.schedule
+      timeRest.value = structured.rest
+    } else {
+      const structured = parsePeakValleyConfig(parsed.value)
+      if (!structured.ok) {
+        ElMessage.error(structured.error)
+        return
+      }
+      form.value = structured.config
+      rest.value = structured.rest
+      initializing = true
+      priceDriven.value = structured.rest.priceDriven === true
+      chargePower.value = typeof structured.rest.chargePower === 'number' ? (structured.rest.chargePower as number) : undefined
+      dischargePower.value = typeof structured.rest.dischargePower === 'number' ? (structured.rest.dischargePower as number) : undefined
+      demandLimit.value = typeof structured.rest.demandLimit === 'number' ? (structured.rest.demandLimit as number) : undefined
+      initializing = false
     }
-    form.value = structured.config
-    rest.value = structured.rest
-    initializing = true
-    priceDriven.value = structured.rest.priceDriven === true
-    chargePower.value = typeof structured.rest.chargePower === 'number' ? (structured.rest.chargePower as number) : undefined
-    dischargePower.value = typeof structured.rest.dischargePower === 'number' ? (structured.rest.dischargePower as number) : undefined
-    initializing = false
     forceJson.value = false
     mode.value = 'form'
   }
@@ -193,6 +284,7 @@ function onJsonInput(v: string) {
 }
 
 function formatJson() {
+  if (!(props.modelValue ?? '').trim()) return // 空输入点格式化无意义，静默忽略（修复：不弹「不是合法 JSON」）
   const r = parseJsonConfig(props.modelValue)
   if (!r.ok) {
     ElMessage.error(r.error)
@@ -210,6 +302,19 @@ function addWindow(kind: 'chargeWindows' | 'dischargeWindows') {
 
 function removeWindow(kind: 'chargeWindows' | 'dischargeWindows', index: number) {
   form.value[kind].splice(index, 1)
+}
+
+function addSlot() {
+  schedule.value.push({ start: '00:00', end: '01:00', action: 'CHARGE', power: 100 })
+}
+
+function removeSlot(index: number) {
+  schedule.value.splice(index, 1)
+}
+
+/** 切到 STANDBY 清掉功率（待机段不产点，序列化不留死字段） */
+function onSlotAction(s: TimeSlot) {
+  if (s.action === 'STANDBY') delete s.power
 }
 
 const windowGroups = [
@@ -234,7 +339,16 @@ watch(
 watch(
   form,
   () => {
-    issues.value = validatePeakValleyConfig(serializePeakValley(form.value, rest.value))
+    issues.value = computeIssues()
+    emitConfig()
+  },
+  { deep: true },
+)
+
+watch(
+  schedule,
+  () => {
+    issues.value = computeIssues()
     emitConfig()
   },
   { deep: true },
@@ -251,27 +365,37 @@ watch([priceDriven, chargePower, dischargePower], () => {
   emitConfig()
 })
 
+watch(demandLimit, () => {
+  if (initializing || !isDemand.value) return
+  const next: Record<string, unknown> = { ...rest.value }
+  if (demandLimit.value != null) next.demandLimit = demandLimit.value
+  else delete next.demandLimit
+  rest.value = next
+  emitConfig()
+})
+
 initFromConfig()
 </script>
 
 <template>
   <div class="strategy-config-editor">
-    <div v-if="isPeakValley" class="mode-bar">
+    <div v-if="isStructured" class="mode-bar">
       <el-radio-group :model-value="mode" size="small" @update:model-value="switchMode($event as Mode)">
         <el-radio-button value="form">结构化编辑</el-radio-button>
         <el-radio-button value="json">JSON 模式</el-radio-button>
       </el-radio-group>
     </div>
 
-    <!-- 结构化模式（仅 PEAK_VALLEY 可达） -->
-    <template v-if="isPeakValley && mode === 'form'">
-      <div class="price-drive-bar">
+    <!-- 结构化模式（PEAK_VALLEY / DEMAND / TIME） -->
+    <template v-if="isStructured && mode === 'form'">
+      <!-- PEAK_VALLEY：电价驱动开关与功率（DEMAND 不支持电价驱动，不渲染） -->
+      <div v-if="isPeakValley" class="price-drive-bar">
         <span class="group-label">电价驱动</span>
         <el-switch v-model="priceDriven" size="small" />
         <span class="drive-hint">开启后按分时电价自动推导谷充峰放窗口</span>
       </div>
 
-      <div v-if="priceDriven" class="power-fields">
+      <div v-if="isPeakValley && priceDriven" class="power-fields">
         <div class="power-row">
           <span class="group-label">充电功率</span>
           <el-input-number v-model="chargePower" :min="0.1" :precision="1" :step="1" :placeholder="'留空回退包络上限'" style="width: 140px" />
@@ -282,10 +406,18 @@ initFromConfig()
           <el-input-number v-model="dischargePower" :min="0.1" :precision="1" :step="1" :placeholder="'留空回退包络上限'" style="width: 140px" />
           <span class="unit">kW</span>
         </div>
-        <el-alert v-if="warnings.length" type="warning" :closable="false" class="warn-alert" :title="warnings.join('；')" />
       </div>
 
-      <template v-else>
+      <!-- DEMAND：需量限值（可选） -->
+      <div v-if="isDemand" class="demand-limit-row">
+        <span class="group-label">需量限值</span>
+        <el-input-number v-model="demandLimit" :min="0.1" :precision="1" :step="1" :clearable="true" :placeholder="'可选，留空不限'" style="width: 140px" />
+        <span class="unit">kW</span>
+        <span class="drive-hint">放电窗口功率受需量限值约束（P1-2 需量管理消费）</span>
+      </div>
+
+      <!-- 窗口表：PEAK_VALLEY 手工模式 或 DEMAND -->
+      <template v-if="(isPeakValley && !priceDriven) || isDemand">
         <div v-for="group in windowGroups" :key="group.key" class="window-group">
           <div class="group-head">
             <span class="group-label">{{ group.label }}</span>
@@ -301,27 +433,38 @@ initFromConfig()
             <el-button link type="danger" size="small" @click="removeWindow(group.key, i)">删除</el-button>
           </div>
         </div>
-        <el-alert
-          v-if="issues.length"
-          type="error"
-          :closable="false"
-          class="block-alert"
-          :title="issues.join('；')"
-        />
-        <el-alert
-          v-if="warnings.length"
-          type="warning"
-          :closable="false"
-          class="warn-alert"
-          :title="warnings.join('；')"
-        />
       </template>
+
+      <!-- TIME：时间段表 -->
+      <div v-if="isTime" class="schedule-group">
+        <div class="group-head">
+          <span class="group-label">时间段</span>
+          <el-button link type="primary" size="small" @click="addSlot">添加时段</el-button>
+        </div>
+        <div v-if="schedule.length === 0" class="group-empty">暂无时段</div>
+        <div v-for="(s, i) in schedule" :key="i" class="schedule-row">
+          <el-time-picker v-model="s.start" format="HH:mm" value-format="HH:mm" placeholder="开始" :clearable="false" style="width: 100px" />
+          <span class="sep">至</span>
+          <el-time-picker v-model="s.end" format="HH:mm" value-format="HH:mm" placeholder="结束" :clearable="false" style="width: 100px" />
+          <el-select v-model="s.action" style="width: 110px" @change="onSlotAction(s)">
+            <el-option label="充电" value="CHARGE" />
+            <el-option label="放电" value="DISCHARGE" />
+            <el-option label="待机" value="STANDBY" />
+          </el-select>
+          <el-input-number v-if="s.action !== 'STANDBY'" v-model="s.power" :min="0.1" :precision="1" :step="1" style="width: 120px" />
+          <span class="unit">kW</span>
+          <el-button link type="danger" size="small" @click="removeSlot(i)">删除</el-button>
+        </div>
+      </div>
+
+      <el-alert v-if="issues.length" type="error" :closable="false" class="block-alert" :title="issues.join('；')" />
+      <el-alert v-if="warnings.length" type="warning" :closable="false" class="warn-alert" :title="warnings.join('；')" />
     </template>
 
-    <!-- JSON 模式（非 PEAK_VALLEY 恒为 JSON；PEAK_VALLEY 切出/不可解析时） -->
+    <!-- JSON 模式（非结构化类型恒 JSON；结构化类型切出/不可解析时） -->
     <template v-else-if="mode === 'json'">
       <el-alert
-        v-if="isPeakValley && forceJson"
+        v-if="isStructured && forceJson"
         type="info"
         :closable="false"
         class="mode-alert"
@@ -352,7 +495,8 @@ initFromConfig()
 .mode-alert {
   margin-bottom: 8px;
 }
-.window-group {
+.window-group,
+.schedule-group {
   margin-bottom: 10px;
 }
 .group-head {
@@ -370,7 +514,8 @@ initFromConfig()
   font-size: 12px;
   padding: 6px 0;
 }
-.window-row {
+.window-row,
+.schedule-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -390,7 +535,8 @@ initFromConfig()
 .warn-alert {
   margin-top: 8px;
 }
-.price-drive-bar {
+.price-drive-bar,
+.demand-limit-row {
   display: flex;
   align-items: center;
   gap: 8px;

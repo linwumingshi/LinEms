@@ -134,6 +134,10 @@ public class EmsPlanService {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "该电站 " + planDate + " 未配置生效的分时电价（status=1 且在有效期内）");
 		}
 		List<PlanPoint> points = PlanGenerator.generate(toInput(strategy, constraint, prices));
+		if (points == null || points.isEmpty()) {
+			// 无点即无输入产出：plan_type/total_energy 必须有真实动作点推导，空计划不落库（P0-4 守输入输出契约）
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "所选策略类型不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略，无独立计划产出）");
+		}
 		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint);
 		if (!vr.valid()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "安全包络校验未通过: " + String.join("; ", vr.rejections()));
@@ -200,6 +204,9 @@ public class EmsPlanService {
 			.selectList(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStatus, 1));
 		Set<String> handled = new HashSet<>();
 		for (EmsStrategy s : enabled) {
+			if (!PlanGenerator.GENERATABLE_TYPES.contains(s.getStrategyType())) {
+				continue; // DR/SOC_CTRL 无计划产出，定时不空转（P0-4）
+			}
 			String key = s.getTenantId() + ":" + s.getStationId();
 			if (!handled.add(key)) {
 				continue; // 同电站多策略只生成一次

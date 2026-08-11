@@ -423,6 +423,40 @@ class EmsPlanServiceTest {
 	}
 
 	@Test
+	void generate_rejectsStrategyWithoutPointOutput() throws Exception {
+		// DR（事件驱动）生成期无动作点 → 拒绝并提示类型语义，空计划不落库（P0-4 输入输出契约）
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("DR");
+		s.setStatus(1);
+		s.setConfig("{\"event\":\"x\"}");
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, mock(EmsElectricityPriceMapper.class), constraintMapper,
+				planMapper, mock(EmsExecutionRecordMapper.class), new SafetyEnvelopeValidator(),
+				mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class),
+				mock(PcsDeviceMapper.class));
+
+		BusinessException ex = assertThrows(BusinessException.class,
+				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
+		assertTrue(ex.getMessage().contains("不支持生成计划"));
+		verify(planMapper, never()).insert(any(EmsPlan.class)); // 空计划不落库
+	}
+
+	@Test
 	void dispatch_rejectsWhenStationHasNoPcsDevice() throws Exception {
 		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
 		PcsDeviceMapper pcsMapper = mock(PcsDeviceMapper.class);

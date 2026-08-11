@@ -134,6 +134,51 @@ export interface TimeSlot {
   power?: number
 }
 
+export interface TimeConfig {
+  schedule: TimeSlot[]
+}
+
+export type ParseTimeResult =
+  | { ok: true; config: TimeConfig; rest: Record<string, unknown> }
+  | { ok: false; error: string }
+
+/** TIME 结构化解析：schedule 时段 schema 校验（可空数组，供表单往返；"至少一个充/放时段"由 validateTimeConfig 强制）。 */
+export function parseTimeConfig(value: unknown): ParseTimeResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ok: false, error: '缺少 schedule 时间段数组' }
+  }
+  const obj = value as Record<string, unknown>
+  const schedule = obj.schedule
+  if (!Array.isArray(schedule)) return { ok: false, error: '缺少 schedule 时间段数组' }
+  const slots: TimeSlot[] = []
+  for (let i = 0; i < schedule.length; i++) {
+    const s = schedule[i]
+    const idx = i + 1
+    if (typeof s !== 'object' || s === null) return { ok: false, error: `时段 ${idx} 的开始/结束时间格式应为 HH:mm` }
+    const { start, end, action, power } = s as Record<string, unknown>
+    if (typeof start !== 'string' || !HHMM_RE.test(start)) return { ok: false, error: `时段 ${idx} 的开始/结束时间格式应为 HH:mm` }
+    if (typeof end !== 'string' || !HHMM_RE.test(end)) return { ok: false, error: `时段 ${idx} 的开始/结束时间格式应为 HH:mm` }
+    if (start >= end) return { ok: false, error: `时段 ${idx} 的结束时间必须晚于开始时间` }
+    if (typeof action !== 'string' || !TIME_ACTIONS.includes(action)) {
+      return { ok: false, error: `时段 ${idx} 的 action 必须为 CHARGE/DISCHARGE/STANDBY` }
+    }
+    const slot: TimeSlot = { start, end, action: action as TimeSlot['action'] }
+    if (action !== 'STANDBY') {
+      if (typeof power !== 'number' || !(power > 0)) return { ok: false, error: `时段 ${idx} 的功率 power 必须大于 0` }
+      slot.power = power
+    }
+    slots.push(slot)
+  }
+  const rest: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) if (k !== 'schedule') rest[k] = v
+  return { ok: true, config: { schedule: slots }, rest }
+}
+
+/** 序列化：{ ...rest, schedule }，未知顶层键（如 socRange）原样保留。 */
+export function serializeTime(config: TimeConfig, rest: Record<string, unknown>): string {
+  return JSON.stringify({ ...rest, schedule: config.schedule }, null, 2)
+}
+
 /** 需量策略：谷段充电备能 + 需量时段放电削峰。窗口形状同峰谷（parsePeakValleyConfig 复用）；demandLimit 可选但须 >0（供 P1-2 需量管理消费）。 */
 export function validateDemandConfig(config: string): string[] {
   const parsed = parseJsonConfig(config)
@@ -156,28 +201,11 @@ const TIME_ACTIONS = ['CHARGE', 'DISCHARGE', 'STANDBY']
 export function validateTimeConfig(config: string): string[] {
   const parsed = parseJsonConfig(config)
   if (!parsed.ok) return [parsed.error]
-  if (typeof parsed.value !== 'object' || parsed.value === null || Array.isArray(parsed.value)) {
-    return ['配置必须是一个 JSON 对象']
-  }
-  const schedule = (parsed.value as Record<string, unknown>).schedule
-  if (!Array.isArray(schedule) || schedule.length === 0) return ['缺少 schedule 时间段数组']
-  let actionable = false
-  for (let i = 0; i < schedule.length; i++) {
-    const s = schedule[i]
-    const idx = i + 1
-    if (typeof s !== 'object' || s === null) return [`时段 ${idx} 的开始/结束时间格式应为 HH:mm`]
-    const { start, end, action, power } = s as Record<string, unknown>
-    if (typeof start !== 'string' || !HHMM_RE.test(start)) return [`时段 ${idx} 的开始/结束时间格式应为 HH:mm`]
-    if (typeof end !== 'string' || !HHMM_RE.test(end)) return [`时段 ${idx} 的开始/结束时间格式应为 HH:mm`]
-    if (start >= end) return [`时段 ${idx} 的结束时间必须晚于开始时间`]
-    if (typeof action !== 'string' || !TIME_ACTIONS.includes(action)) {
-      return [`时段 ${idx} 的 action 必须为 CHARGE/DISCHARGE/STANDBY`]
-    }
-    if (action === 'STANDBY') continue // 待机时段不产点，无功率约束
-    actionable = true
-    if (typeof power !== 'number' || !(power > 0)) return [`时段 ${idx} 的功率 power 必须大于 0`]
-  }
-  if (!actionable) return ['请至少配置一个充电或放电时段']
+  const structured = parseTimeConfig(parsed.value)
+  if (!structured.ok) return [structured.error]
+  const { schedule } = structured.config
+  if (schedule.length === 0) return ['缺少 schedule 时间段数组']
+  if (!schedule.some((s) => s.action !== 'STANDBY')) return ['请至少配置一个充电或放电时段']
   return []
 }
 

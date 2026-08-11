@@ -22,6 +22,9 @@ public final class PlanGenerator {
 	/** 点序列粒度（分钟）。EmsPlanService 计算 total_energy 时复用同一粒度契约。 */
 	public static final int SLOT_MIN = 5;
 
+	/** 可产出非空计划点的策略类型（与前端 STRATEGY_GENERATABLE_TYPES 对齐；DR/SOC_CTRL 无计划产出）。 */
+	public static final Set<String> GENERATABLE_TYPES = Set.of("PEAK_VALLEY", "DEMAND", "TIME");
+
 	private PlanGenerator() {
 	}
 
