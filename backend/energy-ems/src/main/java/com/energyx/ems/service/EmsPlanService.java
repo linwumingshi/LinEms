@@ -2,6 +2,7 @@ package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.redis.DistributedLock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +20,7 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.energyx.ems.util.PlanGenerator;
 import com.energyx.ems.util.PlanInput;
 import com.energyx.ems.util.PlanPoint;
@@ -66,6 +68,8 @@ public class EmsPlanService {
 
 	private final DistributedLock distributedLock;
 
+	private final EmsKafkaProducer kafkaProducer;
+
 	@Value("${energyx.ems.product-key:snd_ess_pcs}")
 	private String productKey;
 
@@ -81,7 +85,7 @@ public class EmsPlanService {
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
 			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
-			DistributedLock distributedLock) {
+			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer) {
 		this.strategyMapper = strategyMapper;
 		this.priceMapper = priceMapper;
 		this.constraintMapper = constraintMapper;
@@ -91,6 +95,7 @@ public class EmsPlanService {
 		this.writer = writer;
 		this.commandClient = commandClient;
 		this.distributedLock = distributedLock;
+		this.kafkaProducer = kafkaProducer;
 	}
 
 	/** 生成计划：查策略 → 电价 → 安全约束 → PlanGenerator 出点序列 → 包络校验 → 写 TDengine → 计划头落库。 */
@@ -146,8 +151,34 @@ public class EmsPlanService {
 		plan.setStatus(0); // 待执行
 		plan.setPlanParam(priceDriven ? buildPriceDrivenParam(strategy.getConfig(), prices) : strategy.getConfig());
 		planMapper.insert(plan);
+		publishPlanEvent(plan, points.size());
 		log.info("生成计划 planId={} stationId={} 点数={}", plan.getPlanId(), stationId, points.size());
 		return plan;
+	}
+
+	/**
+	 * 生产 ems-plan 计划生成事件（key=stationId，Phase1 §7.1），供 report/审计/未来 AI 消费（G7）。
+	 * 发送失败仅告警，不阻断核心生成链路。
+	 */
+	private void publishPlanEvent(EmsPlan plan, int pointCount) {
+		try {
+			ObjectNode node = JSON.createObjectNode();
+			node.put("eventType", "PLAN_GENERATED");
+			node.put("planId", plan.getPlanId());
+			node.put("stationId", plan.getStationId());
+			node.put("tenantId", plan.getTenantId());
+			node.put("strategyId", plan.getStrategyId());
+			node.put("planDate", plan.getPlanDate().toString());
+			node.put("planType", plan.getPlanType());
+			node.put("totalEnergy", plan.getTotalEnergy());
+			node.put("pointCount", pointCount);
+			kafkaProducer.send(KafkaTopicConstant.EMS_PLAN, String.valueOf(plan.getStationId()),
+					JSON.writeValueAsString(node));
+		}
+		catch (Exception e) {
+			log.warn("ems-plan 事件发送失败 planId={} stationId={}: {}", plan.getPlanId(), plan.getStationId(),
+					e.getMessage());
+		}
 	}
 
 	/**

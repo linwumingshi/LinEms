@@ -3,6 +3,7 @@ package com.energyx.ems.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.ems.entity.EmsConstraint;
@@ -16,6 +17,7 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
+import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.energyx.ems.util.PlanPoint;
 import com.energyx.ems.util.TdenginePlanWriter;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,6 +58,7 @@ class EmsPlanServiceTest {
 		SafetyEnvelopeValidator validator = new SafetyEnvelopeValidator();
 		TdenginePlanWriter writer = mock(TdenginePlanWriter.class);
 		CommandClient commandClient = mock(CommandClient.class);
+		EmsKafkaProducer kafkaProducer = mock(EmsKafkaProducer.class);
 
 		EmsStrategy s = new EmsStrategy();
 		s.setStrategyId(1L);
@@ -77,7 +80,7 @@ class EmsPlanServiceTest {
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
-				validator, writer, commandClient, new DistributedLock(mock(StringRedisTemplate.class)));
+				validator, writer, commandClient, new DistributedLock(mock(StringRedisTemplate.class)), kafkaProducer);
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
 		assertNotNull(plan);
@@ -88,6 +91,8 @@ class EmsPlanServiceTest {
 		verify(planMapper).insert(any(EmsPlan.class)); // 计划头落库
 		verify(writer).write(eq(10L), eq(LocalDate.of(2026, 8, 8)), anyList()); // 点序列写
 																				// TDengine
+		// ems-plan 事件：key=stationId，payload 标记 PLAN_GENERATED（P0-8）
+		verify(kafkaProducer).send(eq(KafkaTopicConstant.EMS_PLAN), eq("10"), contains("PLAN_GENERATED"));
 	}
 
 	@Test
@@ -117,7 +122,7 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -137,7 +142,7 @@ class EmsPlanServiceTest {
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, mock(EmsExecutionRecordMapper.class),
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 		ReflectionTestUtils.setField(svc, "deviceName", "ess-dev-01");
 
 		assertThrows(BusinessException.class, () -> svc.dispatch(1L));
@@ -176,7 +181,7 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				constraintMapper, planMapper, execMapper, new SafetyEnvelopeValidator(), writer, commandClient,
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 		ReflectionTestUtils.setField(svc, "deviceName", "ess-dev-01");
 		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
 
@@ -213,7 +218,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, execMapper, new SafetyEnvelopeValidator(), writer,
-				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)));
+				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)),
+				mock(EmsKafkaProducer.class));
 
 		svc.refreshPlanStatus(1L);
 
@@ -245,7 +251,8 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), planMapper, execMapper, new SafetyEnvelopeValidator(), writer,
-				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)));
+				mock(CommandClient.class), new DistributedLock(mock(StringRedisTemplate.class)),
+				mock(EmsKafkaProducer.class));
 
 		svc.refreshPlanStatus(1L);
 
@@ -279,7 +286,7 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 
 		BusinessException ex = assertThrows(BusinessException.class,
 				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
@@ -319,7 +326,7 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 
 		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -356,7 +363,7 @@ class EmsPlanServiceTest {
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 
 		svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
 
@@ -384,7 +391,7 @@ class EmsPlanServiceTest {
 		EmsPlanService svc = new EmsPlanService(stratMapper, mock(EmsElectricityPriceMapper.class),
 				mock(EmsConstraintMapper.class), mock(EmsPlanMapper.class), mock(EmsExecutionRecordMapper.class),
 				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
-				new DistributedLock(mock(StringRedisTemplate.class)));
+				new DistributedLock(mock(StringRedisTemplate.class)), mock(EmsKafkaProducer.class));
 
 		BusinessException ex = assertThrows(BusinessException.class,
 				() -> svc.generate(10L, 1L, LocalDate.of(2026, 8, 8)));
