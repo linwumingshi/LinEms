@@ -5,7 +5,8 @@
 #  步骤：
 #   1. 确保 xxl_job 库存在（CREATE DATABASE IF NOT EXISTS）
 #   2. 若 xxl_job_info 表不存在 → 导入官方 schema（deploy/sql/xxl_job_init.sql）
-#   3. 预登记 7 个 EMS 占位任务行（INSERT IGNORE，重复执行无副作用）
+#   3. 清理 Task 6 遗留的 EMS 占位任务行（DELETE ... WHERE job_desc LIKE '占位·%'，幂等）
+#      真实 EMS 任务注册属于后续 Task 8，本脚本不进行任何任务登记
 #
 #  连接：默认本机 MySQL 127.0.0.1:3306，root/root&QAQ
 #        可用 MYSQL_HOST / MYSQL_PORT / MYSQL_USER / MYSQL_PASSWORD 环境变量覆盖
@@ -112,7 +113,7 @@ mysql_run_file() { # 文件路径
 # ---------------------------------------------------------------------
 # 1. 确保数据库存在
 # ---------------------------------------------------------------------
-echo "[init-xxl-job] 1/3 确保数据库 ${DB_NAME} 存在"
+echo "[init-xxl-job] 1/2 确保数据库 ${DB_NAME} 存在"
 mysql_query "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # ---------------------------------------------------------------------
@@ -120,36 +121,25 @@ mysql_query "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET 
 # ---------------------------------------------------------------------
 TABLE_CNT="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='xxl_job_info';")"
 if [ "${TABLE_CNT:-0}" = "0" ]; then
-  echo "[init-xxl-job] 2/3 ${DB_NAME}.xxl_job_info 不存在，导入官方 schema：${SQL_FILE}"
+  echo "[init-xxl-job] 2/2 ${DB_NAME}.xxl_job_info 不存在，导入官方 schema：${SQL_FILE}"
   mysql_run_file "$SQL_FILE"
 else
-  echo "[init-xxl-job] 2/3 ${DB_NAME}.xxl_job_info 已存在，跳过 schema 导入（幂等）"
+  echo "[init-xxl-job] 2/2 ${DB_NAME}.xxl_job_info 已存在，跳过 schema 导入（幂等）"
 fi
 
 # ---------------------------------------------------------------------
-# 3. 预登记 7 个 EMS 占位任务行（INSERT IGNORE，幂等）
-#    说明：schedule_type=NONE 不触发调度；具体 handler/调度策略由后续任务绑定
+# 3. 清理 Task 6 遗留的 EMS 占位任务行（job_desc 前缀 '占位·'，幂等）
+#    说明：预登记占位行为 Task 6 越界产物——handler 名（ems*Placeholder）与
+#         Task 8 真实任务（emsDailyPlanGenerate/emsExecutionRetentionClean 等）错位，
+#         且 job_group=1 指向示例执行器，会污染调度中心控制台（死行）。
+#         此处只做清理，不进行任何任务登记；真实 EMS 任务由 Task 8 统一注册。
 # ---------------------------------------------------------------------
-echo "[init-xxl-job] 3/3 预登记 7 个 EMS 占位任务行（INSERT IGNORE）"
-mysql_query "
-INSERT IGNORE INTO \`${DB_NAME}\`.xxl_job_info
-  (id, job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid)
-VALUES
-  (2,  1, '占位·设备状态同步（Task6 预登记，待绑定）', NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsDeviceStatusSyncPlaceholder', '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (3,  1, '占位·遥测数据聚合（Task6 预登记，待绑定）', NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsTelemetryAggPlaceholder',     '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (4,  1, '占位·告警检测（Task6 预登记，待绑定）',    NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsAlarmDetectPlaceholder',     '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (5,  1, '占位·电站健康巡检（Task6 预登记，待绑定）', NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsStationHealthPlaceholder',   '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (6,  1, '占位·报表生成（Task6 预登记，待绑定）',    NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsReportGenPlaceholder',       '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (7,  1, '占位·数据保留清理（Task6 预登记，待绑定）', NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsRetentionCleanPlaceholder',  '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), ''),
-  (8,  1, '占位·充放电计划（Task6 预登记，待绑定）',  NOW(), NOW(), 'EMS', '', 'NONE', NULL, 'DO_NOTHING', NULL, 'emsEnergyPlanPlaceholder',      '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '预登记任务', NOW(), '');
-"
-
-# 修正官方 schema 自带笔误（glue_type 官方 INSERT 误写 BEAM，正确枚举为 BEAN；幂等）
-mysql_query "UPDATE \`${DB_NAME}\`.xxl_job_info SET glue_type='BEAN' WHERE glue_type='BEAM';" >/dev/null
+echo "[init-xxl-job] 清理 Task 6 遗留 EMS 占位任务行（job_desc LIKE '占位·%'）"
+mysql_query "DELETE FROM \`${DB_NAME}\`.xxl_job_info WHERE job_desc LIKE '占位·%';" >/dev/null
 
 # ---------------------------------------------------------------------
 # 验证：统计任务数
 # ---------------------------------------------------------------------
 TOTAL="$(mysql_query "SELECT COUNT(*) FROM \`${DB_NAME}\`.xxl_job_info;")"
-echo "[init-xxl-job] 完成：${DB_NAME}.xxl_job_info 共 ${TOTAL} 个任务（官方演示 1 + EMS 占位 7）"
+echo "[init-xxl-job] 完成：${DB_NAME}.xxl_job_info 共 ${TOTAL} 个任务（官方演示 1，EMS 任务由 Task 8 注册）"
 echo "[init-xxl-job] 下一步：docker compose up -d xxl-job-admin 并访问 http://127.0.0.1:8099/xxl-job-admin"
