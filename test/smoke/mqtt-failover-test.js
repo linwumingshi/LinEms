@@ -7,7 +7,9 @@
  *  3. 设备重连 broker-3（模拟 LB 调度到其他节点）→ 应 sessionPresent=1
  *  4. 通过 Kafka 发下行到设备（应走 mqtt.down.broker-3 或按锁 owner 定向）→ 设备应收到
  *
- * 运行：node test/smoke/mqtt-failover-test.js [killBroker2=true|false]
+ * 运行：node test/smoke/mqtt-failover-test.js [killBroker2=true|false] [waitTtl=true|false]
+ *   第二参：true=kill broker-2（默认）；false=不 kill 只验证跨节点会话跟随
+ *   第三参：true=等锁 TTL 自然过期接管（默认）；false=手动清锁快速验证
  * 依赖：mysql2、mqtt、kafkajs、ioredis
  */
 const fs = require('fs');
@@ -104,13 +106,31 @@ async function main() {
       console.log(`  kill 失败（可能需管理员）: ${e.stderr?.toString().trim() || e.message}`);
     }
     await new Promise((r) => setTimeout(r, 2000));
-    // 连接锁 TTL 60s，主动清掉旧锁模拟过期后的接管（锁过期后新节点才能接管）
-    // 注：真实场景中锁随节点宕机仍持有，TTL 60s 后过期；这里为了快速验证，手动清锁模拟锁过期
-    try {
-      await redis.del(`mqtt:conn:${clientId}`);
-      console.log('  手动清理过期连接锁（模拟 TTL 过期）');
-    } catch (e) {
-      console.log(`  清锁失败: ${e.message}`);
+    const lockOwner = await redis.get(`mqtt:conn:${clientId}`);
+    console.log(`  kill 后连接锁 owner=${lockOwner || 'null'}`);
+    const waitTtl = process.argv[3] !== 'false'; // 第三参 false = 立即接管（清锁）；默认等锁 TTL 自然过期
+    if (waitTtl) {
+      // 连接锁 TTL 配置 conn-lock-ttl-seconds=60；锁续期随节点死亡停止，等它自然过期
+      console.log('  等待连接锁 TTL 自然过期（60s）...');
+      let waited = 0;
+      while (waited < 75) {
+        const o = await redis.get(`mqtt:conn:${clientId}`);
+        if (!o) { console.log(`  锁已过期释放（等待 ${waited}s）`); break; }
+        await new Promise((r) => setTimeout(r, 5000));
+        waited += 5;
+      }
+      const after = await redis.get(`mqtt:conn:${clientId}`);
+      console.log(`  等待后锁 owner=${after || 'null（已过期）'}`);
+      if (after) { console.log('  WARN: 60s 后锁仍未过期，继续尝试接管'); }
+    }
+    else {
+      // 兼容旧行为：主动清锁模拟锁过期后的接管
+      try {
+        await redis.del(`mqtt:conn:${clientId}`);
+        console.log('  手动清理连接锁（模拟锁过期，快速验证接管路径）');
+      } catch (e) {
+        console.log(`  清锁失败: ${e.message}`);
+      }
     }
   }
   else {
