@@ -105,4 +105,20 @@ describe('strategyConfig', () => {
     expect(back.ok).toBe(true)
     if (back.ok) expect(back.config.chargeWindows).toHaveLength(0)
   })
+
+  it('validatePeakValleySaveable：priceDriven=true 无窗口 → 通过', () => {
+    expect(validatePeakValleySaveable('{"priceDriven":true,"chargePower":80}')).toEqual([])
+    expect(validatePeakValleySaveable('{"priceDriven":true}')).toEqual([])
+  })
+
+  it('validatePeakValleySaveable：priceDriven=false/缺失 无窗口 → 仍拦截', () => {
+    expect(validatePeakValleySaveable('{"priceDriven":false,"chargeWindows":[],"dischargeWindows":[]}')).toEqual(['请至少配置一个充电或放电窗口'])
+  })
+
+  it('serializePeakValley：rest 含 priceDriven 键原样保留', () => {
+    const s = serializePeakValley({ chargeWindows: [], dischargeWindows: [] }, { priceDriven: true, chargePower: 80 })
+    const back = JSON.parse(s)
+    expect(back.priceDriven).toBe(true)
+    expect(back.chargePower).toBe(80)
+  })
 })

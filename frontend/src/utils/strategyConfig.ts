@@ -89,14 +89,19 @@ export function validatePeakValleyConfig(config: string): string[] {
   return []
 }
 
-/** 保存闸：结构校验（validatePeakValleyConfig）+ 至少一个窗口。空配置 = 无窗口。 */
+/** 保存闸：结构校验（validatePeakValleyConfig）+ 至少一个窗口。电价驱动（priceDriven=true）豁免——窗口可空（无 chargeWindows/dischargeWindows 数组也合法），功率缺省回退包络。 */
 export function validatePeakValleySaveable(config: string): string[] {
   if (!config.trim()) return ['请至少配置一个充电或放电窗口'] // 空配置 ≠ 非法 JSON，先给「至少一个窗口」
+  const parsed = parseJsonConfig(config)
+  if (!parsed.ok) return [parsed.error] // 非法 JSON 先行
+  const obj = parsed.value as {
+    priceDriven?: boolean
+    chargeWindows?: unknown[]
+    dischargeWindows?: unknown[]
+  } | null
+  if (obj?.priceDriven === true) return [] // 电价驱动：窗口可空，功率缺省回退包络
   const issues = validatePeakValleyConfig(config)
   if (issues.length) return issues
-  const parsed = parseJsonConfig(config)
-  if (!parsed.ok) return [parsed.error] // 理论不可达（上面已过结构校验），防御窄化
-  const obj = parsed.value as { chargeWindows?: unknown[]; dischargeWindows?: unknown[] }
   if ((obj.chargeWindows?.length ?? 0) === 0 && (obj.dischargeWindows?.length ?? 0) === 0) {
     return ['请至少配置一个充电或放电窗口']
   }
