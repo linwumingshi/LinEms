@@ -29,6 +29,8 @@ import org.springframework.beans.factory.annotation.Value;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.HashMap;
@@ -142,7 +144,8 @@ public class EmsPlanService {
 		plan.setStationId(stationId);
 		plan.setStrategyId(strategy.getStrategyId());
 		plan.setPlanDate(planDate);
-		plan.setPlanType(3); // 混合
+		plan.setPlanType(derivePlanType(points));
+		plan.setTotalEnergy(computeTotalEnergy(points));
 		plan.setStatus(0); // 待执行
 		plan.setPlanParam(priceDriven ? buildPriceDrivenParam(strategy.getConfig(), prices) : strategy.getConfig());
 		planMapper.insert(plan);
@@ -418,6 +421,34 @@ public class EmsPlanService {
 		catch (Exception e) {
 			return config;
 		}
+	}
+
+	/**
+	 * 推导计划类型：1 纯充 / 2 纯放 / 3 混合（含充电与放电点）。无动作点（全待机/空计划）兜底为混合， 与历史落库语义一致。
+	 */
+	private static int derivePlanType(List<PlanPoint> points) {
+		boolean charge = false;
+		boolean discharge = false;
+		for (PlanPoint p : points) {
+			if ("CHARGE".equals(p.action())) {
+				charge = true;
+			}
+			else if ("DISCHARGE".equals(p.action())) {
+				discharge = true;
+			}
+		}
+		return charge && discharge ? 3 : charge ? 1 : discharge ? 2 : 3;
+	}
+
+	/** 计划总量 kWh = Σ(点功率 × 点粒度时长)，仅计充/放动作点，待机点不计。 */
+	private static BigDecimal computeTotalEnergy(List<PlanPoint> points) {
+		double energyKwh = 0;
+		for (PlanPoint p : points) {
+			if ("STANDBY".equals(p.action()))
+				continue;
+			energyKwh += p.powerKw() * PlanGenerator.SLOT_MIN / 60.0;
+		}
+		return BigDecimal.valueOf(energyKwh).setScale(3, RoundingMode.HALF_UP);
 	}
 
 	private PlanInput toInput(EmsStrategy strategy, EmsConstraint c, List<EmsElectricityPrice> prices) {

@@ -57,6 +57,9 @@ const PRICE_TINT: Record<string, string> = {
 const STATUS_TEXT: Record<number, string> = { 0: '待执行', 1: '执行中', 2: '完成', 3: '已取消', 4: '失败' }
 const STATUS_TAG: Record<number, 'success' | 'primary' | 'info' | 'danger'> = { 0: 'info', 1: 'primary', 2: 'success', 3: 'info', 4: 'danger' }
 
+/** 计划类型：1 纯充 / 2 纯放 / 3 混合（后端 derivePlanType 推导，total_energy 同步落真） */
+const PLAN_TYPE_TEXT: Record<number, string> = { 1: '纯充', 2: '纯放', 3: '混合' }
+
 /** 计划点执行状态语义（执行记录表格用） */
 const EXEC_STATE_TEXT: Record<number, string> = { 0: '待下发', 1: '已下发', 2: '成功', 3: '失败', 4: '超时' }
 const EXEC_STATE_TAG: Record<number, 'info' | 'primary' | 'success' | 'danger' | 'warning'> = {
@@ -454,8 +457,11 @@ onMounted(() => {
           <el-table-column label="策略" min-width="104" show-overflow-tooltip>
             <template #default="{ row }">{{ strategyLabel(row.strategyId) }}</template>
           </el-table-column>
+          <el-table-column label="类型" width="66">
+            <template #default="{ row }">{{ PLAN_TYPE_TEXT[row.planType as number] ?? '—' }}</template>
+          </el-table-column>
           <el-table-column label="总量 kWh" width="92" align="right">
-            <template #default="{ row }">{{ row.totalEnergy ?? '—' }}</template>
+            <template #default="{ row }">{{ row.totalEnergy != null ? Number(row.totalEnergy).toFixed(1) : '—' }}</template>
           </el-table-column>
           <el-table-column label="状态" width="76">
             <template #default="{ row }">

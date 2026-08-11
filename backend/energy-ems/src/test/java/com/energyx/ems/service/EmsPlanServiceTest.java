@@ -82,9 +82,48 @@ class EmsPlanServiceTest {
 
 		assertNotNull(plan);
 		assertEquals(7L, plan.getTenantId()); // 租户取自策略行
+		assertEquals(3, plan.getPlanType()); // 混合：充(02-06)+放(18-22)窗口都有点
+		// 总量 = 充 48×100×5/60 + 放 48×80×5/60 = 400 + 320 = 720 kWh
+		assertEquals(0, new BigDecimal("720.000").compareTo(plan.getTotalEnergy()));
 		verify(planMapper).insert(any(EmsPlan.class)); // 计划头落库
 		verify(writer).write(eq(10L), eq(LocalDate.of(2026, 8, 8)), anyList()); // 点序列写
 																				// TDengine
+	}
+
+	@Test
+	void generate_chargeOnlyPlanDerivesPureChargeTypeAndEnergy() throws Exception {
+		EmsStrategyMapper stratMapper = mock(EmsStrategyMapper.class);
+		EmsElectricityPriceMapper priceMapper = mock(EmsElectricityPriceMapper.class);
+		EmsConstraintMapper constraintMapper = mock(EmsConstraintMapper.class);
+		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
+		EmsExecutionRecordMapper execMapper = mock(EmsExecutionRecordMapper.class);
+
+		EmsStrategy s = new EmsStrategy();
+		s.setStrategyId(1L);
+		s.setStationId(10L);
+		s.setTenantId(7L);
+		s.setStrategyType("PEAK_VALLEY");
+		s.setStatus(1);
+		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}]}"); // 仅充电窗口
+		when(stratMapper.selectById(1L)).thenReturn(s);
+
+		EmsConstraint constraint = new EmsConstraint();
+		constraint.setSocMin(new BigDecimal("10"));
+		constraint.setSocMax(new BigDecimal("90"));
+		constraint.setChargePowerMax(new BigDecimal("100"));
+		constraint.setDischargePowerMax(new BigDecimal("80"));
+		when(constraintMapper.selectOne(any())).thenReturn(constraint);
+		when(priceMapper.selectList(any())).thenReturn(List.of());
+
+		EmsPlanService svc = new EmsPlanService(stratMapper, priceMapper, constraintMapper, planMapper, execMapper,
+				new SafetyEnvelopeValidator(), mock(TdenginePlanWriter.class), mock(CommandClient.class),
+				new DistributedLock(mock(StringRedisTemplate.class)));
+
+		EmsPlan plan = svc.generate(10L, 1L, LocalDate.of(2026, 8, 8));
+
+		assertEquals(1, plan.getPlanType()); // 纯充
+		// 02:00-04:00 = 24 个 5 分钟槽 × 100kW × 5/60 = 200 kWh
+		assertEquals(0, new BigDecimal("200.000").compareTo(plan.getTotalEnergy()));
 	}
 
 	@Test

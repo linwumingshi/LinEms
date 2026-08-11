@@ -18,8 +18,8 @@ public final class PlanGenerator {
 
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
-	/** 点序列粒度（分钟） */
-	private static final int SLOT_MIN = 5;
+	/** 点序列粒度（分钟）。EmsPlanService 计算 total_energy 时复用同一粒度契约。 */
+	public static final int SLOT_MIN = 5;
 
 	private PlanGenerator() {
 	}
