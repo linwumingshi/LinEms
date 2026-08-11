@@ -508,10 +508,11 @@ class RevenueCalculatorTest {
 	@Test
 	void revenueSignChargeSubtractsDischargeAdds() {
 		// 00:00/00:05 充 60kW（各 5min=5kWh）、00:10/00:15 放 60kW（各 5min）@0.3 充、@1.0 放 → 收益 = 10×1.0 − 10×0.3 = 7
+		// 第 5 行 00:20 为末采样点（无后继间隔，不计），保证充/放两簇各 2 槽全部贡献
 		Function<LocalTime, String> plan = t -> t.getMinute() >= 10 ? "DISCHARGE" : "CHARGE";
 		Function<LocalTime, Double> price = t -> t.getMinute() >= 10 ? 1.0 : 0.3;
 		RevenueDailyResult r = RevenueCalculator.aggregateDay(DAY,
-				List.of(row(0, 60, null), row(5, 60, null), row(10, 60, null), row(15, 60, null)),
+				List.of(row(0, 60, null), row(5, 60, null), row(10, 60, null), row(15, 60, null), row(20, 60, null)),
 				plan, price);
 
 		assertEquals(10.0, r.chargeEnergy(), 1e-9);
@@ -522,8 +523,9 @@ class RevenueCalculatorTest {
 	@Test
 	void sourceMarkedRunModeOrPlan() {
 		Function<LocalTime, String> plan = t -> "DISCHARGE";
+		// 第 3 行 00:20 为末采样点（不计），保证第 2 行 00:10 无 runMode 时回退计划、仍产生 PLAN 槽
 		RevenueDailyResult r = RevenueCalculator.aggregateDay(DAY,
-				List.of(row(0, 60, 1), row(10, 60, null)), plan, NO_PRICE);
+				List.of(row(0, 60, 1), row(10, 60, null), row(20, 60, null)), plan, NO_PRICE);
 
 		assertEquals("RUN_MODE", r.slots().get(0).source());
 		assertEquals("PLAN", r.slots().get(1).source());
@@ -1109,7 +1111,8 @@ class EmsRevenueServiceTest {
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List.of(
 				new TsdbClient.TelemetryRow(start, 60.0, null),
-				new TsdbClient.TelemetryRow(start + 600_000L, 60.0, null))); // 无 runMode → 回退计划 DISCHARGE
+				new TsdbClient.TelemetryRow(start + 600_000L, 60.0, null),
+				new TsdbClient.TelemetryRow(start + 1_200_000L, 60.0, null))); // 无 runMode → 回退计划 DISCHARGE；第 3 行末点不计
 
 		List<RevenueDetailRow> rows = svc.detail(10L, DAY);
 
@@ -2111,3 +2114,5 @@ git commit -m "feat(ems-frontend): P1-1 收益核算页面（KPI 卡片 + 趋势
 - `RevenueCalculator.aggregateDay` 入参顺序（date, rows, planAction, price）Task 2 定义与 Task 4 调用一致 ✅
 
 **评审修复（Task 1 review 后）：** 中分页失败分支 `break` → `return List.of()`（Global Constraint「任一步失败返回空列表」原代码自相矛盾），并补 3 条回归测试（page2 失败/null Result/null records）。
+
+**评审修复（Task 2 实现代理发现）：** 末采样点无后继间隔不计（设计决定），原 Task 2 两测试与 Task 4 `detail_returnsSlots` 假设末行也产生槽——补末采样点行（`row(20)`/第三行遥测）使断言与语义一致。
