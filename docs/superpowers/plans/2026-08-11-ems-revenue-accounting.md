@@ -739,6 +739,7 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.*;
 
 /** EmsStationMetaService.upsert 幂等：同站已存在原位更新，否则插入。 */
@@ -769,7 +770,7 @@ class EmsStationMetaServiceTest {
 	@Test
 	void upsert_firstInsertSetsTenantAndNoPk() {
 		EmsStationMetaMapper mapper = mock(EmsStationMetaMapper.class);
-		when(mapper.selectOne(any())).thenReturn(null);
+		when(mapper.selectOne(any(), anyBoolean())).thenReturn(null);
 		EmsStationMetaService svc = newService(mapper);
 
 		EmsStationMeta meta = new EmsStationMeta();
@@ -791,7 +792,7 @@ class EmsStationMetaServiceTest {
 		existing.setStationMetaId(1L);
 		existing.setStationId(10L);
 		EmsStationMetaMapper mapper = mock(EmsStationMetaMapper.class);
-		when(mapper.selectOne(any())).thenReturn(existing);
+		when(mapper.selectOne(any(), anyBoolean())).thenReturn(existing);
 		EmsStationMetaService svc = newService(mapper);
 
 		EmsStationMeta meta = new EmsStationMeta();
