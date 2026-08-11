@@ -215,27 +215,34 @@ async function loadCurve(): Promise<void> {
   }
   const end = Date.now()
   const start = end - 24 * 3600 * 1000
-  const view = await tsdbApi.propertyHistory({
-    deviceId: String(pcs.deviceId),
-    productKey: pcs.productKey,
-    identifiers: ['soc', 'power', 'temp'],
-    startTime: start,
-    endTime: end,
-    order: 'asc',
-    page: 1,
-    size: 2000,
-  })
-  const times: string[] = []
-  const soc: number[] = []
-  const power: number[] = []
-  const temp: number[] = []
-  for (const r of view.records) {
-    times.push(new Date(r.ts).toTimeString().slice(0, 5))
-    soc.push(Number(r.values.soc ?? 0))
-    power.push(Number(r.values.power ?? 0))
-    temp.push(Number(r.values.temp ?? 0))
+  try {
+    const view = await tsdbApi.propertyHistory({
+      deviceId: String(pcs.deviceId),
+      productKey: pcs.productKey,
+      identifiers: ['soc', 'power', 'temp'],
+      startTime: start,
+      endTime: end,
+      order: 'asc',
+      page: 1,
+      size: 2000,
+    })
+    const times: string[] = []
+    const soc: number[] = []
+    const power: number[] = []
+    const temp: number[] = []
+    for (const r of view.records) {
+      times.push(new Date(r.ts).toTimeString().slice(0, 5))
+      soc.push(Number(r.values.soc ?? 0))
+      power.push(Number(r.values.power ?? 0))
+      temp.push(Number(r.values.temp ?? 0))
+    }
+    curveData.value = { times, soc, power, temp }
+  } catch (e) {
+    // 曲线失败不阻断后续收益加载：置空并渲染空态，避免残留上一站旧数据
+    curveData.value = { times: [], soc: [], power: [], temp: [] }
+    renderTelemetryChart()
+    ElMessage.error(`遥测曲线加载失败：${e instanceof Error ? e.message : String(e)}`)
   }
-  curveData.value = { times, soc, power, temp }
 }
 
 /** 遥测曲线容器（近 24h：功率/SOC/温度） */
@@ -268,26 +275,44 @@ function renderTelemetryChart(): void {
 /** 今日收益（电站级，DAY 周期） */
 const revenue = ref<RevenueSummary | null>(null)
 
-/** 加载电站当日收益汇总；未选电站时置空 */
+/** 本地日期 YYYY-MM-DD：用本地时区拼接，避免 toISOString() 的 UTC 偏移跨日 */
+function todayStr(): string {
+  const d = new Date()
+  const month = `${d.getMonth() + 1}`.padStart(2, '0')
+  const day = `${d.getDate()}`.padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+/** 加载电站当日收益汇总；未选电站时置空；失败单独提示，不阻断曲线等其余加载 */
 async function loadRevenue(): Promise<void> {
   if (!selectedStation.value) {
     revenue.value = null
     return
   }
-  revenue.value = await emsApi.revenueSummary({ stationId: selectedStation.value, periodType: 'DAY' })
+  try {
+    revenue.value = await emsApi.revenueSummary({
+      stationId: selectedStation.value,
+      periodType: 'DAY',
+      date: todayStr(),
+    })
+  } catch (e) {
+    revenue.value = null
+    ElMessage.error(`收益加载失败：${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
-/** 电站切换：先取站下设备，再聚合遥测、拉取曲线与当日收益 */
+/** 电站切换：先取站下设备与遥测 KPI（关键路径），再加载曲线与当日收益（各自容错） */
 async function onStationChange(): Promise<void> {
   try {
     await loadStationDevices()
     await loadTelemetry()
-    await loadCurve()
-    renderTelemetryChart()
-    await loadRevenue()
   } catch (e) {
     ElMessage.error(`遥测加载失败：${e instanceof Error ? e.message : String(e)}`)
+    return
   }
+  await loadCurve()
+  renderTelemetryChart()
+  await loadRevenue()
 }
 
 onMounted(() => {
