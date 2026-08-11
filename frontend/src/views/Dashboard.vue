@@ -3,12 +3,14 @@ import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { alarmApi } from '@/api/alarm'
 import { deviceApi } from '@/api/device'
+import { emsApi } from '@/api/ems'
 import { shadowApi } from '@/api/shadow'
 import { stationApi } from '@/api/station'
+import { tsdbApi } from '@/api/tsdb'
 import AlarmLevelTag from '@/components/AlarmLevelTag.vue'
 import { useEChart } from '@/composables/useEChart'
 import { levelText, statusTag, statusText, summarizeRecords, toLocal, typeText } from '@/utils/alarmFormat'
-import type { AlarmRecord, Device, ShadowView, Station } from '@/types/models'
+import type { AlarmRecord, Device, RevenueSummary, ShadowView, Station } from '@/types/models'
 
 const loading = ref(false)
 const error = ref('')
@@ -201,11 +203,88 @@ async function loadTelemetry(): Promise<void> {
   }
 }
 
-/** 电站切换：先取站下设备，再聚合遥测 */
+/** 近 24h 遥测曲线：取首台 PCS 设备的 soc/power/temp 属性历史（TSDB），双 y 轴绘制 */
+const curveData = ref<{ times: string[]; soc: number[]; power: number[]; temp: number[] }>({ times: [], soc: [], power: [], temp: [] })
+
+/** 加载近 24h 属性历史：首台非电表设备（PCS 判定与 Task 1 一致）；无 PCS 时曲线置空 */
+async function loadCurve(): Promise<void> {
+  const pcs = stationDevices.value.find((d) => !d.productKey?.includes('meter'))
+  if (!pcs) {
+    curveData.value = { times: [], soc: [], power: [], temp: [] }
+    return
+  }
+  const end = Date.now()
+  const start = end - 24 * 3600 * 1000
+  const view = await tsdbApi.propertyHistory({
+    deviceId: String(pcs.deviceId),
+    productKey: pcs.productKey,
+    identifiers: ['soc', 'power', 'temp'],
+    startTime: start,
+    endTime: end,
+    order: 'asc',
+    page: 1,
+    size: 2000,
+  })
+  const times: string[] = []
+  const soc: number[] = []
+  const power: number[] = []
+  const temp: number[] = []
+  for (const r of view.records) {
+    times.push(new Date(r.ts).toTimeString().slice(0, 5))
+    soc.push(Number(r.values.soc ?? 0))
+    power.push(Number(r.values.power ?? 0))
+    temp.push(Number(r.values.temp ?? 0))
+  }
+  curveData.value = { times, soc, power, temp }
+}
+
+/** 遥测曲线容器（近 24h：功率/SOC/温度） */
+const telemetryEl = ref<HTMLElement>()
+const { render: renderTelemetry } = useEChart(telemetryEl)
+
+/** 渲染近 24h 遥测曲线：左 y 轴功率、右 y 轴 SOC/温度（曲线色沿用项目色板语义色） */
+function renderTelemetryChart(): void {
+  const pcs = stationDevices.value.find((d) => !d.productKey?.includes('meter'))
+  const name = pcs?.deviceName ? ` · ${pcs.deviceName}` : ''
+  renderTelemetry({
+    animation: false,
+    title: { text: `近 24h 遥测${name}`, left: 'center', textStyle: { fontSize: 13, color: '#1F2833', fontWeight: 600 } },
+    tooltip: { trigger: 'axis' },
+    legend: { top: 24, textStyle: { color: '#5B6B8C' }, itemWidth: 10, itemHeight: 10 },
+    grid: { left: 48, right: 48, top: 60, bottom: 30 },
+    xAxis: { type: 'category', data: curveData.value.times, ...AXIS },
+    yAxis: [
+      { type: 'value', name: '功率(kW)', ...AXIS },
+      { type: 'value', name: 'SOC(%)', min: 0, max: 100, ...AXIS },
+    ],
+    series: [
+      { name: '功率', type: 'line', smooth: true, symbol: 'none', lineStyle: { color: '#D4537E', width: 2 }, data: curveData.value.power },
+      { name: 'SOC', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', lineStyle: { color: '#2B6CB0', width: 2 }, data: curveData.value.soc },
+      { name: '温度', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', lineStyle: { color: '#E08A1E', width: 1.5, type: 'dashed' }, data: curveData.value.temp },
+    ],
+  })
+}
+
+/** 今日收益（电站级，DAY 周期） */
+const revenue = ref<RevenueSummary | null>(null)
+
+/** 加载电站当日收益汇总；未选电站时置空 */
+async function loadRevenue(): Promise<void> {
+  if (!selectedStation.value) {
+    revenue.value = null
+    return
+  }
+  revenue.value = await emsApi.revenueSummary({ stationId: selectedStation.value, periodType: 'DAY' })
+}
+
+/** 电站切换：先取站下设备，再聚合遥测、拉取曲线与当日收益 */
 async function onStationChange(): Promise<void> {
   try {
     await loadStationDevices()
     await loadTelemetry()
+    await loadCurve()
+    renderTelemetryChart()
+    await loadRevenue()
   } catch (e) {
     ElMessage.error(`遥测加载失败：${e instanceof Error ? e.message : String(e)}`)
   }
@@ -214,6 +293,7 @@ async function onStationChange(): Promise<void> {
 onMounted(() => {
   load()
   loadStations()
+  renderTelemetryChart()
 })
 </script>
 
@@ -259,6 +339,36 @@ onMounted(() => {
         <span class="ex-readout-label">在线设备</span>
         <span class="ex-readout-value"><b class="ex-num">{{ telemetry.onlineDevices }}</b><em>台</em></span>
       </div>
+    </section>
+
+    <!-- 今日收益卡：电站级 DAY 周期收益汇总（套利收益/电量） -->
+    <section class="ex-card revenue-card">
+      <div class="ex-card-head">
+        <h2 class="ex-card-title">今日收益（电站级）</h2>
+      </div>
+      <div class="ex-readout-band" style="--ro-cols: 4" aria-label="电站收益读数">
+        <div class="ex-readout">
+          <span class="ex-readout-label">套利收益</span>
+          <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.arbitrageRevenue.toFixed(2) : '—' }}</b><em>元</em></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">放电量</span>
+          <span class="ex-readout-value discharge"><b class="ex-num">{{ revenue ? revenue.dischargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">充电量</span>
+          <span class="ex-readout-value charge"><b class="ex-num">{{ revenue ? revenue.chargeEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+        </div>
+        <div class="ex-readout">
+          <span class="ex-readout-label">总电量</span>
+          <span class="ex-readout-value"><b class="ex-num">{{ revenue ? revenue.totalEnergy.toFixed(1) : '—' }}</b><em>kWh</em></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 近 24h 遥测曲线：首台 PCS 的功率/SOC/温度属性历史（双 y 轴） -->
+    <section class="ex-card chart-card">
+      <div ref="telemetryEl" class="chart"></div>
     </section>
 
     <!-- 告警仪表读数带 -->
@@ -333,6 +443,9 @@ onMounted(() => {
 }
 .chart-card {
   padding: 16px 14px 8px;
+}
+.revenue-card {
+  padding: 0 18px 18px;
 }
 .chart {
   height: 260px;
