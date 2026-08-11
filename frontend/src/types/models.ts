@@ -254,6 +254,54 @@ export interface EmsElectricityPrice {
   createTime: string
 }
 
+// ---------------- 收益核算 Revenue (P1-1) ----------------
+
+export interface RevenueSummary {
+  stationId: string
+  /** DAY/MONTH/YEAR */
+  periodType: string
+  startDate: string
+  endDate: string
+  daysCount: number
+  chargeEnergy: number
+  dischargeEnergy: number
+  totalEnergy: number
+  arbitrageRevenue: number
+  /** P1-2 前恒 0 */
+  demandSavings: number
+  totalRevenue: number
+  investmentAmount: number | null
+  paybackYears: number | null
+  hasInvestment: boolean
+}
+
+export interface RevenueTrendPoint {
+  /** 月视图 MM-dd、年视图 yyyy-MM */
+  label: string
+  chargeEnergy: number
+  dischargeEnergy: number
+  revenue: number
+}
+
+export interface RevenueDetailRow {
+  time: string
+  action: string
+  energyKwh: number
+  price: number
+  revenue: number
+  /** RUN_MODE/PLAN */
+  source: string
+}
+
+export interface EmsStationMeta {
+  stationMetaId: string
+  stationId: string
+  investmentAmount: number | null
+  installDate: string | null
+  createTime?: string
+  updateTime?: string
+}
+
 // ---------------- 电站 Station ----------------
 
 /** 电站资产（iot_station；stationId 为 Long，序列化为字符串，同雪花约定） */

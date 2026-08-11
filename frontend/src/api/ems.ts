@@ -1,5 +1,5 @@
 import http from './http'
-import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsExecutionRecord, EmsConstraint, EmsElectricityPrice, PageResult } from '@/types/models'
+import type { EmsStrategy, EmsPlan, EmsPlanPoint, EmsExecutionRecord, EmsConstraint, EmsElectricityPrice, PageResult, RevenueSummary, RevenueTrendPoint, RevenueDetailRow, EmsStationMeta } from '@/types/models'
 
 /** EMS 储能策略 API（网关路由 /api/ems/** → energy-ems） */
 export const emsApi = {
@@ -54,4 +54,19 @@ export const emsApi = {
 
   /** POST /api/ems/plan/{planId}/dispatch 下发调度计划 */
   dispatch(planId: string): Promise<number> { return http.post(`/api/ems/plan/${planId}/dispatch`) },
+
+  /** GET /api/ems/revenue/summary 时段收益卡片 */
+  revenueSummary(params: Record<string, unknown>): Promise<RevenueSummary> { return http.get('/api/ems/revenue/summary', { params }) },
+
+  /** GET /api/ems/revenue/trend 收益趋势曲线（月按日、年按月） */
+  revenueTrend(params: Record<string, unknown>): Promise<RevenueTrendPoint[]> { return http.get('/api/ems/revenue/trend', { params }) },
+
+  /** GET /api/ems/revenue/detail 单日逐槽明细 */
+  revenueDetail(params: Record<string, unknown>): Promise<RevenueDetailRow[]> { return http.get('/api/ems/revenue/detail', { params }) },
+
+  /** GET /api/ems/revenue/meta 电站投资元数据（未配置返回 null） */
+  revenueMetaGet(stationId: string): Promise<EmsStationMeta | null> { return http.get('/api/ems/revenue/meta', { params: { stationId } }) },
+
+  /** PUT /api/ems/revenue/meta 保存电站投资元数据 */
+  revenueMetaPut(body: Partial<EmsStationMeta>): Promise<EmsStationMeta> { return http.put('/api/ems/revenue/meta', body) },
 }
