@@ -116,15 +116,26 @@ onMounted(async () => {
 /** 组装当前视图的 ECharts option 并渲染（日=逐槽、月/年=趋势点）。renderChart 已在 Step 1 绑定 useEChart 组合式。 */
 function refreshChart(): void {
   const isDay = periodType.value === 'DAY'
-  const xData = isDay ? detail.value.map((r) => r.time) : trend.value.map((t) => t.label)
-  const charge = isDay ? detail.value.filter((r) => r.action === 'CHARGE').map((r) => r.energyKwh) : trend.value.map((t) => t.chargeEnergy)
-  const discharge = isDay ? detail.value.filter((r) => r.action === 'DISCHARGE').map((r) => r.energyKwh) : trend.value.map((t) => t.dischargeEnergy)
-  const revenue = isDay ? detail.value.map((r) => r.revenue) : trend.value.map((t) => t.revenue)
+  // DAY 视图：按 time 分组聚合（同刻多设备/多行合并为一柱），series 与 x 轴类目 1:1 对齐
+  const grouped = new Map<string, { charge: number; discharge: number; revenue: number }>()
+  if (isDay) {
+    for (const r of detail.value) {
+      const acc = grouped.get(r.time) ?? { charge: 0, discharge: 0, revenue: 0 }
+      if (r.action === 'CHARGE') acc.charge += r.energyKwh
+      else if (r.action === 'DISCHARGE') acc.discharge += r.energyKwh
+      acc.revenue += r.revenue
+      grouped.set(r.time, acc)
+    }
+  }
+  const times = isDay ? [...grouped.keys()] : trend.value.map((t) => t.label)
+  const charge = isDay ? [...grouped.values()].map((a) => a.charge) : trend.value.map((t) => t.chargeEnergy)
+  const discharge = isDay ? [...grouped.values()].map((a) => a.discharge) : trend.value.map((t) => t.dischargeEnergy)
+  const revenue = isDay ? [...grouped.values()].map((a) => a.revenue) : trend.value.map((t) => t.revenue)
   renderChart({
     tooltip: { trigger: 'axis' },
     legend: { data: ['充电量', '放电量', '收益'] },
     grid: { left: 60, right: 60, top: 40, bottom: 40 },
-    xAxis: { type: 'category', data: xData, boundaryGap: true },
+    xAxis: { type: 'category', data: times, boundaryGap: true },
     yAxis: [{ type: 'value', name: 'kWh' }, { type: 'value', name: '元' }],
     series: [
       { name: '充电量', type: 'bar', stack: 'energy', data: charge, itemStyle: { color: '#3b82f6' } },
