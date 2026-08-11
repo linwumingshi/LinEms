@@ -82,6 +82,7 @@
 ```
 槽位均值 > limit 且站内有活跃 PCS？
  ├─ 是 → 削峰功率 = min(均值 − limit, ΣPCS 可用功率)
+ │         （ΣPCS 可用功率 = 活跃 PCS 数 × 单台额定功率，简化；SOC 深放保护由 socTarget 兜底）
  │    → CommandClient.dispatch 向站内各 PCS 均分下 DISCHARGE（params: {action:"DISCHARGE", power, socTarget, time}）
  │    → upsert 该槽位记录（over_limit=true, action=SHED, shaved_kw=削峰功率）
  │    → 发布 iot-thing-event(demandOverLimit)
@@ -91,6 +92,7 @@
 ```
 
 执行细节：
+- **检测值**：槽位中段以「当前已积累样本均值」作为检测值（早期预警，槽位中途即可越限触发）；外推/全窗口判定留后续优化。记录 `demand_kw` 最终为槽位全 15min 均值（upsert 定型）。
 - **socTarget**：削峰放电的放停下限，取站内 PCS 影子实时 soc（P0-7 影子 SOC 链路），无则回退 30（防深放）。
 - **多 PCS**：削峰功率按站内活跃 PCS 均分（复用 P0-2 多 PCS 下发）。
 - **槽位数据源**：`TsdbClient.history` 返回整日 rows，内存按当前槽位 filter（量小，不改 TSDB 查询）。
