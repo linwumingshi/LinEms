@@ -126,10 +126,7 @@ public class EmsPlanService {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "该电站 " + planDate + " 未配置生效的分时电价（status=1 且在有效期内）");
 		}
 		List<PlanPoint> points = PlanGenerator.generate(toInput(strategy, constraint, prices));
-		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint.getSocMin().doubleValue(),
-				constraint.getSocMax().doubleValue(), constraint.getChargePowerMax().doubleValue(),
-				constraint.getDischargePowerMax().doubleValue(),
-				constraint.getTempMax() == null ? null : constraint.getTempMax().doubleValue());
+		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint);
 		if (!vr.valid()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "安全包络校验未通过: " + String.join("; ", vr.rejections()));
 		}
@@ -344,10 +341,7 @@ public class EmsPlanService {
 		if (constraint == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "未配置安全约束: stationId=" + plan.getStationId());
 		}
-		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint.getSocMin().doubleValue(),
-				constraint.getSocMax().doubleValue(), constraint.getChargePowerMax().doubleValue(),
-				constraint.getDischargePowerMax().doubleValue(),
-				constraint.getTempMax() == null ? null : constraint.getTempMax().doubleValue());
+		SafetyEnvelopeValidator.ValidationResult vr = validator.validate(points, constraint);
 		if (!vr.valid()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "安全包络校验未通过: " + String.join("; ", vr.rejections()));
 		}
