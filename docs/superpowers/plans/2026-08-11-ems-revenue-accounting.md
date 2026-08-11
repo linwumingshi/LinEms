@@ -1848,6 +1848,7 @@ import { ElMessage } from 'element-plus'
 import { emsApi } from '@/api/ems'
 import type { EmsStationMeta, RevenueDetailRow, RevenueSummary, RevenueTrendPoint, Station } from '@/types/models'
 import { loadStations } from '@/utils/stationDict'
+import { useEChart } from '@/composables/useEChart'
 
 const route = useRoute()
 
@@ -1860,7 +1861,7 @@ const summary = ref<RevenueSummary | null>(null)
 const trend = ref<RevenueTrendPoint[]>([])
 const detail = ref<RevenueDetailRow[]>([])
 const meta = ref<EmsStationMeta | null>(null)
-const chartEl = ref<HTMLElement | null>(null)
+const chartEl = ref<HTMLElement>()
 
 const PERIODS = [
   { key: 'DAY', label: '日' },
@@ -1905,7 +1906,7 @@ async function load(): Promise<void> {
     trend.value = t
     detail.value = d
     meta.value = await emsApi.revenueMetaGet(stationId.value)
-    renderChart()
+    refreshChart()
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
   } finally {
@@ -1913,7 +1914,8 @@ async function load(): Promise<void> {
   }
 }
 
-function renderChart(): void { /* 见 Step 3 图表配置 */ }
+/** 复用项目既有 ECharts 生命周期组合式（init/ResizeObserver/dispose，Dashboard/EmsPlan 同款） */
+const { render: renderChart } = useEChart(chartEl)
 
 function fmtKwh(v: number | null | undefined): string {
   return v == null ? '—' : `${v.toFixed(1)} kWh`
@@ -2000,6 +2002,43 @@ function fmtYuan(v: number | null | undefined): string {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+/* KPI 卡片网格（kpi-* 非全局类，需本页定义；Dashboard 同款视觉） */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kpi-label {
+  font-size: 13px;
+  color: var(--ex-ink-2);
+}
+.kpi-num {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ex-ink);
+  font-variant-numeric: tabular-nums;
+}
+.kpi-roi .kpi-num {
+  font-size: 18px;
+}
+.chart {
+  height: 360px;
+  width: 100%;
+}
+.ex-section {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ex-ink);
+  margin: 0 0 12px;
+}
+</style>
 ```
 
 - [ ] **Step 2: script 剩余逻辑**（`onChange`、`openMeta`、`saveMeta`、`onMounted`）
@@ -2049,22 +2088,17 @@ onMounted(async () => {
 })
 ```
 
-- [ ] **Step 3: `renderChart()` 图表配置**
+- [ ] **Step 3: 图表配置（`refreshChart()`）**
 
 ```ts
-import * as echarts from 'echarts'
-// 顶部 import 追加
-
-function renderChart(): void {
-  const el = chartEl.value
-  if (!el) return
-  const chart = echarts.getInstanceByDom(el) ?? echarts.init(el)
+/** 组装当前视图的 ECharts option 并渲染（日=逐槽、月/年=趋势点）。renderChart 已在 Step 1 绑定 useEChart 组合式。 */
+function refreshChart(): void {
   const isDay = periodType.value === 'DAY'
   const xData = isDay ? detail.value.map((r) => r.time) : trend.value.map((t) => t.label)
   const charge = isDay ? detail.value.filter((r) => r.action === 'CHARGE').map((r) => r.energyKwh) : trend.value.map((t) => t.chargeEnergy)
   const discharge = isDay ? detail.value.filter((r) => r.action === 'DISCHARGE').map((r) => r.energyKwh) : trend.value.map((t) => t.dischargeEnergy)
   const revenue = isDay ? detail.value.map((r) => r.revenue) : trend.value.map((t) => t.revenue)
-  chart.setOption({
+  renderChart({
     tooltip: { trigger: 'axis' },
     legend: { data: ['充电量', '放电量', '收益'] },
     grid: { left: 60, right: 60, top: 40, bottom: 40 },
