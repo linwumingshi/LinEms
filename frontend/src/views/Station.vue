@@ -7,6 +7,7 @@ import { stationApi } from '@/api/station'
 import { enterpriseApi } from '@/api/system'
 import type { Station, StationSaveReq, SysEnterprise } from '@/types/models'
 import { GRID_TYPE_OPTIONS, stationStatusTag, stationStatusText } from '@/utils/dicts'
+import { resetStationCache } from '@/utils/stationDict'
 
 const router = useRouter()
 
@@ -91,6 +92,7 @@ async function save() {
     else await stationApi.create(body)
     ElMessage.success('保存成功')
     dialogVisible.value = false
+    resetStationCache() // 新增/改名后失效，其他页面下拉/名称即时见新电站
     void load()
   } catch (e2) { ElMessage.error(e2 instanceof Error ? e2.message : String(e2)) }
 }
@@ -99,6 +101,7 @@ async function remove(row: Station) {
   try {
     await stationApi.remove(row.stationId)
     ElMessage.success('已删除')
+    resetStationCache() // 删除后失效，其他页面下拉不再残留已删电站
     void load()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }

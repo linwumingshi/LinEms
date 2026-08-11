@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stationApi } from '@/api/station'
-import { loadStations, stationName, _resetStationCache } from '@/utils/stationDict'
+import { loadStations, stationName, resetStationCache } from '@/utils/stationDict'
 
 vi.mock('@/api/station', () => ({
   stationApi: { stationPage: vi.fn() },
@@ -16,7 +16,7 @@ const stations = [
 const pageResult = { records: stations, total: 2, pages: 1, current: 1, size: 100 }
 
 beforeEach(() => {
-  _resetStationCache()
+  resetStationCache()
   mockStationPage.mockReset()
   mockStationPage.mockResolvedValue(pageResult as never)
 })
@@ -37,9 +37,9 @@ describe('stationDict', () => {
     expect(mockStationPage).toHaveBeenCalledTimes(2)
   })
 
-  it('_resetStationCache 后重新拉取', async () => {
+  it('resetStationCache 后重新拉取', async () => {
     await loadStations()
-    _resetStationCache()
+    resetStationCache()
     await loadStations()
     expect(mockStationPage).toHaveBeenCalledTimes(2)
   })

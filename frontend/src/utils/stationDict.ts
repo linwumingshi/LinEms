@@ -16,8 +16,8 @@ export async function loadStations(force = false): Promise<Station[]> {
   return cached
 }
 
-/** 测试用：清空缓存 */
-export function _resetStationCache(): void {
+/** 清空缓存：电站增删改后调用，避免其他页面下拉/名称读到旧列表（模块级缓存不随路由失效）。 */
+export function resetStationCache(): void {
   cached = null
 }
 
