@@ -2,6 +2,8 @@ package com.energyx.ems.service;
 
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
+import com.energyx.ems.entity.EmsDemandConfig;
+import com.energyx.ems.entity.EmsDemandRecord;
 import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStationMeta;
@@ -44,6 +46,10 @@ class EmsRevenueServiceTest {
 
 	private TdenginePlanWriter writer;
 
+	private EmsDemandConfigService configService;
+
+	private EmsDemandRecordService recordService;
+
 	private EmsRevenueService svc;
 
 	@BeforeEach
@@ -55,7 +61,10 @@ class EmsRevenueServiceTest {
 		pcsDeviceMapper = mock(PcsDeviceMapper.class);
 		tsdbClient = mock(TsdbClient.class);
 		writer = mock(TdenginePlanWriter.class);
-		svc = new EmsRevenueService(planMapper, priceMapper, stationMetaService, pcsDeviceMapper, tsdbClient, writer);
+		configService = mock(EmsDemandConfigService.class);
+		recordService = mock(EmsDemandRecordService.class);
+		svc = new EmsRevenueService(planMapper, priceMapper, stationMetaService, pcsDeviceMapper, tsdbClient, writer,
+				configService, recordService);
 		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
 	}
 
@@ -133,6 +142,26 @@ class EmsRevenueServiceTest {
 		assertTrue(s.isHasInvestment());
 		assertEquals(10.0, s.getArbitrageRevenue(), 1e-9);
 		assertNotNull(s.getPaybackYears()); // 365000 ÷ (10×365) = 100 年
+	}
+
+	@Test
+	void summary_wiresDemandSavingsFromConfigAndRecords() {
+		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of()); // dailyResults
+																									// 空
+		EmsDemandConfig cfg = new EmsDemandConfig();
+		cfg.setDemandLimitKw(new BigDecimal("100.00"));
+		cfg.setDemandRate(new BigDecimal("40.0000"));
+		when(configService.getByStation(10L)).thenReturn(cfg);
+		EmsDemandRecord peak = new EmsDemandRecord();
+		peak.setDemandKw(new BigDecimal("500.00"));
+		peak.setShavedKw(new BigDecimal("200.00"));
+		EmsDemandRecord second = new EmsDemandRecord();
+		second.setDemandKw(new BigDecimal("650.00"));
+		second.setShavedKw(BigDecimal.ZERO);
+		when(recordService.listByRange(anyLong(), eq(10L), any(), any())).thenReturn(List.of(peak, second));
+		// 未削峰 700 − 实际 650 = 50 × 40 × 月系数 1 = 2000
+		RevenueSummary s = svc.summary(10L, "MONTH", LocalDate.of(2026, 8, 11));
+		assertEquals(2000.0, s.getDemandSavings(), 0.01);
 	}
 
 	@Test

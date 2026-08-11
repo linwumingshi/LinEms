@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.ems.entity.EmsDemandConfig;
+import com.energyx.ems.entity.EmsDemandRecord;
 import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStationMeta;
@@ -11,6 +13,7 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.PcsDeviceMapper;
 import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.util.DemandSavingsEstimator;
 import com.energyx.ems.util.PlanGenerator;
 import com.energyx.ems.util.PlanPoint;
 import com.energyx.ems.util.PriceTier;
@@ -18,6 +21,7 @@ import com.energyx.ems.util.RevenueCalculator;
 import com.energyx.ems.util.RevenueDailyResult;
 import com.energyx.ems.util.RevenueSlot;
 import com.energyx.ems.util.TdenginePlanWriter;
+import com.energyx.ems.web.dto.DemandSavingsView;
 import com.energyx.ems.web.dto.RevenueDetailRow;
 import com.energyx.ems.web.dto.RevenueMetaReq;
 import com.energyx.ems.web.dto.RevenueSummary;
@@ -71,15 +75,21 @@ public class EmsRevenueService {
 
 	private final TdenginePlanWriter writer;
 
+	private final EmsDemandConfigService configService;
+
+	private final EmsDemandRecordService recordService;
+
 	public EmsRevenueService(EmsPlanMapper planMapper, EmsElectricityPriceMapper priceMapper,
 			EmsStationMetaService stationMetaService, PcsDeviceMapper pcsDeviceMapper, TsdbClient tsdbClient,
-			TdenginePlanWriter writer) {
+			TdenginePlanWriter writer, EmsDemandConfigService configService, EmsDemandRecordService recordService) {
 		this.planMapper = planMapper;
 		this.priceMapper = priceMapper;
 		this.stationMetaService = stationMetaService;
 		this.pcsDeviceMapper = pcsDeviceMapper;
 		this.tsdbClient = tsdbClient;
 		this.writer = writer;
+		this.configService = configService;
+		this.recordService = recordService;
 	}
 
 	/** 时段收益卡片。 */
@@ -104,7 +114,7 @@ public class EmsRevenueService {
 		s.setDischargeEnergy(round2(discharge));
 		s.setTotalEnergy(round2(charge + discharge));
 		s.setArbitrageRevenue(round2(revenue));
-		s.setDemandSavings(0); // P1-2 前恒 0
+		s.setDemandSavings(round2(demandSavings(stationId, periodType, date).getSavings()));
 		s.setTotalRevenue(round2(revenue));
 		fillPayback(s, range[0], range[1]);
 		return s;
@@ -166,6 +176,30 @@ public class EmsRevenueService {
 	/** 查电站投资元数据；未配置返回 null。 */
 	public EmsStationMeta meta(Long stationId) {
 		return stationMetaService.getByStation(stationId);
+	}
+
+	/** 需量节省估算（P1-2）：周期内槽位记录聚合 + 期数系数（月 ×1、年 ×12、日 ×1/30 示意）。无配置费率/无记录 → 0。 */
+	public DemandSavingsView demandSavings(Long stationId, String periodType, LocalDate date) {
+		Long tenant = requireTenant();
+		LocalDate[] range = resolveRange(periodType, date);
+		EmsDemandConfig cfg = configService.getByStation(stationId);
+		double rate = cfg == null || cfg.getDemandRate() == null ? 0 : cfg.getDemandRate().doubleValue();
+		double factor = switch (periodType) {
+			case "DAY" -> 1.0 / 30.0; // 示意：按 30 天折算月基本电费
+			case "YEAR" -> 12.0;
+			default -> 1.0; // MONTH
+		};
+		List<EmsDemandRecord> recs = recordService.listByRange(tenant, stationId, range[0].atStartOfDay(),
+				range[1].atTime(LocalTime.MAX));
+		DemandSavingsView view = new DemandSavingsView();
+		view.setStationId(stationId);
+		view.setPeriodType(periodType);
+		view.setStartDate(range[0].toString());
+		view.setEndDate(range[1].toString());
+		view.setActualMaxKw(round2(DemandSavingsEstimator.actualMax(recs)));
+		view.setUnshavedMaxKw(round2(DemandSavingsEstimator.unshavedMax(recs)));
+		view.setSavings(round2(DemandSavingsEstimator.estimate(recs, rate, factor)));
+		return view;
 	}
 
 	/** 保存电站投资元数据（upsert）。 */
