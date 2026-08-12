@@ -4,14 +4,18 @@ import com.energyx.common.constant.Constants;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.redis.RedisChannelConstant;
+import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.tenant.TenantInfo;
 import com.energyx.device.entity.Device;
 import com.energyx.device.entity.DeviceCredential;
 import com.energyx.device.mapper.DeviceCredentialMapper;
 import com.energyx.device.mapper.DeviceMapper;
 import com.energyx.device.web.dto.CredentialView;
+import com.energyx.device.web.dto.DeviceCreateReq;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -88,6 +92,86 @@ class DeviceServiceImplTest {
 
 		assertNotNull(view);
 		assertEquals(64, view.getDeviceSecret().length());
+	}
+
+	// ---- 生成密钥即激活（状态机自动联动）----
+
+	@Test
+	void regenerateSecret_fromInactive_shouldActivate() {
+		// 未激活(1) 生成密钥 → 自动激活为已激活离线(2)：密钥更新 + 状态更新 + 广播
+		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_INACTIVE);
+		doReturn(dev).when(service).getById(dev.getDeviceId());
+		when(credentialMapper.update(any(), any())).thenReturn(1);
+
+		service.regenerateSecret(dev.getDeviceId());
+
+		verify(credentialMapper).update(any(), any());
+		verify(deviceMapper).update(any(), any());
+		verify(redis).convertAndSend(eq(RedisChannelConstant.CREDENTIAL_REVOKED), eq("testMeter_meter-000001"));
+	}
+
+	@Test
+	void regenerateSecret_fromUnregistered_shouldActivate() {
+		// 未注册(0) 生成密钥 → 同样自动激活（登记+激活合并）
+		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_UNREGISTERED);
+		doReturn(dev).when(service).getById(dev.getDeviceId());
+		when(credentialMapper.update(any(), any())).thenReturn(1);
+
+		service.regenerateSecret(dev.getDeviceId());
+
+		verify(credentialMapper).update(any(), any());
+		verify(deviceMapper).update(any(), any());
+		verify(redis).convertAndSend(eq(RedisChannelConstant.CREDENTIAL_REVOKED), eq("testMeter_meter-000001"));
+	}
+
+	@Test
+	void regenerateSecret_fromOnline_shouldKeepStatus() {
+		// 在线(3) 换密钥是常规轮换：不触发状态联动（deviceMapper.update 不调用），仅密钥更新+广播
+		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_ONLINE);
+		doReturn(dev).when(service).getById(dev.getDeviceId());
+		when(credentialMapper.update(any(), any())).thenReturn(1);
+
+		service.regenerateSecret(dev.getDeviceId());
+
+		verify(credentialMapper).update(any(), any());
+		verify(deviceMapper, never()).update(any(), any());
+		verify(redis).convertAndSend(eq(RedisChannelConstant.CREDENTIAL_REVOKED), eq("testMeter_meter-000001"));
+	}
+
+	@Test
+	void regenerateSecret_fromBanned_shouldKeepBanned() {
+		// 封禁(5) 换密钥不自动解禁（解封走 broker TTL/UNBANNED 回写），避免越权恢复
+		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_BANNED);
+		doReturn(dev).when(service).getById(dev.getDeviceId());
+		when(credentialMapper.update(any(), any())).thenReturn(1);
+
+		service.regenerateSecret(dev.getDeviceId());
+
+		verify(credentialMapper).update(any(), any());
+		verify(deviceMapper, never()).update(any(), any());
+		verify(redis).convertAndSend(eq(RedisChannelConstant.CREDENTIAL_REVOKED), eq("testMeter_meter-000001"));
+	}
+
+	@Test
+	void create_shouldDefaultToInactive() {
+		// 创建固定为已登记未激活(1)：不再接受前端 status（DeviceCreateReq 已删字段）
+		TenantContext.set(new TenantInfo(1L, 1L));
+		DeviceCreateReq req = new DeviceCreateReq();
+		req.setDeviceName("meter-000002");
+		req.setProductKey("testMeter");
+		req.setDeviceType("METER");
+		// 拦截 ServiceImpl 的 count（唯一校验）与 save（落库），私有方法 resolveParent/validateDeviceName
+		// 对 null parentId / 合法设备名真实执行
+		doReturn(0L).when(service).count(any());
+		doReturn(true).when(service).save(any(Device.class));
+		when(credentialMapper.insert(any(DeviceCredential.class))).thenReturn(1);
+
+		service.create(req);
+
+		ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
+		verify(service).save(captor.capture());
+		assertEquals(Constants.DEVICE_STATUS_INACTIVE, captor.getValue().getStatus());
+		TenantContext.acquire().close();
 	}
 
 	// ---- 管理态状态机 ----

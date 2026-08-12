@@ -70,7 +70,8 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		BeanUtils.copyProperties(req, device);
 		device.setDeviceId(IdWorker.getId());
 		device.setTenantId(tenantId);
-		device.setStatus(req.getStatus() == null ? Constants.DEVICE_STATUS_UNREGISTERED : req.getStatus());
+		// 创建固定为"已登记未激活(1)"：凭据已自动生成，但需走"生成密钥"动作（regenerateSecret）才激活为 2（可接入）
+		device.setStatus(Constants.DEVICE_STATUS_INACTIVE);
 		device.setProtocol(req.getProtocol() == null || req.getProtocol().isBlank() ? "MQTT" : req.getProtocol());
 		device.setOnlineSeconds(0L);
 		if (parent == null) {
@@ -252,6 +253,15 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 					.set(DeviceCredential::getDeviceSecret, secret)
 					.set(DeviceCredential::getAuthStatus, 1)
 					.set(DeviceCredential::getFailCount, 0));
+		// 生成密钥 = 凭据就绪 = 激活（状态机自动联动）：仅未注册(0)/未激活(1) → 已激活离线(2)；
+		// 禁用(4)/封禁(5)是管理态，不因密钥操作自动解禁，避免越权恢复
+		if (device.getStatus() != null && (device.getStatus() == Constants.DEVICE_STATUS_UNREGISTERED
+				|| device.getStatus() == Constants.DEVICE_STATUS_INACTIVE)) {
+			lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
+				.eq(Device::getDeviceId, deviceId)
+				.update();
+			log.info("生成密钥联动激活设备 deviceId={} status={}→2", deviceId, device.getStatus());
+		}
 		log.info("重新生成设备密钥 deviceId={}", deviceId);
 		// 凭据失效广播：驱逐 broker 认证缓存 cache:cred:{clientId} + 踢在线连接（新密钥立即生效，不等 30min TTL）
 		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());

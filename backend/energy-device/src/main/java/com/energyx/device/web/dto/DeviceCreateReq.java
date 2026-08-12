@@ -39,9 +39,6 @@ public class DeviceCreateReq {
 
 	private Integer sort;
 
-	/** 默认 0 未注册 */
-	private Integer status;
-
 	/** 默认 MQTT */
 	private String protocol;
 

@@ -84,7 +84,7 @@ function onProductChange(pk?: string) {
   const p = products.value.find((x) => x.productKey === pk)
   if (p) form.value.deviceType = p.deviceType
 }
-function openCreate() { form.value = { status: 0, protocol: 'MQTT', parentId: undefined }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { protocol: 'MQTT', parentId: undefined }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Device) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   errs.value = {}
@@ -304,6 +304,11 @@ async function regenerateSecret() {
     cred.value = await deviceApi.regenerateCredential(detail.value.deviceId)
     plainSecret.value = cred.value.deviceSecret
     ElMessage.success('新密钥已生成（仅本次明文展示）')
+    // 生成密钥联动激活（0/1→2）：刷新详情与列表的状态展示
+    if (detail.value.status === 0 || detail.value.status === 1) {
+      detail.value = { ...detail.value, status: 2 }
+      void load()
+    }
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 async function copySecret() {
