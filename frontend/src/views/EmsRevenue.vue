@@ -151,7 +151,7 @@ function refreshChart(): void {
     <header class="ex-page-head">
       <div class="head-title">
         <h1 class="ex-title">收益核算</h1>
-        <p class="ex-sub">实际遥测口径 · 峰谷套利收益 = 放电电量×峰价 − 充电电量×谷价 · 需量节省待 P1-2</p>
+        <p class="ex-sub">实际遥测口径 · 峰谷套利收益 = 放电电量×峰价 − 充电电量×谷价 · 需量节省 = 需量费率×（未削峰最大需量 − 实际最大需量）</p>
       </div>
       <el-button v-if="stationId" type="primary" @click="openMeta">设置投资额</el-button>
     </header>
@@ -180,7 +180,7 @@ function refreshChart(): void {
       <div class="kpi"><span class="kpi-label">放电量</span><span class="kpi-num">{{ fmtKwh(summary?.dischargeEnergy) }}</span></div>
       <div class="kpi"><span class="kpi-label">总电量</span><span class="kpi-num">{{ fmtKwh(summary?.totalEnergy) }}</span></div>
       <div class="kpi"><span class="kpi-label">套利收益</span><span class="kpi-num">{{ fmtYuan(summary?.arbitrageRevenue) }}</span></div>
-      <div class="kpi"><span class="kpi-label">需量节省</span><span class="kpi-num">—</span></div>
+      <div class="kpi"><span class="kpi-label">需量节省</span><span class="kpi-num">{{ fmtYuan(summary?.demandSavings) }}</span></div>
       <div class="kpi"><span class="kpi-label">累计收益</span><span class="kpi-num">{{ fmtYuan(summary?.totalRevenue) }}</span></div>
       <div class="kpi kpi-roi"><span class="kpi-label">回本周期</span>
         <span class="kpi-num">{{ summary?.hasInvestment ? (summary.paybackYears == null ? '—' : summary.paybackYears + ' 年') : '未设置投资额' }}</span>
