@@ -56,6 +56,12 @@ public class LifecycleProcessor {
 		else if ("OFFLINE".equals(msg.getEventType())) {
 			handleOffline(msg);
 		}
+		else if ("BANNED".equals(msg.getEventType())) {
+			handleBanned(msg);
+		}
+		else if ("UNBANNED".equals(msg.getEventType())) {
+			handleUnbanned(msg);
+		}
 		else {
 			log.warn("[Access] lifecycle 未知 eventType={} deviceId={}", msg.getEventType(), msg.getDeviceId());
 		}
@@ -74,6 +80,18 @@ public class LifecycleProcessor {
 		deviceStatusMapper.updateOffline(msg.getDeviceId(), now);
 		insertRecord(msg, 2, now);
 		log.info("[Access] 设备离线 deviceId={} reason={}", msg.getDeviceId(), msg.getReason());
+	}
+
+	/** 封禁回写（status=5）：Redis 封禁是权威，DB 的 5 是审计视图，ONLINE 事件不会再覆盖回 3 */
+	private void handleBanned(LifecycleMessage msg) {
+		deviceStatusMapper.updateBanned(msg.getDeviceId());
+		log.info("[Access] 设备封禁 deviceId={} reason={}", msg.getDeviceId(), msg.getReason());
+	}
+
+	/** 解封回写（status=5 → 2） */
+	private void handleUnbanned(LifecycleMessage msg) {
+		deviceStatusMapper.updateUnbanned(msg.getDeviceId());
+		log.info("[Access] 设备解封 deviceId={}", msg.getDeviceId());
 	}
 
 	private void insertRecord(LifecycleMessage msg, int eventType, Date now) {

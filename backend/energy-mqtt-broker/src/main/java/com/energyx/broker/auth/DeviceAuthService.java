@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.broker.config.BrokerProperties;
 import com.energyx.broker.mapper.DeviceCredentialMapper;
 import com.energyx.broker.mapper.DeviceMapper;
+import com.energyx.broker.mqtt.KafkaEventProducer;
 import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.util.BrokerKeys;
+import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.message.LifecycleMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -44,6 +47,8 @@ public class DeviceAuthService {
 
 	private final BrokerProperties properties;
 
+	private final KafkaEventProducer producer;
+
 	/**
 	 * 本地封禁快表（L1）：clientId → 封禁截止时间戳（毫秒）。 权威封禁状态在
 	 * Redis（mqtt:ban:*，跨节点共享，TTL=authFailureBanSeconds，自然过期解封）； 本地表只用于挡高频重复请求、减少 Redis
@@ -54,12 +59,13 @@ public class DeviceAuthService {
 	private static final int MAX_LOCAL_BAN_ENTRIES = 100_000;
 
 	public DeviceAuthService(SessionStore sessionStore, ObjectMapper objectMapper, DeviceMapper deviceMapper,
-			DeviceCredentialMapper credentialMapper, BrokerProperties properties) {
+			DeviceCredentialMapper credentialMapper, BrokerProperties properties, KafkaEventProducer producer) {
 		this.sessionStore = sessionStore;
 		this.objectMapper = objectMapper;
 		this.deviceMapper = deviceMapper;
 		this.credentialMapper = credentialMapper;
 		this.properties = properties;
+		this.producer = producer;
 	}
 
 	/**
@@ -140,13 +146,55 @@ public class DeviceAuthService {
 		return false;
 	}
 
-	/** 认证失败计数 +1（Redis 跨节点共享窗口计数），达阈值则封禁（TTL 自然解封） */
+	/** 认证失败计数 +1（Redis 跨节点共享窗口计数），达阈值则封禁（TTL 自然解封）并通知 access 回写设备表 */
 	private void recordFailureAndMaybeBan(String clientId) {
 		long fails = sessionStore.incrAuthFail(clientId);
 		if (fails >= properties.getAuthFailureBanThreshold()) {
 			sessionStore.banClient(clientId);
 			rememberBanLocally(clientId);
 			log.warn("[Auth] clientId={} 连续认证失败 {} 次，封禁 {}s", clientId, fails, properties.getAuthFailureBanSeconds());
+			publishBanEvent(clientId);
+		}
+	}
+
+	/** 封禁落库通知：发 lifecycle BANNED 事件（access 消费回写 iot_device.status=5）。发布失败仅告警，不阻断认证主流程。 */
+	private void publishBanEvent(String clientId) {
+		try {
+			LifecycleMessage msg = new LifecycleMessage();
+			msg.setEventType("BANNED");
+			msg.setReason("AUTH_FAIL_EXCEED");
+			msg.setTs(System.currentTimeMillis());
+			DeviceRow device = resolveDevice(clientId);
+			if (device != null) {
+				msg.setDeviceId(device.deviceId());
+				msg.setTenantId(device.tenantId());
+				msg.setProductKey(device.productKey());
+				msg.setDeviceName(device.deviceName());
+			}
+			producer.send(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE, clientId, objectMapper.writeValueAsString(msg));
+		}
+		catch (Exception e) {
+			log.warn("[Auth] 封禁事件发布失败 clientId={}", clientId, e);
+		}
+	}
+
+	/**
+	 * clientId（{productKey}_{deviceName}）→ 设备查询；解析失败/查不到返回 null，事件退化为 deviceId=null 由
+	 * access 忽略
+	 */
+	private DeviceRow resolveDevice(String clientId) {
+		// productKey 可含 '_'（平台锚点如 snd_ess_pcs），deviceName 禁止 '_'，按最后一个 '_' 拆分
+		int underscore = clientId.lastIndexOf('_');
+		if (underscore <= 0 || underscore == clientId.length() - 1) {
+			return null;
+		}
+		try {
+			return deviceMapper.selectByProductKeyAndName(clientId.substring(0, underscore),
+					clientId.substring(underscore + 1));
+		}
+		catch (Exception e) {
+			log.warn("[Auth] 封禁事件查询设备失败 clientId={}", clientId, e);
+			return null;
 		}
 	}
 
