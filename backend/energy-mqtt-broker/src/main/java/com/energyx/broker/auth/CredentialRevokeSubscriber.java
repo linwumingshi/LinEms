@@ -4,6 +4,7 @@ import com.energyx.broker.session.Session;
 import com.energyx.broker.session.SessionRegistry;
 import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.util.BrokerKeys;
+import com.energyx.common.redis.RedisChannelConstant;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -33,8 +34,8 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class CredentialRevokeSubscriber {
 
-	/** 凭据失效广播通道（Redis pub/sub，已补登 Redis-key 规范 §3.9） */
-	public static final String CHANNEL = "mqtt:cred:revoked";
+	/** 凭据失效广播通道（共享常量，与 device 侧发布端一致；已补登 Redis-key 规范 §3.9） */
+	public static final String CHANNEL = RedisChannelConstant.CREDENTIAL_REVOKED;
 
 	private final RedisMessageListenerContainer container;
 

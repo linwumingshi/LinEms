@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.constant.Constants;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.redis.RedisChannelConstant;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.device.entity.Device;
 import com.energyx.device.entity.DeviceCredential;
@@ -22,6 +23,7 @@ import com.energyx.device.web.dto.DeviceQuery;
 import com.energyx.device.web.dto.DeviceUpdateReq;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -43,8 +45,11 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 
 	private final DeviceCredentialMapper credentialMapper;
 
-	public DeviceServiceImpl(DeviceCredentialMapper credentialMapper) {
+	private final StringRedisTemplate redis;
+
+	public DeviceServiceImpl(DeviceCredentialMapper credentialMapper, StringRedisTemplate redis) {
 		this.credentialMapper = credentialMapper;
+		this.redis = redis;
 	}
 
 	@Override
@@ -121,6 +126,14 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		update.setSort(req.getSort());
 		updateById(update); // 空字段不更新（MP NOT_NULL 策略）
 		log.info("更新设备 deviceId={}", deviceId);
+		// 设备状态变更（激活/停用/封禁解除）会影响 broker 认证放行，广播驱逐缓存立即生效；
+		// 设备名变更时 clientId 已变，原 clientId 的旧缓存也应驱逐
+		if (req.getStatus() != null && !req.getStatus().equals(exists.getStatus())) {
+			publishCredentialRevoked(exists.getProductKey(), exists.getDeviceName());
+		}
+		if (req.getDeviceName() != null && !req.getDeviceName().equals(exists.getDeviceName())) {
+			publishCredentialRevoked(exists.getProductKey(), exists.getDeviceName());
+		}
 	}
 
 	@Override
@@ -198,10 +211,28 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 					.set(DeviceCredential::getAuthStatus, 1)
 					.set(DeviceCredential::getFailCount, 0));
 		log.info("重新生成设备密钥 deviceId={}", deviceId);
+		// 凭据失效广播：驱逐 broker 认证缓存 cache:cred:{clientId} + 踢在线连接（新密钥立即生效，不等 30min TTL）
+		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
 		return new CredentialView(deviceId, device.getDeviceName(), secret, 1);
 	}
 
 	// ---- 私有 ----
+
+	/**
+	 * 凭据失效广播：向 {@code mqtt:cred:revoked} 通道发 clientId，broker 侧据此删除 cache:cred 并踢在线连接。
+	 * 认证相关变更（改密钥/状态/设备名）后必须调用，否则旧凭据缓存最长 30min 才过期。
+	 */
+	private void publishCredentialRevoked(String productKey, String deviceName) {
+		try {
+			String clientId = productKey + "_" + deviceName;
+			redis.convertAndSend(RedisChannelConstant.CREDENTIAL_REVOKED, clientId);
+			log.info("已广播凭据失效 clientId={}", clientId);
+		}
+		catch (Exception e) {
+			// 广播失败不阻断主流程：缓存最多残留到 TTL 过期，属可容忍降级
+			log.warn("凭据失效广播异常 productKey={} deviceName={}", productKey, deviceName, e);
+		}
+	}
 
 	private Device requireDevice(Long deviceId) {
 		Device device = getById(deviceId);
