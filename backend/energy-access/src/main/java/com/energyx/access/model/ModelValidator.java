@@ -160,7 +160,7 @@ public final class ModelValidator {
 		return new EventCheck(ev, severityOf(ev.getType()));
 	}
 
-	/** 事件级别 → TDengine 严重级别：1提示 2一般 3严重 */
+	/** 事件级别 → TDengine 严重级别：1提示 2一般 3严重 4危急 */
 	public static int severityOf(EventSeverity type) {
 		if (type == null) {
 			return 2;
@@ -168,6 +168,7 @@ public final class ModelValidator {
 		return switch (type) {
 			case INFO -> 1;
 			case ERROR -> 3;
+			case CRITICAL -> 4;
 			default -> 2; // WARN 及其他
 		};
 	}

@@ -29,19 +29,23 @@ public enum GridType {
 		return code;
 	}
 
-	/** JSON 反序列化入参按 code 还原 */
+	/** JSON 反序列化入参按 code 还原（兼容存量 DDL 默认值 'INDUSTRIAL'） */
 	@JsonCreator
 	public static GridType fromCode(String code) {
-		return Arrays.stream(values())
-			.filter(e -> e.code.equals(code))
-			.findFirst()
-			.orElseThrow(() -> new IllegalArgumentException("未知 GridType code=" + code));
+		GridType gridType = of(code);
+		if (gridType == null) {
+			throw new IllegalArgumentException("未知 GridType code=" + code);
+		}
+		return gridType;
 	}
 
-	/** 安全查找：未知/空返回 null（查询/宽容场景用，避免抛错） */
+	/** 安全查找：未知/空返回 null（存量 iot_station.grid_type 默认 'INDUSTRIAL' → 工商业） */
 	public static GridType of(String code) {
 		if (code == null) {
 			return null;
+		}
+		if ("INDUSTRIAL".equalsIgnoreCase(code)) {
+			return COMMERCIAL_INDUSTRIAL;
 		}
 		return Arrays.stream(values()).filter(e -> e.code.equals(code)).findFirst().orElse(null);
 	}

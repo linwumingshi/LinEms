@@ -85,9 +85,10 @@ class AlarmProductEnumsTest {
 		assertEquals("工商业", GridType.COMMERCIAL_INDUSTRIAL.getDesc());
 		assertEquals(GridType.PARK, GridType.fromCode("园区"));
 		assertEquals(GridType.GRID, GridType.of("电网侧"));
-		assertNull(GridType.of("INDUSTRIAL"));
+		// 存量 DDL 默认值 'INDUSTRIAL' 兼容映射 → 工商业
+		assertEquals(GridType.COMMERCIAL_INDUSTRIAL, GridType.of("INDUSTRIAL"));
+		assertEquals(GridType.COMMERCIAL_INDUSTRIAL, GridType.fromCode("INDUSTRIAL"));
 		assertNull(GridType.of(null));
-		assertThrows(IllegalArgumentException.class, () -> GridType.fromCode("INDUSTRIAL"));
 	}
 
 }

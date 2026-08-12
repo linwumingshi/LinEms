@@ -44,11 +44,14 @@ class DeviceEventEnumsTest {
 		assertEquals("INFO", EventSeverity.INFO.getCode());
 		assertEquals("WARN", EventSeverity.WARN.getCode());
 		assertEquals("ERROR", EventSeverity.ERROR.getCode());
+		assertEquals("CRITICAL", EventSeverity.CRITICAL.getCode());
 		assertEquals(EventSeverity.WARN, EventSeverity.fromCode("WARN"));
 		assertEquals(EventSeverity.ERROR, EventSeverity.of("ERROR"));
-		assertNull(EventSeverity.of("CRITICAL"));
+		assertEquals(EventSeverity.CRITICAL, EventSeverity.of("CRITICAL"));
+		assertEquals(EventSeverity.CRITICAL, EventSeverity.of("critical")); // 大小写归一
+		assertEquals(EventSeverity.ERROR, EventSeverity.of("error")); // 小写归一
 		assertNull(EventSeverity.of(null));
-		assertThrows(IllegalArgumentException.class, () -> EventSeverity.fromCode("CRITICAL"));
+		assertThrows(IllegalArgumentException.class, () -> EventSeverity.fromCode("NONE"));
 	}
 
 }
