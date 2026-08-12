@@ -69,7 +69,7 @@ public class TsdbBatchBuffer {
 		rows.clear();
 		estBytes = 0;
 		try {
-			writer.execute(String.join("\n", batch));
+			writer.execute(joinBatch(batch));
 			log.debug("[Tsdb] 批量写入 {} 行", batch.size());
 		}
 		catch (Exception e) {
@@ -80,6 +80,29 @@ public class TsdbBatchBuffer {
 			}
 			throw e;
 		}
+	}
+
+	/**
+	 * 拼接 TDengine 批量写入语句：一条 INSERT 语句内多子表块，仅首个块保留 INSERT INTO 前缀， 后续块以空格直接接子表名（TDengine
+	 * 语法：{@code INSERT INTO t1 ... VALUES(...) t2 ... VALUES(...)}）。 单行（首块）直接返回原样，避免无谓解析。
+	 */
+	private static String joinBatch(List<String> batch) {
+		if (batch.size() <= 1) {
+			return batch.isEmpty() ? "" : batch.get(0);
+		}
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < batch.size(); i++) {
+			String sql = batch.get(i);
+			if (i == 0) {
+				sb.append(sql);
+			}
+			else {
+				// 去掉行首 "INSERT INTO "（14 字符），保留子表块后续内容；非本前缀的 SQL 原样保留
+				sb.append(' ');
+				sb.append(sql.startsWith("INSERT INTO ") ? sql.substring("INSERT INTO ".length()) : sql);
+			}
+		}
+		return sb.toString();
 	}
 
 }

@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 批量缓冲测试：阈值冲刷、失败回滚保序、空缓冲不执行。
@@ -30,7 +31,7 @@ class TsdbBatchBufferTest {
 		buffer.add("r3"); // 触发阈值冲刷
 		assertEquals(0, buffer.pending());
 		assertEquals(1, executed.size());
-		assertEquals("r1\nr2\nr3", executed.get(0));
+		assertEquals("r1 r2 r3", executed.get(0)); // 非 INSERT 前缀原样空格拼接
 	}
 
 	@Test
@@ -70,7 +71,7 @@ class TsdbBatchBufferTest {
 		buffer.add("r2");
 		assertEquals(2, buffer.flush()); // flush 返回写入行数
 		assertEquals(1, executed.size()); // 两行合成一条语句
-		assertEquals("r1\nr2", executed.get(0));
+		assertEquals("r1 r2", executed.get(0));
 		assertEquals(0, buffer.pending());
 	}
 
@@ -97,7 +98,34 @@ class TsdbBatchBufferTest {
 		buffer.flush(); // 第二次成功
 		assertEquals(0, buffer.pending());
 		assertEquals(1, executed.size());
-		assertEquals("r1\nr2", executed.get(0));
+		assertEquals("r1 r2", executed.get(0));
+	}
+
+	@Test
+	void joinBatch_shouldStripInsertPrefixOnSubsequentBlocks() throws Exception {
+		// TDengine 批量语法：仅首个块保留 INSERT INTO，后续子表块空格直接接表名
+		List<String> executed = new ArrayList<>();
+		TsdbBatchBuffer buffer = new TsdbBatchBuffer(executed::add, new TsdbProperties());
+		buffer.add("INSERT INTO iot_tsdb_raw.dev_1 USING iot_tsdb_raw.st_prop_x TAGS ('1') (ts) VALUES (1)");
+		buffer.add("INSERT INTO iot_tsdb_raw.dev_2 USING iot_tsdb_raw.st_prop_x TAGS ('2') (ts) VALUES (2)");
+		buffer.add("INSERT INTO iot_tsdb_raw.dev_3 USING iot_tsdb_raw.st_prop_x TAGS ('3') (ts) VALUES (3)");
+		assertEquals(3, buffer.flush());
+
+		String joined = executed.get(0);
+		assertEquals(1, joined.split("INSERT INTO").length - 1, "仅首个块保留 INSERT INTO");
+		assertTrue(joined.startsWith("INSERT INTO iot_tsdb_raw.dev_1"), joined);
+		assertTrue(joined.contains(" iot_tsdb_raw.dev_2 USING"), joined);
+		assertTrue(joined.contains(" iot_tsdb_raw.dev_3 USING"), joined);
+	}
+
+	@Test
+	void joinBatch_singleRow_shouldReturnAsIs() throws Exception {
+		List<String> executed = new ArrayList<>();
+		TsdbBatchBuffer buffer = new TsdbBatchBuffer(executed::add, new TsdbProperties());
+		buffer.add("INSERT INTO iot_tsdb_raw.dev_1 USING iot_tsdb_raw.st_prop_x TAGS ('1') (ts) VALUES (1)");
+		assertEquals(1, buffer.flush());
+		assertEquals("INSERT INTO iot_tsdb_raw.dev_1 USING iot_tsdb_raw.st_prop_x TAGS ('1') (ts) VALUES (1)",
+				executed.get(0));
 	}
 
 }

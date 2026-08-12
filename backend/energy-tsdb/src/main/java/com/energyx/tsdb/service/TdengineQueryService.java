@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * TDengine 属性历史查询。
@@ -58,7 +59,12 @@ public class TdengineQueryService {
 			throw new IllegalArgumentException("productKey 非法: " + productKey);
 		}
 		Set<String> whitelist = columnWhitelist(productKey);
-		List<String> selected = identifiers.stream().filter(whitelist::contains).distinct().toList();
+		// TDengine 列名大小写不敏感（DESCRIBE 返回小写），匹配用小写；selected 保留请求原始大小写（返回给前端）
+		Set<String> lowerWhitelist = whitelist.stream().map(String::toLowerCase).collect(Collectors.toSet());
+		List<String> selected = identifiers.stream()
+			.filter(id -> lowerWhitelist.contains(id.toLowerCase()))
+			.distinct()
+			.toList();
 		if (selected.isEmpty()) {
 			throw new IllegalArgumentException("请求的属性均不在该产品物模型中");
 		}
