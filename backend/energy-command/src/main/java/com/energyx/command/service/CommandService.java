@@ -9,11 +9,11 @@ import com.energyx.command.mapper.DeviceInfoMapper;
 import com.energyx.command.model.CommandRow;
 import com.energyx.command.model.DeviceInfo;
 import com.energyx.command.mqtt.CommandKafkaProducer;
-import com.energyx.command.state.CommandState;
 import com.energyx.command.util.CommandRedisKeys;
 import com.energyx.command.web.dto.CommandView;
 import com.energyx.command.web.dto.CreateCommandRequest;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.CommandState;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
@@ -152,7 +152,7 @@ public class CommandService {
 			log.warn("[Command] ACK 对应指令不存在 commandId={}", ack.getCommandId());
 			return;
 		}
-		CommandState current = CommandState.fromCode(row.getState() == null ? 0 : row.getState());
+		CommandState current = CommandState.fromCode(row.getState() == null ? 0 : row.getState().getCode());
 		if (!CommandState.isAllowedAck(current, target)) {
 			log.warn("[Command] 非法/重复 ACK 转移 commandId={} {} -> {}", ack.getCommandId(), current, target);
 			return;
@@ -390,7 +390,7 @@ public class CommandService {
 		view.setCommand(row.getCommandName());
 		view.setCommandType(row.getCommandType());
 		view.setParams(parse(row.getParams()));
-		int state = row.getState() == null ? 0 : row.getState();
+		int state = row.getState() == null ? 0 : row.getState().getCode();
 		view.setState(state);
 		view.setStateName(CommandState.fromCode(state).name());
 		view.setRetryCount(row.getRetryCount());

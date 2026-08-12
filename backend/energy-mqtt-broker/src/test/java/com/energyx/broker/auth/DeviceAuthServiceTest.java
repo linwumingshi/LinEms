@@ -6,6 +6,7 @@ import com.energyx.broker.mapper.DeviceMapper;
 import com.energyx.broker.mqtt.KafkaEventProducer;
 import com.energyx.broker.session.SessionStore;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.DeviceStatus;
 import com.energyx.common.message.LifecycleMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +66,7 @@ class DeviceAuthServiceTest {
 		when(sessionStore.consumeNonce(anyString())).thenReturn(true);
 		when(sessionStore.getString(anyString())).thenReturn(null);
 		when(deviceMapper.selectByProductKeyAndName("testMeter", "meter-000001"))
-			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", 2));
+			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", DeviceStatus.OFFLINE));
 		when(credentialMapper.selectByDeviceId(100L)).thenReturn(new CredentialRow(100L, "secret", 1, null));
 	}
 
@@ -113,7 +114,7 @@ class DeviceAuthServiceTest {
 		// Critical-2：Redis 封禁 TTL 已自然解封（isAuthBanned=false，见 setUp），但 DB 仍为 5（封禁审计视图残留）。
 		// 回源 MySQL 读到 status=5 → 认证应放行，并补发 UNBANNED 事件让 access 回写 status=2。
 		when(deviceMapper.selectByProductKeyAndName("testMeter", "meter-000001"))
-			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", 5));
+			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", DeviceStatus.BANNED));
 
 		long ts = System.currentTimeMillis();
 		String nonce = "nonce-unban";
@@ -138,7 +139,7 @@ class DeviceAuthServiceTest {
 		// 封禁期内（Redis 仍封禁）：认证入口 isBanned 拦截，不允许绕过，且不发 UNBANNED
 		when(sessionStore.isAuthBanned(CLIENT_ID)).thenReturn(true);
 		when(deviceMapper.selectByProductKeyAndName("testMeter", "meter-000001"))
-			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", 5));
+			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", DeviceStatus.BANNED));
 
 		AuthResult result = authenticateWithWrongPassword();
 

@@ -8,6 +8,7 @@ import com.energyx.broker.mqtt.KafkaEventProducer;
 import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.util.BrokerKeys;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.DeviceStatus;
 import com.energyx.common.message.LifecycleMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -129,7 +130,7 @@ public class DeviceAuthService {
 		localBanUntil.remove(clientId);
 		// 封禁残留闭环（Critical-2）：DB 仍为 5 而 Redis 已解封，放行连接并补发 UNBANNED，
 		// 由 access 回写 iot_device.status=2，消除"DB 5 无回写路径"的死锁
-		if (cred.getDeviceStatus() == 5) {
+		if (cred.getDeviceStatus() == DeviceStatus.BANNED) {
 			publishUnbanEvent(clientId);
 		}
 		return AuthResult.allow(cred);
@@ -231,15 +232,18 @@ public class DeviceAuthService {
 			return AuthResult.deny(4, false, "设备不存在或凭据未配置");
 		}
 		// 设备主状态：仅 2 已激活 / 3 在线 / 5 封禁残留（Redis 已解封）允许接入
-		int status = cred.getDeviceStatus();
-		if (status == 4) {
+		DeviceStatus status = cred.getDeviceStatus();
+		if (status == null) {
+			return AuthResult.deny(5, false, "设备状态缺失（status=null）");
+		}
+		if (status == DeviceStatus.DISABLED) {
 			return AuthResult.deny(5, false, "设备已禁用");
 		}
 		// 5 封禁只是"审计视图"，Redis mqtt:ban 才是权威（TTL 自然解封）。
 		// 认证入口第 2 步 isBanned 已拦截封禁期内的连接，能走到这里说明 Redis 已解封，
 		// 因此封禁残留放行进入签名校验，认证成功后由成功路径补发 UNBANNED 回写 DB 5→2。
-		if (status != 2 && status != 3 && status != 5) {
-			return AuthResult.deny(5, false, "设备未激活（status=" + status + "）");
+		if (status != DeviceStatus.OFFLINE && status != DeviceStatus.ONLINE && status != DeviceStatus.BANNED) {
+			return AuthResult.deny(5, false, "设备未激活（status=" + status.getCode() + "）");
 		}
 		if (cred.getAuthStatus() != 1) {
 			return AuthResult.deny(5, false, "凭据已吊销");

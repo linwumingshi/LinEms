@@ -47,6 +47,7 @@ spring:
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
+  type-enums-package: com.energyx.common.enums
   global-config:
     db-config:
       logic-delete-field: deleted

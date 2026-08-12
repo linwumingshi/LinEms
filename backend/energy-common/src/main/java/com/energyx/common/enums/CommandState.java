@@ -1,17 +1,17 @@
-package com.energyx.command.state;
+package com.energyx.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 指令状态机（对齐 iot_command.state 编码与 ADR-009 状态机）。
- *
- * <p>
- * 编码：0 CREATED → 1 SENT → 2 DEVICE_RECEIVED → 3 EXECUTING → 4 SUCCESS / 5 FAILED / 6
- * TIMEOUT。
- * </p>
+ * 指令生命周期状态（替代 Constants.CMD_STATE_*，DB 存 code）。
  *
  * <p>
  * ACK 驱动的前向转移表见 {@link #ACK_TRANSITIONS}；终态后一律拒绝后续 ACK（幂等）。 重试（FAILED/TIMEOUT →
@@ -20,17 +20,15 @@ import java.util.Set;
  */
 public enum CommandState {
 
-	CREATED(0), SENT(1), DEVICE_RECEIVED(2), EXECUTING(3), SUCCESS(4), FAILED(5), TIMEOUT(6);
+	CREATED(0, "已创建"), SENT(1, "已发送"), DEVICE_RECEIVED(2, "设备已接收"), EXECUTING(3, "执行中"), SUCCESS(4, "成功"),
+	FAILED(5, "失败"), TIMEOUT(6, "超时");
 
+	/** 存储值（DB 列值，@EnumValue 让 MyBatis-Plus 按此读写） */
+	@EnumValue
 	private final int code;
 
-	CommandState(int code) {
-		this.code = code;
-	}
-
-	public int code() {
-		return code;
-	}
+	/** 展示语义（前端/日志/文档共用，与前端 enums.ts 对齐） */
+	private final String desc;
 
 	/** ACK 允许的前向转移（key=当前状态，value=合法目标状态） */
 	private static final Map<CommandState, Set<CommandState>> ACK_TRANSITIONS = new EnumMap<>(CommandState.class);
@@ -44,13 +42,32 @@ public enum CommandState {
 		// SUCCESS/FAILED/TIMEOUT 为终态，无出边
 	}
 
+	CommandState(int code, String desc) {
+		this.code = code;
+		this.desc = desc;
+	}
+
+	/** JSON 序列化输出 code（数字），保持对外接口值不变 */
+	@JsonValue
+	public int getCode() {
+		return code;
+	}
+
+	/** JSON 反序列化入参按 code 还原 */
+	@JsonCreator
 	public static CommandState fromCode(int code) {
-		for (CommandState s : values()) {
-			if (s.code == code) {
-				return s;
-			}
+		return Arrays.stream(values())
+			.filter(e -> e.code == code)
+			.findFirst()
+			.orElseThrow(() -> new IllegalArgumentException("未知 CommandState code=" + code));
+	}
+
+	/** 安全查找：未知/空返回 null（查询/宽容场景用，避免抛错） */
+	public static CommandState of(Integer code) {
+		if (code == null) {
+			return null;
 		}
-		throw new IllegalArgumentException("未知指令状态码: " + code);
+		return Arrays.stream(values()).filter(e -> e.code == code).findFirst().orElse(null);
 	}
 
 	/**
@@ -81,6 +98,10 @@ public enum CommandState {
 			return false;
 		}
 		return ACK_TRANSITIONS.getOrDefault(current, Set.of()).contains(target);
+	}
+
+	public String getDesc() {
+		return desc;
 	}
 
 }

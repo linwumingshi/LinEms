@@ -3,6 +3,7 @@ package com.energyx.broker.handler;
 import com.energyx.broker.auth.AuthResult;
 import com.energyx.broker.auth.DeviceAuthService;
 import com.energyx.broker.auth.DeviceCredential;
+import com.energyx.common.enums.DeviceStatus;
 import com.energyx.broker.auth.TopicAcl;
 import com.energyx.broker.config.BrokerProperties;
 import com.energyx.broker.config.NettyServerConfig;
@@ -1030,7 +1031,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				(Long) session.attr(Session.SessionAttr.TENANT_ID),
 				(String) session.attr(Session.SessionAttr.PRODUCT_KEY),
 				(String) session.attr(Session.SessionAttr.DEVICE_NAME),
-				(Integer) session.attr(Session.SessionAttr.DEVICE_STATUS), 1, "", false);
+				(DeviceStatus) session.attr(Session.SessionAttr.DEVICE_STATUS), 1, "", false);
 	}
 
 	private String remoteIp(Channel channel) {

@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.energyx.common.constant.Constants;
+import com.energyx.common.enums.DeviceStatus;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.redis.RedisChannelConstant;
@@ -71,7 +71,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		device.setDeviceId(IdWorker.getId());
 		device.setTenantId(tenantId);
 		// 创建固定为"已登记未激活(1)"：凭据已自动生成，但需走"生成密钥"动作（regenerateSecret）才激活为 2（可接入）
-		device.setStatus(Constants.DEVICE_STATUS_INACTIVE);
+		device.setStatus(DeviceStatus.INACTIVE);
 		device.setProtocol(req.getProtocol() == null || req.getProtocol().isBlank() ? "MQTT" : req.getProtocol());
 		device.setOnlineSeconds(0L);
 		if (parent == null) {
@@ -136,13 +136,11 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 	public void activate(Long deviceId) {
 		Device device = requireDevice(deviceId);
 		// 状态机：仅未注册(0)或未激活(1)可激活 → 已激活离线(2)；0 视为登记+激活合并，其余流转一律拒绝
-		if (device.getStatus() == null || (device.getStatus() != Constants.DEVICE_STATUS_UNREGISTERED
-				&& device.getStatus() != Constants.DEVICE_STATUS_INACTIVE)) {
+		if (device.getStatus() == null
+				|| (device.getStatus() != DeviceStatus.UNREGISTERED && device.getStatus() != DeviceStatus.INACTIVE)) {
 			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅未注册/未激活设备可激活");
 		}
-		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
-			.eq(Device::getDeviceId, deviceId)
-			.update();
+		lambdaUpdate().set(Device::getStatus, DeviceStatus.OFFLINE).eq(Device::getDeviceId, deviceId).update();
 		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
 		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
 		log.info("激活设备 deviceId={}", deviceId);
@@ -152,13 +150,11 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 	public void disable(Long deviceId) {
 		Device device = requireDevice(deviceId);
 		// 状态机：仅已激活(2)/在线(3)可禁用 → 禁用(4)
-		if (device.getStatus() == null || (device.getStatus() != Constants.DEVICE_STATUS_OFFLINE
-				&& device.getStatus() != Constants.DEVICE_STATUS_ONLINE)) {
+		if (device.getStatus() == null
+				|| (device.getStatus() != DeviceStatus.OFFLINE && device.getStatus() != DeviceStatus.ONLINE)) {
 			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅已激活/在线设备可禁用");
 		}
-		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_DISABLED)
-			.eq(Device::getDeviceId, deviceId)
-			.update();
+		lambdaUpdate().set(Device::getStatus, DeviceStatus.DISABLED).eq(Device::getDeviceId, deviceId).update();
 		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
 		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
 		log.info("禁用设备 deviceId={}", deviceId);
@@ -168,12 +164,10 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 	public void enable(Long deviceId) {
 		Device device = requireDevice(deviceId);
 		// 状态机：仅禁用(4)可启用 → 已激活离线(2)
-		if (device.getStatus() == null || device.getStatus() != Constants.DEVICE_STATUS_DISABLED) {
+		if (device.getStatus() == null || device.getStatus() != DeviceStatus.DISABLED) {
 			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅禁用设备可启用");
 		}
-		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
-			.eq(Device::getDeviceId, deviceId)
-			.update();
+		lambdaUpdate().set(Device::getStatus, DeviceStatus.OFFLINE).eq(Device::getDeviceId, deviceId).update();
 		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
 		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
 		log.info("启用设备 deviceId={}", deviceId);
@@ -205,7 +199,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 			.eq(query.getDeviceType() != null && !query.getDeviceType().isBlank(), Device::getDeviceType,
 					query.getDeviceType())
 			.eq(query.getParentId() != null, Device::getParentId, query.getParentId())
-			.eq(query.getStatus() != null, Device::getStatus, query.getStatus())
+			.eq(query.getStatus() != null, Device::getStatus, DeviceStatus.of(query.getStatus()))
 			.eq(query.getProductKey() != null && !query.getProductKey().isBlank(), Device::getProductKey,
 					query.getProductKey())
 			.like(query.getKeyword() != null && !query.getKeyword().isBlank(), Device::getDeviceName,
@@ -255,12 +249,10 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 					.set(DeviceCredential::getFailCount, 0));
 		// 生成密钥 = 凭据就绪 = 激活（状态机自动联动）：仅未注册(0)/未激活(1) → 已激活离线(2)；
 		// 禁用(4)/封禁(5)是管理态，不因密钥操作自动解禁，避免越权恢复
-		if (device.getStatus() != null && (device.getStatus() == Constants.DEVICE_STATUS_UNREGISTERED
-				|| device.getStatus() == Constants.DEVICE_STATUS_INACTIVE)) {
-			lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
-				.eq(Device::getDeviceId, deviceId)
-				.update();
-			log.info("生成密钥联动激活设备 deviceId={} status={}→2", deviceId, device.getStatus());
+		if (device.getStatus() != null
+				&& (device.getStatus() == DeviceStatus.UNREGISTERED || device.getStatus() == DeviceStatus.INACTIVE)) {
+			lambdaUpdate().set(Device::getStatus, DeviceStatus.OFFLINE).eq(Device::getDeviceId, deviceId).update();
+			log.info("生成密钥联动激活设备 deviceId={} status={}→OFFLINE", deviceId, device.getStatus());
 		}
 		log.info("重新生成设备密钥 deviceId={}", deviceId);
 		// 凭据失效广播：驱逐 broker 认证缓存 cache:cred:{clientId} + 踢在线连接（新密钥立即生效，不等 30min TTL）

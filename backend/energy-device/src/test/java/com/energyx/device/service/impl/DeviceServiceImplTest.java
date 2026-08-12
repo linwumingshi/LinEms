@@ -1,6 +1,6 @@
 package com.energyx.device.service.impl;
 
-import com.energyx.common.constant.Constants;
+import com.energyx.common.enums.DeviceStatus;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.redis.RedisChannelConstant;
@@ -99,7 +99,7 @@ class DeviceServiceImplTest {
 	@Test
 	void regenerateSecret_fromInactive_shouldActivate() {
 		// 未激活(1) 生成密钥 → 自动激活为已激活离线(2)：密钥更新 + 状态更新 + 广播
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_INACTIVE);
+		Device dev = deviceWithStatus(DeviceStatus.INACTIVE);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 		when(credentialMapper.update(any(), any())).thenReturn(1);
 
@@ -113,7 +113,7 @@ class DeviceServiceImplTest {
 	@Test
 	void regenerateSecret_fromUnregistered_shouldActivate() {
 		// 未注册(0) 生成密钥 → 同样自动激活（登记+激活合并）
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_UNREGISTERED);
+		Device dev = deviceWithStatus(DeviceStatus.UNREGISTERED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 		when(credentialMapper.update(any(), any())).thenReturn(1);
 
@@ -127,7 +127,7 @@ class DeviceServiceImplTest {
 	@Test
 	void regenerateSecret_fromOnline_shouldKeepStatus() {
 		// 在线(3) 换密钥是常规轮换：不触发状态联动（deviceMapper.update 不调用），仅密钥更新+广播
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_ONLINE);
+		Device dev = deviceWithStatus(DeviceStatus.ONLINE);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 		when(credentialMapper.update(any(), any())).thenReturn(1);
 
@@ -141,7 +141,7 @@ class DeviceServiceImplTest {
 	@Test
 	void regenerateSecret_fromBanned_shouldKeepBanned() {
 		// 封禁(5) 换密钥不自动解禁（解封走 broker TTL/UNBANNED 回写），避免越权恢复
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_BANNED);
+		Device dev = deviceWithStatus(DeviceStatus.BANNED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 		when(credentialMapper.update(any(), any())).thenReturn(1);
 
@@ -170,13 +170,13 @@ class DeviceServiceImplTest {
 
 		ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
 		verify(service).save(captor.capture());
-		assertEquals(Constants.DEVICE_STATUS_INACTIVE, captor.getValue().getStatus());
+		assertEquals(DeviceStatus.INACTIVE, captor.getValue().getStatus());
 		TenantContext.acquire().close();
 	}
 
 	// ---- 管理态状态机 ----
 
-	private Device deviceWithStatus(int status) {
+	private Device deviceWithStatus(DeviceStatus status) {
 		Device dev = new Device();
 		dev.setDeviceId(2087348751559163905L);
 		dev.setProductKey("testMeter");
@@ -188,7 +188,7 @@ class DeviceServiceImplTest {
 	@Test
 	void activate_fromInactive_shouldSucceed() {
 		// 未激活(1) → 已激活(2)：更新落库 + 凭据失效广播
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_INACTIVE);
+		Device dev = deviceWithStatus(DeviceStatus.INACTIVE);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		service.activate(dev.getDeviceId());
@@ -200,7 +200,7 @@ class DeviceServiceImplTest {
 	@Test
 	void activate_fromUnregistered_shouldSucceed() {
 		// 未注册(0) 可直接激活（登记+激活合并，见状态机设计"0→先登记"）
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_UNREGISTERED);
+		Device dev = deviceWithStatus(DeviceStatus.UNREGISTERED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		service.activate(dev.getDeviceId());
@@ -212,7 +212,7 @@ class DeviceServiceImplTest {
 	@Test
 	void activate_fromOffline_shouldReject() {
 		// 已激活(2) 重复激活为非法流转：抛错且不落库不广播
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_OFFLINE);
+		Device dev = deviceWithStatus(DeviceStatus.OFFLINE);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		BusinessException ex = assertThrows(BusinessException.class, () -> service.activate(dev.getDeviceId()));
@@ -225,7 +225,7 @@ class DeviceServiceImplTest {
 	@Test
 	void disable_fromActiveOrOnline_shouldSucceed() {
 		// 已激活(2)/在线(3) → 禁用(4)
-		for (int status : new int[] { Constants.DEVICE_STATUS_OFFLINE, Constants.DEVICE_STATUS_ONLINE }) {
+		for (DeviceStatus status : new DeviceStatus[] { DeviceStatus.OFFLINE, DeviceStatus.ONLINE }) {
 			Device dev = deviceWithStatus(status);
 			doReturn(dev).when(service).getById(dev.getDeviceId());
 
@@ -240,7 +240,7 @@ class DeviceServiceImplTest {
 	@Test
 	void disable_fromUnregistered_shouldReject() {
 		// 未注册(0) 不可禁用：非法流转
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_UNREGISTERED);
+		Device dev = deviceWithStatus(DeviceStatus.UNREGISTERED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		BusinessException ex = assertThrows(BusinessException.class, () -> service.disable(dev.getDeviceId()));
@@ -253,7 +253,7 @@ class DeviceServiceImplTest {
 	@Test
 	void enable_fromDisabled_shouldSucceed() {
 		// 禁用(4) → 已激活(2)
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_DISABLED);
+		Device dev = deviceWithStatus(DeviceStatus.DISABLED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		service.enable(dev.getDeviceId());
@@ -265,7 +265,7 @@ class DeviceServiceImplTest {
 	@Test
 	void enable_fromBanned_shouldReject() {
 		// 封禁(5) 不可直接启用（解封由 broker TTL/管理员另走，非本动作）：非法流转
-		Device dev = deviceWithStatus(Constants.DEVICE_STATUS_BANNED);
+		Device dev = deviceWithStatus(DeviceStatus.BANNED);
 		doReturn(dev).when(service).getById(dev.getDeviceId());
 
 		BusinessException ex = assertThrows(BusinessException.class, () -> service.enable(dev.getDeviceId()));

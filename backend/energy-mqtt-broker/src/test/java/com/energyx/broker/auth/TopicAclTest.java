@@ -1,5 +1,6 @@
 package com.energyx.broker.auth;
 
+import com.energyx.common.enums.DeviceStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,8 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TopicAclTest {
 
-	private final DeviceCredential cred = new DeviceCredential("prodPCS_0101", 1001L, 1L, "prodPCS", "0101", 3, 1,
-			"secret", false);
+	private final DeviceCredential cred = new DeviceCredential("prodPCS_0101", 1001L, 1L, "prodPCS", "0101",
+			DeviceStatus.ONLINE, 1, "secret", false);
 
 	@Test
 	void canPublish_ownUpTopics() {

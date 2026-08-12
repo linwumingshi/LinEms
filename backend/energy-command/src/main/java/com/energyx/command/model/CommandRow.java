@@ -1,5 +1,6 @@
 package com.energyx.command.model;
 
+import com.energyx.common.enums.CommandState;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -24,7 +25,11 @@ public class CommandRow {
 
 	private String params;
 
-	private Integer state;
+	/**
+	 * 指令生命周期状态（CREATED/SENT/DEVICE_RECEIVED/EXECUTING/SUCCESS/FAILED/TIMEOUT，对应 DB 0已创建
+	 * 1已发送 2设备已接收 3执行中 4成功 5失败 6超时）
+	 */
+	private CommandState state;
 
 	private Integer retryCount;
 

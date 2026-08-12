@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.DeviceStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -58,8 +59,11 @@ public class Device extends BaseEntity {
 
 	private Integer sort;
 
-	/** 设备状态：0未注册 1未激活 2已激活(离线) 3在线 4禁用 5封禁 */
-	private Integer status;
+	/**
+	 * 设备生命周期状态（UNREGISTERED/INACTIVE/OFFLINE/ONLINE/DISABLED/BANNED，对应 DB 0未注册 1未激活
+	 * 2已激活(离线) 3在线 4禁用 5封禁）
+	 */
+	private DeviceStatus status;
 
 	private String firmwareVersion;
 

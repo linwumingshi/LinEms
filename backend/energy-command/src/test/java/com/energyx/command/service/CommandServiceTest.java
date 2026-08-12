@@ -11,6 +11,7 @@ import com.energyx.command.mqtt.CommandKafkaProducer;
 import com.energyx.command.web.dto.CommandView;
 import com.energyx.command.web.dto.CreateCommandRequest;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.CommandState;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
@@ -107,7 +108,7 @@ class CommandServiceTest {
 		r.setCommandName("setPower");
 		r.setCommandType(2);
 		r.setParams("{\"power\":50}");
-		r.setState(state);
+		r.setState(CommandState.fromCode(state));
 		r.setRetryCount(0);
 		r.setMaxRetry(3);
 		r.setTimeoutMs(15000);

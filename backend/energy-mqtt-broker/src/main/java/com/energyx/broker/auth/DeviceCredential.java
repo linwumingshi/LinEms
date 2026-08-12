@@ -1,5 +1,6 @@
 package com.energyx.broker.auth;
 
+import com.energyx.common.enums.DeviceStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -27,8 +28,8 @@ public class DeviceCredential {
 
 	private String deviceName;
 
-	/** 设备主状态（Constants 常量：2已激活 3在线 4禁用 5封禁） */
-	private int deviceStatus;
+	/** 设备主状态（DeviceStatus 枚举：OFFLINE 已激活 3 ONLINE 在线 4 DISABLED 禁用 5 BANNED 封禁） */
+	private DeviceStatus deviceStatus;
 
 	/** 凭据状态：1正常 2吊销 */
 	private int authStatus;
