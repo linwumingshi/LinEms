@@ -119,21 +119,63 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		update.setDeviceName(req.getDeviceName());
 		update.setDeviceType(req.getDeviceType());
 		update.setStationId(req.getStationId());
-		update.setStatus(req.getStatus());
 		update.setFirmwareVersion(req.getFirmwareVersion());
 		update.setMac(req.getMac());
 		update.setIp(req.getIp());
 		update.setSort(req.getSort());
 		updateById(update); // 空字段不更新（MP NOT_NULL 策略）
 		log.info("更新设备 deviceId={}", deviceId);
-		// 设备状态变更（激活/停用/封禁解除）会影响 broker 认证放行，广播驱逐缓存立即生效；
-		// 设备名变更时 clientId 已变，原 clientId 的旧缓存也应驱逐
-		if (req.getStatus() != null && !req.getStatus().equals(exists.getStatus())) {
-			publishCredentialRevoked(exists.getProductKey(), exists.getDeviceName());
-		}
+		// 设备名变更时 clientId 已变，原 clientId 的旧缓存也应驱逐（状态变更有独立动作接口，走状态机校验）
 		if (req.getDeviceName() != null && !req.getDeviceName().equals(exists.getDeviceName())) {
 			publishCredentialRevoked(exists.getProductKey(), exists.getDeviceName());
 		}
+	}
+
+	@Override
+	public void activate(Long deviceId) {
+		Device device = requireDevice(deviceId);
+		// 状态机：仅未注册(0)或未激活(1)可激活 → 已激活离线(2)；0 视为登记+激活合并，其余流转一律拒绝
+		if (device.getStatus() == null || (device.getStatus() != Constants.DEVICE_STATUS_UNREGISTERED
+				&& device.getStatus() != Constants.DEVICE_STATUS_INACTIVE)) {
+			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅未注册/未激活设备可激活");
+		}
+		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
+			.eq(Device::getDeviceId, deviceId)
+			.update();
+		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
+		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
+		log.info("激活设备 deviceId={}", deviceId);
+	}
+
+	@Override
+	public void disable(Long deviceId) {
+		Device device = requireDevice(deviceId);
+		// 状态机：仅已激活(2)/在线(3)可禁用 → 禁用(4)
+		if (device.getStatus() == null || (device.getStatus() != Constants.DEVICE_STATUS_OFFLINE
+				&& device.getStatus() != Constants.DEVICE_STATUS_ONLINE)) {
+			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅已激活/在线设备可禁用");
+		}
+		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_DISABLED)
+			.eq(Device::getDeviceId, deviceId)
+			.update();
+		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
+		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
+		log.info("禁用设备 deviceId={}", deviceId);
+	}
+
+	@Override
+	public void enable(Long deviceId) {
+		Device device = requireDevice(deviceId);
+		// 状态机：仅禁用(4)可启用 → 已激活离线(2)
+		if (device.getStatus() == null || device.getStatus() != Constants.DEVICE_STATUS_DISABLED) {
+			throw new BusinessException(ErrorCode.DEVICE_STATUS_INVALID, "仅禁用设备可启用");
+		}
+		lambdaUpdate().set(Device::getStatus, Constants.DEVICE_STATUS_OFFLINE)
+			.eq(Device::getDeviceId, deviceId)
+			.update();
+		// 状态变更影响 broker 认证放行，广播驱逐缓存 + 踢在线连接
+		publishCredentialRevoked(device.getProductKey(), device.getDeviceName());
+		log.info("启用设备 deviceId={}", deviceId);
 	}
 
 	@Override

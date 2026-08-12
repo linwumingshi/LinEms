@@ -9,8 +9,8 @@ public enum ErrorCode {
 
 	// ---- 客户端 4xxxx ----
 	BAD_REQUEST(40000, "请求参数错误"), PARAM_MISSING(40001, "缺少必填参数"), PARAM_INVALID(40002, "参数不合法"),
-	UNAUTHORIZED(40100, "未认证或认证已过期"), TOKEN_EXPIRED(40101, "登录已过期，请重新登录"), FORBIDDEN(40300, "无权限访问"),
-	NOT_FOUND(40400, "资源不存在"), METHOD_NOT_ALLOWED(40500, "请求方法不支持"), CONFLICT(40900, "资源冲突"),
+	DEVICE_STATUS_INVALID(40003, "设备状态流转不合法"), UNAUTHORIZED(40100, "未认证或认证已过期"), TOKEN_EXPIRED(40101, "登录已过期，请重新登录"),
+	FORBIDDEN(40300, "无权限访问"), NOT_FOUND(40400, "资源不存在"), METHOD_NOT_ALLOWED(40500, "请求方法不支持"), CONFLICT(40900, "资源冲突"),
 	TOO_MANY_REQUESTS(42900, "请求过于频繁，请稍后再试"),
 
 	// ---- 设备域 1xxxx ----

@@ -19,6 +19,15 @@ public interface DeviceService {
 
 	void update(Long deviceId, DeviceUpdateReq req);
 
+	/** 激活设备：仅未注册(0)/未激活(1) → 已激活离线(2)，状态变更后广播凭据失效 */
+	void activate(Long deviceId);
+
+	/** 禁用设备：仅已激活(2)/在线(3) → 禁用(4)，状态变更后广播凭据失效（在线连接会被踢下线） */
+	void disable(Long deviceId);
+
+	/** 启用设备：仅禁用(4) → 已激活离线(2)，状态变更后广播凭据失效 */
+	void enable(Long deviceId);
+
 	/** 逻辑删除设备子树（path 前缀），并吊销子树全部凭据 */
 	void delete(Long deviceId);
 

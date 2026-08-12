@@ -17,9 +17,6 @@ public class DeviceUpdateReq {
 
 	private Long stationId;
 
-	/** 设备状态：0未注册 1未激活 2已激活(离线) 3在线 4禁用 5封禁 */
-	private Integer status;
-
 	private String firmwareVersion;
 
 	private String mac;

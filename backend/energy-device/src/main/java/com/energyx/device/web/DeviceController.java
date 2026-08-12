@@ -31,6 +31,9 @@ import java.util.List;
  * <li>GET /api/device/tree?rootId= 资产树（rootId 空 = 全量）；</li>
  * <li>GET /api/device/{id} 设备详情；</li>
  * <li>PUT /api/device/{id} 更新；</li>
+ * <li>POST /api/device/{id}/activate 激活；</li>
+ * <li>POST /api/device/{id}/disable 禁用；</li>
+ * <li>POST /api/device/{id}/enable 启用；</li>
  * <li>DELETE /api/device/{id} 逻辑删除子树 + 吊销凭据；</li>
  * <li>GET /api/device/{id}/credential 凭据视图（脱敏）；</li>
  * <li>POST /api/device/{id}/credential/regenerate 重新生成密钥。</li>
@@ -70,6 +73,24 @@ public class DeviceController {
 	@PutMapping("/{deviceId}")
 	public Result<Void> update(@PathVariable Long deviceId, @Valid @RequestBody DeviceUpdateReq req) {
 		deviceService.update(deviceId, req);
+		return Result.ok();
+	}
+
+	@PostMapping("/{deviceId}/activate")
+	public Result<Void> activate(@PathVariable Long deviceId) {
+		deviceService.activate(deviceId);
+		return Result.ok();
+	}
+
+	@PostMapping("/{deviceId}/disable")
+	public Result<Void> disable(@PathVariable Long deviceId) {
+		deviceService.disable(deviceId);
+		return Result.ok();
+	}
+
+	@PostMapping("/{deviceId}/enable")
+	public Result<Void> enable(@PathVariable Long deviceId) {
+		deviceService.enable(deviceId);
 		return Result.ok();
 	}
 
