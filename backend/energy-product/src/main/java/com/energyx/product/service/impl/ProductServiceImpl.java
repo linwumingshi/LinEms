@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.ProductStatus;
+import com.energyx.common.enums.ThingModelStatus;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.product.entity.Product;
 import com.energyx.product.entity.ThingModel;
@@ -61,7 +63,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 			product.setProtocol("MQTT");
 		}
 		if (product.getStatus() == null) {
-			product.setStatus(1);
+			product.setStatus(ProductStatus.ENABLED);
 		}
 		save(product);
 		log.info("创建产品 productId={} key={} name={}", product.getProductId(), product.getProductKey(),
@@ -103,7 +105,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 		LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
 			.eq(query.getDeviceType() != null && !query.getDeviceType().isBlank(), Product::getDeviceType,
 					query.getDeviceType())
-			.eq(query.getStatus() != null, Product::getStatus, query.getStatus())
+			.eq(query.getStatus() != null, Product::getStatus, ProductStatus.of(query.getStatus()))
 			.and(query.getKeyword() != null && !query.getKeyword().isBlank(),
 					w -> w.like(Product::getProductName, query.getKeyword())
 						.or()
@@ -155,7 +157,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 		ThingModel model;
 		if (exist != null) {
 			exist.setSchemaJson(req.getSchemaJson());
-			exist.setStatus(1);
+			exist.setStatus(ThingModelStatus.PUBLISHED);
 			exist.setIsCurrent(1);
 			thingModelMapper.updateById(exist);
 			model = exist;
@@ -166,7 +168,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 			model.setProductId(productId);
 			model.setVersion(req.getVersion());
 			model.setSchemaJson(req.getSchemaJson());
-			model.setStatus(1);
+			model.setStatus(ThingModelStatus.PUBLISHED);
 			model.setIsCurrent(1);
 			thingModelMapper.insert(model);
 		}

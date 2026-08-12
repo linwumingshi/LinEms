@@ -1,5 +1,6 @@
 package com.energyx.device.web.dto;
 
+import com.energyx.common.enums.DeviceType;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -12,8 +13,8 @@ public class DeviceUpdateReq {
 	@Size(max = 128, message = "设备名长度不能超过 128")
 	private String deviceName;
 
-	@Size(max = 32, message = "设备类型长度不能超过 32")
-	private String deviceType;
+	/** 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER），可空 */
+	private DeviceType deviceType;
 
 	private Long stationId;
 

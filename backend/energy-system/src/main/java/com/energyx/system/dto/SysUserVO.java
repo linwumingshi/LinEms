@@ -1,5 +1,6 @@
 package com.energyx.system.dto;
 
+import com.energyx.common.enums.UserStatus;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -31,8 +32,8 @@ public class SysUserVO implements Serializable {
 
 	private String email;
 
-	/** 状态：0 禁用 1 启用 2 锁定 */
-	private Integer status;
+	/** 用户状态（DISABLED/ENABLED/LOCKED，对应 DB 0禁用 1启用 2锁定） */
+	private UserStatus status;
 
 	private LocalDateTime lastLoginTime;
 

@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.GridType;
+import com.energyx.common.enums.StationStatus;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.station.entity.Station;
 import com.energyx.station.mapper.StationMapper;
@@ -42,7 +44,7 @@ public class StationServiceImpl extends ServiceImpl<StationMapper, Station> impl
 		BeanUtils.copyProperties(req, station);
 		station.setTenantId(tenantId);
 		if (station.getStatus() == null) {
-			station.setStatus(1);
+			station.setStatus(StationStatus.RUNNING);
 		}
 		save(station);
 		log.info("创建电站 stationId={} code={} name={}", station.getStationId(), station.getStationCode(),
@@ -78,9 +80,9 @@ public class StationServiceImpl extends ServiceImpl<StationMapper, Station> impl
 	public IPage<Station> page(StationQuery query) {
 		LambdaQueryWrapper<Station> wrapper = new LambdaQueryWrapper<Station>()
 			.eq(query.getEnterpriseId() != null, Station::getEnterpriseId, query.getEnterpriseId())
-			.eq(query.getStatus() != null, Station::getStatus, query.getStatus())
+			.eq(query.getStatus() != null, Station::getStatus, StationStatus.of(query.getStatus()))
 			.eq(query.getGridType() != null && !query.getGridType().isBlank(), Station::getGridType,
-					query.getGridType())
+					GridType.of(query.getGridType()))
 			.and(query.getKeyword() != null && !query.getKeyword().isBlank(),
 					w -> w.like(Station::getStationName, query.getKeyword())
 						.or()

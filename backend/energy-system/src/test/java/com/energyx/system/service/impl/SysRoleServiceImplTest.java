@@ -2,6 +2,8 @@ package com.energyx.system.service.impl;
 
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.DataScope;
+import com.energyx.common.enums.RoleStatus;
 import com.energyx.system.dto.SysRoleSaveReq;
 import com.energyx.system.entity.SysPermission;
 import com.energyx.system.entity.SysRole;
@@ -69,7 +71,7 @@ class SysRoleServiceImplTest {
 		role.setTenantId(1L);
 		role.setRoleCode(code);
 		role.setRoleName("角色" + code);
-		role.setStatus(1);
+		role.setStatus(RoleStatus.ENABLED);
 		return role;
 	}
 
@@ -91,8 +93,8 @@ class SysRoleServiceImplTest {
 		verify(roleMapper).insert(captor.capture());
 		assertEquals("OPERATOR", captor.getValue().getRoleCode());
 		assertEquals(1L, captor.getValue().getTenantId());
-		assertEquals(1, captor.getValue().getStatus());
-		assertEquals(3, captor.getValue().getDataScope());
+		assertEquals(RoleStatus.ENABLED, captor.getValue().getStatus());
+		assertEquals(DataScope.TENANT, captor.getValue().getDataScope());
 	}
 
 	@Test

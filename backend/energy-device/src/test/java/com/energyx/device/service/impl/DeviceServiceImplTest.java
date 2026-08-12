@@ -1,6 +1,7 @@
 package com.energyx.device.service.impl;
 
 import com.energyx.common.enums.DeviceStatus;
+import com.energyx.common.enums.DeviceType;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.redis.RedisChannelConstant;
@@ -159,7 +160,7 @@ class DeviceServiceImplTest {
 		DeviceCreateReq req = new DeviceCreateReq();
 		req.setDeviceName("meter-000002");
 		req.setProductKey("testMeter");
-		req.setDeviceType("METER");
+		req.setDeviceType(DeviceType.METER);
 		// 拦截 ServiceImpl 的 count（唯一校验）与 save（落库），私有方法 resolveParent/validateDeviceName
 		// 对 null parentId / 合法设备名真实执行
 		doReturn(0L).when(service).count(any());

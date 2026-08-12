@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
 import com.energyx.common.enums.DeviceStatus;
+import com.energyx.common.enums.DeviceType;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -45,8 +46,8 @@ public class Device extends BaseEntity {
 
 	private String deviceName;
 
-	/** ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW */
-	private String deviceType;
+	/** 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+	private DeviceType deviceType;
 
 	/** 父设备 ID（0=根） */
 	private Long parentId;

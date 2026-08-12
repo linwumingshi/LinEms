@@ -1,5 +1,7 @@
 package com.energyx.system.dto;
 
+import com.energyx.common.enums.DataScope;
+import com.energyx.common.enums.RoleStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -20,10 +22,10 @@ public class SysRoleSaveReq {
 	@Size(max = 64, message = "角色名称长度不能超过 64")
 	private String roleName;
 
-	/** 数据范围：1 本人 2 本企业 3 本租户 4 全部 */
-	private Integer dataScope;
+	/** 数据范围（SELF/ENTERPRISE/TENANT/ALL，对应 DB 1本人 2本企业 3本租户 4全部） */
+	private DataScope dataScope;
 
 	/** 默认启用 */
-	private Integer status;
+	private RoleStatus status;
 
 }

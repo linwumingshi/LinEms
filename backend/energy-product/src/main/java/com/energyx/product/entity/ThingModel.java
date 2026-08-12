@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.ThingModelStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -36,8 +37,8 @@ public class ThingModel {
 	/** 完整物模型 JSON Schema */
 	private String schemaJson;
 
-	/** 0草稿 1已发布 2已废弃 */
-	private Integer status;
+	/** 物模型状态（DRAFT/PUBLISHED/DEPRECATED，对应 DB 0草稿 1已发布 2已废弃） */
+	private ThingModelStatus status;
 
 	/** 当前生效版本 */
 	private Integer isCurrent;

@@ -1,6 +1,7 @@
 package com.energyx.system.security;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.energyx.common.enums.UserStatus;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -49,8 +50,8 @@ public class LoginUser implements UserDetails, Serializable {
 	@JsonIgnore
 	private String password;
 
-	/** 状态：0 禁用 1 启用 2 锁定 */
-	private Integer status;
+	/** 用户状态（DISABLED/ENABLED/LOCKED，对应 DB 0禁用 1启用 2锁定） */
+	private UserStatus status;
 
 	/** 会话 ID（Redis 键 {@code auth:login_token:{token}}） */
 	private String token;
@@ -60,7 +61,7 @@ public class LoginUser implements UserDetails, Serializable {
 	private long expireTime;
 
 	public LoginUser(Long userId, Long tenantId, Long enterpriseId, String realName, String username,
-			Set<String> permissions, Set<String> roleCodes, String password, Integer status) {
+			Set<String> permissions, Set<String> roleCodes, String password, UserStatus status) {
 		this.userId = userId;
 		this.tenantId = tenantId;
 		this.enterpriseId = enterpriseId;
@@ -90,7 +91,7 @@ public class LoginUser implements UserDetails, Serializable {
 	@Override
 	@JsonIgnore
 	public boolean isAccountNonLocked() {
-		return status == null || status != 2;
+		return status == null || status != UserStatus.LOCKED;
 	}
 
 	@Override
@@ -102,7 +103,7 @@ public class LoginUser implements UserDetails, Serializable {
 	@Override
 	@JsonIgnore
 	public boolean isEnabled() {
-		return status != null && status == 1;
+		return status != null && status == UserStatus.ENABLED;
 	}
 
 }

@@ -16,6 +16,9 @@ import com.energyx.alarm.util.AlarmRedisKeys;
 import com.energyx.alarm.web.dto.AlarmRecordView;
 import com.energyx.alarm.ws.AlarmWebSocketHandler;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.AlarmLevel;
+import com.energyx.common.enums.AlarmRecordStatus;
+import com.energyx.common.enums.AlarmRuleStatus;
 import com.energyx.common.message.AlarmMessage;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
@@ -217,7 +220,7 @@ public class AlarmService {
 		if (isSilenced(rule.getRuleId(), msg.getDeviceId())) {
 			return;
 		}
-		int level = rule.getSeverity() == null ? 3 : rule.getSeverity();
+		AlarmLevel level = rule.getSeverity() == null ? AlarmLevel.SERIOUS : rule.getSeverity();
 		String message = rule.getRuleName() + "：" + condition.getMetric() + " " + condition.getOp() + " "
 				+ condition.getValue() + "（当前 " + value + "）";
 		Map<String, Object> ext = new LinkedHashMap<>();
@@ -238,8 +241,9 @@ public class AlarmService {
 		if (isSilenced(rule.getRuleId(), msg.getDeviceId())) {
 			return;
 		}
-		int level = msg.getSeverity() != null ? msg.getSeverity()
-				: (rule.getSeverity() == null ? 3 : rule.getSeverity());
+		AlarmLevel eventLevel = AlarmLevel.of(msg.getSeverity());
+		AlarmLevel level = eventLevel != null ? eventLevel
+				: (rule.getSeverity() == null ? AlarmLevel.SERIOUS : rule.getSeverity());
 		String message = rule.getRuleName() + "：" + msg.getEventName();
 		Map<String, Object> ext = new LinkedHashMap<>();
 		ext.put("event", msg.getEventName());
@@ -255,12 +259,12 @@ public class AlarmService {
 	}
 
 	/** 落库 + 置静默 + 发布（Kafka/WS/ES）。返回插入行；静默期内返回 null。 */
-	private AlarmRecordRow insertAndMark(AlarmRuleRow rule, Long tenantId, long deviceId, String productKey, int level,
-			int type, String message, Map<String, Object> ext) {
+	private AlarmRecordRow insertAndMark(AlarmRuleRow rule, Long tenantId, long deviceId, String productKey,
+			AlarmLevel level, int type, String message, Map<String, Object> ext) {
 		String alarmEventId = idGenerator.nextIdStr();
 		LocalDateTime now = LocalDateTime.now();
 		int inserted = recordMapper.insert(alarmEventId, tenantId, deviceId, productKey, rule.getRuleId(),
-				rule.getRuleCode(), level, type, message, toJson(ext), now);
+				rule.getRuleCode(), level.getCode(), type, message, toJson(ext), now);
 		if (inserted <= 0) {
 			return null;
 		}
@@ -276,7 +280,7 @@ public class AlarmService {
 		alarm.setProductKey(productKey);
 		alarm.setRuleId(rule.getRuleId());
 		alarm.setRuleCode(rule.getRuleCode());
-		alarm.setLevel(level);
+		alarm.setLevel(level.getCode());
 		alarm.setType(type);
 		alarm.setStatus("ACTIVE");
 		alarm.setMessage(message);
@@ -370,7 +374,7 @@ public class AlarmService {
 		m.setProductKey(r.getProductKey());
 		m.setRuleId(r.getRuleId());
 		m.setRuleCode(r.getRuleCode());
-		m.setLevel(r.getLevel());
+		m.setLevel(r.getLevel().getCode());
 		m.setType(r.getType());
 		m.setStatus("RECOVERED");
 		m.setMessage(r.getMessage());
@@ -457,7 +461,7 @@ public class AlarmService {
 	}
 
 	private boolean matchesRule(AlarmRuleRow rule, Long tenantId, Long deviceId, Long productId) {
-		if (rule.getStatus() == null || rule.getStatus() != 1) {
+		if (rule.getStatus() == null || rule.getStatus() != AlarmRuleStatus.ENABLED) {
 			return false;
 		}
 		if (tenantId != null && rule.getTenantId() != null && !rule.getTenantId().equals(tenantId)) {
@@ -506,13 +510,13 @@ public class AlarmService {
 		return view;
 	}
 
-	private String statusName(Integer status) {
+	private String statusName(AlarmRecordStatus status) {
 		if (status == null) {
 			return "ACTIVE";
 		}
 		return switch (status) {
-			case 1 -> "RECOVERED";
-			case 2 -> "ACKED";
+			case RECOVERED -> "RECOVERED";
+			case ACKED -> "ACKED";
 			default -> "ACTIVE";
 		};
 	}
@@ -525,9 +529,9 @@ public class AlarmService {
 		row.setProductKey(m.getProductKey());
 		row.setRuleId(m.getRuleId());
 		row.setRuleCode(m.getRuleCode());
-		row.setLevel(m.getLevel());
+		row.setLevel(AlarmLevel.of(m.getLevel()));
 		row.setType(m.getType());
-		row.setStatus(0);
+		row.setStatus(AlarmRecordStatus.ACTIVE);
 		row.setMessage(m.getMessage());
 		return row;
 	}

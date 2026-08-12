@@ -1,5 +1,6 @@
 package com.energyx.product.service.impl;
 
+import com.energyx.common.enums.ThingModelStatus;
 import com.energyx.product.entity.Product;
 import com.energyx.product.entity.ThingModel;
 import com.energyx.product.mapper.ProductMapper;
@@ -60,7 +61,7 @@ class ProductServiceImplTest {
 		m.setProductId(1L);
 		m.setVersion("v1");
 		m.setSchemaJson("{}");
-		m.setStatus(1);
+		m.setStatus(ThingModelStatus.PUBLISHED);
 		m.setIsCurrent(1);
 		when(productMapper.selectOne(any())).thenReturn(p);
 		when(thingModelMapper.selectOne(any())).thenReturn(m);

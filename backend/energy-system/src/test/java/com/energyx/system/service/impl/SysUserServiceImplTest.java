@@ -3,6 +3,7 @@ package com.energyx.system.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.UserStatus;
 import com.energyx.common.model.PageResult;
 import com.energyx.system.dto.SysUserQuery;
 import com.energyx.system.dto.SysUserSaveReq;
@@ -85,7 +86,8 @@ class SysUserServiceImplTest {
 	}
 
 	private void setCurrentUser(Long userId) {
-		LoginUser loginUser = new LoginUser(userId, 1L, 1L, "operator", "op", Set.of(), Set.of(), null, 1);
+		LoginUser loginUser = new LoginUser(userId, 1L, 1L, "operator", "op", Set.of(), Set.of(), null,
+				UserStatus.ENABLED);
 		SecurityContextHolder.getContext()
 			.setAuthentication(new UsernamePasswordAuthenticationToken(loginUser, null, loginUser.getAuthorities()));
 	}
@@ -97,7 +99,7 @@ class SysUserServiceImplTest {
 		user.setEnterpriseId(1L);
 		user.setUsername(username);
 		user.setRealName("测试" + username);
-		user.setStatus(1);
+		user.setStatus(UserStatus.ENABLED);
 		return user;
 	}
 
@@ -128,7 +130,7 @@ class SysUserServiceImplTest {
 		assertEquals("zhangsan", captor.getValue().getUsername());
 		assertEquals("{bcrypt}encoded", captor.getValue().getPassword());
 		assertEquals(1L, captor.getValue().getTenantId());
-		assertEquals(1, captor.getValue().getStatus());
+		assertEquals(UserStatus.ENABLED, captor.getValue().getStatus());
 
 		// 分配角色（roleIds 为空 → 仅清空旧关联 + 刷新会话）
 		verify(userRoleMapper).delete(any());

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.PermissionStatus;
 import com.energyx.system.dto.SysPermissionSaveReq;
 import com.energyx.system.entity.SysPermission;
 import com.energyx.system.entity.SysRolePermission;
@@ -87,7 +88,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
 			entity.setVisible(0);
 		}
 		if (entity.getStatus() == null) {
-			entity.setStatus(0);
+			entity.setStatus(PermissionStatus.NORMAL);
 		}
 		save(entity);
 		tokenService.refreshAllSessions(permissionResolver);
@@ -148,7 +149,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
 		}
 		SysPermission update = new SysPermission();
 		update.setPermId(permId);
-		update.setStatus(status);
+		update.setStatus(PermissionStatus.of(status));
 		updateById(update);
 		tokenService.refreshAllSessions(permissionResolver);
 		log.info("变更菜单状态 permId={} status={}", permId, status);

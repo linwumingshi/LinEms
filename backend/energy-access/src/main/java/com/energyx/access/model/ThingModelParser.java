@@ -1,5 +1,6 @@
 package com.energyx.access.model;
 
+import com.energyx.common.enums.EventSeverity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -95,7 +96,7 @@ public final class ThingModelParser {
 		ThingModelEvent ev = new ThingModelEvent();
 		ev.setIdentifier(e.path("identifier").asText());
 		ev.setName(e.path("name").asText());
-		ev.setType(e.path("type").asText("WARN"));
+		ev.setType(EventSeverity.of(e.path("type").asText("WARN")));
 		return ev;
 	}
 

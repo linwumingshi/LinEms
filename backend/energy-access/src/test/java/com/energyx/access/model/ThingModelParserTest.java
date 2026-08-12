@@ -1,5 +1,6 @@
 package com.energyx.access.model;
 
+import com.energyx.common.enums.EventSeverity;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -38,8 +39,8 @@ class ThingModelParserTest {
 		assertEquals(1, model.getServices().get("setPower").getInput().size());
 
 		assertEquals(2, model.getEvents().size());
-		assertEquals("WARN", model.getEvents().get("overTemp").getType());
-		assertEquals("ERROR", model.getEvents().get("bmsFault").getType());
+		assertEquals(EventSeverity.WARN, model.getEvents().get("overTemp").getType());
+		assertEquals(EventSeverity.ERROR, model.getEvents().get("bmsFault").getType());
 	}
 
 	@Test

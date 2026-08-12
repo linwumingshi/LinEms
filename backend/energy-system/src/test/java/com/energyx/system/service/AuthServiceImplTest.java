@@ -2,6 +2,7 @@ package com.energyx.system.service;
 
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.UserStatus;
 import com.energyx.system.dto.LoginRequest;
 import com.energyx.system.dto.LoginResponse;
 import com.energyx.system.entity.SysUser;
@@ -67,7 +68,7 @@ class AuthServiceImplTest {
 
 	private LoginUser loginUser() {
 		LoginUser user = new LoginUser(1L, 1L, 1L, "系统管理员", "admin", Set.of("system:user:list", "*:*:*"),
-				Set.of("SUPER_ADMIN"), "{noop}admin123", 1);
+				Set.of("SUPER_ADMIN"), "{noop}admin123", UserStatus.ENABLED);
 		user.setLoginTime(LOGIN_TIME);
 		user.setExpireTime(EXPIRE_TIME);
 		return user;

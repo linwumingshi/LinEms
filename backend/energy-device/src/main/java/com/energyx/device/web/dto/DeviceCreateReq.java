@@ -1,6 +1,8 @@
 package com.energyx.device.web.dto;
 
+import com.energyx.common.enums.DeviceType;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -15,10 +17,9 @@ public class DeviceCreateReq {
 	@Size(max = 128, message = "设备名长度不能超过 128")
 	private String deviceName;
 
-	/** ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW */
-	@NotBlank(message = "设备类型不能为空")
-	@Size(max = 32, message = "设备类型长度不能超过 32")
-	private String deviceType;
+	/** 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+	@NotNull(message = "设备类型不能为空")
+	private DeviceType deviceType;
 
 	@NotBlank(message = "产品标识不能为空")
 	@Size(max = 64, message = "产品标识长度不能超过 64")

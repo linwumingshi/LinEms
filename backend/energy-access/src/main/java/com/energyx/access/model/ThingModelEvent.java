@@ -1,5 +1,6 @@
 package com.energyx.access.model;
 
+import com.energyx.common.enums.EventSeverity;
 import lombok.Data;
 
 /**
@@ -12,7 +13,7 @@ public class ThingModelEvent {
 
 	private String name;
 
-	/** INFO | WARN | ERROR（映射 TDengine severity：1/2/3） */
-	private String type;
+	/** 事件级别（INFO/WARN/ERROR，映射 TDengine severity：1/2/3） */
+	private EventSeverity type;
 
 }

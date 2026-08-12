@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.GridType;
+import com.energyx.common.enums.StationStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -48,10 +50,10 @@ public class Station extends BaseEntity {
 	/** 电池容量 kWh */
 	private BigDecimal batteryCapacity;
 
-	/** 工商业/园区/电网侧 */
-	private String gridType;
+	/** 电网类型（COMMERCIAL_INDUSTRIAL/PARK/GRID，对应 DB 中文原值 工商业/园区/电网侧） */
+	private GridType gridType;
 
-	/** 0停运 1运行 */
-	private Integer status;
+	/** 电站运行状态（STOPPED/RUNNING，对应 DB 0停运 1运行） */
+	private StationStatus status;
 
 }

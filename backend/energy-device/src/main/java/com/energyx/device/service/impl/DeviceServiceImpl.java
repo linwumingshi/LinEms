@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.energyx.common.enums.CredentialAuthStatus;
 import com.energyx.common.enums.DeviceStatus;
+import com.energyx.common.enums.DeviceType;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.redis.RedisChannelConstant;
@@ -91,7 +93,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		cred.setDeviceId(device.getDeviceId());
 		cred.setTenantId(tenantId);
 		cred.setDeviceSecret(DeviceSecretGenerator.generate());
-		cred.setAuthStatus(1);
+		cred.setAuthStatus(CredentialAuthStatus.NORMAL);
 		cred.setFailCount(0);
 		credentialMapper.insert(cred);
 
@@ -187,7 +189,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 
 		// 吊销子树全部凭据（拦截器自动限定当前租户）
 		credentialMapper.update(null, new LambdaUpdateWrapper<DeviceCredential>().in(DeviceCredential::getDeviceId, ids)
-			.set(DeviceCredential::getAuthStatus, 2));
+			.set(DeviceCredential::getAuthStatus, CredentialAuthStatus.REVOKED));
 		log.info("删除设备子树 rootId={} nodes={}", deviceId, ids.size());
 	}
 
@@ -197,7 +199,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 			.eq(query.getStationId() != null, Device::getStationId, query.getStationId())
 			.eq(query.getEnterpriseId() != null, Device::getEnterpriseId, query.getEnterpriseId())
 			.eq(query.getDeviceType() != null && !query.getDeviceType().isBlank(), Device::getDeviceType,
-					query.getDeviceType())
+					DeviceType.of(query.getDeviceType()))
 			.eq(query.getParentId() != null, Device::getParentId, query.getParentId())
 			.eq(query.getStatus() != null, Device::getStatus, DeviceStatus.of(query.getStatus()))
 			.eq(query.getProductKey() != null && !query.getProductKey().isBlank(), Device::getProductKey,
@@ -235,7 +237,8 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		DeviceCredential cred = credentialMapper
 			.selectOne(new LambdaQueryWrapper<DeviceCredential>().eq(DeviceCredential::getDeviceId, deviceId));
 		return new CredentialView(deviceId, device.getDeviceName(),
-				cred == null ? "" : maskSecret(cred.getDeviceSecret()), cred == null ? 0 : cred.getAuthStatus());
+				cred == null ? "" : maskSecret(cred.getDeviceSecret()),
+				cred == null ? 0 : cred.getAuthStatus().getCode());
 	}
 
 	@Override
@@ -245,7 +248,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		credentialMapper.update(null,
 				new LambdaUpdateWrapper<DeviceCredential>().eq(DeviceCredential::getDeviceId, deviceId)
 					.set(DeviceCredential::getDeviceSecret, secret)
-					.set(DeviceCredential::getAuthStatus, 1)
+					.set(DeviceCredential::getAuthStatus, CredentialAuthStatus.NORMAL)
 					.set(DeviceCredential::getFailCount, 0));
 		// 生成密钥 = 凭据就绪 = 激活（状态机自动联动）：仅未注册(0)/未激活(1) → 已激活离线(2)；
 		// 禁用(4)/封禁(5)是管理态，不因密钥操作自动解禁，避免越权恢复

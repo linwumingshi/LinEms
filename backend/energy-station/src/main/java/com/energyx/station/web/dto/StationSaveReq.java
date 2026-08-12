@@ -1,5 +1,7 @@
 package com.energyx.station.web.dto;
 
+import com.energyx.common.enums.GridType;
+import com.energyx.common.enums.StationStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -41,11 +43,10 @@ public class StationSaveReq {
 	/** 电池容量 kWh */
 	private BigDecimal batteryCapacity;
 
-	/** 工商业/园区/电网侧 */
-	@Size(max = 16, message = "电网类型长度不能超过 16")
-	private String gridType;
+	/** 电网类型（COMMERCIAL_INDUSTRIAL/PARK/GRID，对应 DB 中文原值 工商业/园区/电网侧） */
+	private GridType gridType;
 
 	/** 默认 1 运行 */
-	private Integer status;
+	private StationStatus status;
 
 }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.EnterpriseLevel;
 import com.energyx.system.dto.SysEnterpriseSaveReq;
 import com.energyx.system.entity.SysEnterprise;
 import com.energyx.system.entity.SysUser;
@@ -81,11 +82,11 @@ public class SysEnterpriseServiceImpl extends ServiceImpl<SysEnterpriseMapper, S
 		entity.setTenantId(tenantId);
 		if (parent == null) {
 			entity.setParentId(0L);
-			entity.setLevel(1);
+			entity.setLevel(EnterpriseLevel.GROUP);
 		}
 		else {
 			entity.setParentId(parent.getEnterpriseId());
-			entity.setLevel(parent.getLevel() + 1);
+			entity.setLevel(EnterpriseLevel.of(Math.min(parent.getLevel().getCode() + 1, 2)));
 		}
 		if (entity.getStatus() == null) {
 			entity.setStatus(1);
@@ -135,17 +136,17 @@ public class SysEnterpriseServiceImpl extends ServiceImpl<SysEnterpriseMapper, S
 		}
 
 		String oldPath = exists.getPath();
-		int oldLevel = exists.getLevel() == null ? 1 : exists.getLevel();
+		int oldLevel = exists.getLevel() == null ? 1 : exists.getLevel().getCode();
 		BeanUtils.copyProperties(req, exists);
 		exists.setParentId(newParentId);
 		if (newParentId == 0L) {
 			exists.setPath("/" + enterpriseId + "/");
-			exists.setLevel(1);
+			exists.setLevel(EnterpriseLevel.GROUP);
 		}
 		else {
 			SysEnterprise parent = getById(newParentId);
 			exists.setPath(parent.getPath() + enterpriseId + "/");
-			exists.setLevel(parent.getLevel() + 1);
+			exists.setLevel(EnterpriseLevel.of(Math.min(parent.getLevel().getCode() + 1, 2)));
 		}
 		updateById(exists);
 
@@ -210,9 +211,9 @@ public class SysEnterpriseServiceImpl extends ServiceImpl<SysEnterpriseMapper, S
 				new LambdaQueryWrapper<SysEnterprise>().likeRight(SysEnterprise::getPath, oldPath)
 					.ne(SysEnterprise::getEnterpriseId, self.getEnterpriseId()));
 		for (SysEnterprise child : children) {
-			int delta = child.getLevel() == null ? 1 : child.getLevel() - oldLevel;
+			int delta = child.getLevel() == null ? 1 : child.getLevel().getCode() - oldLevel;
 			child.setPath(self.getPath() + child.getPath().substring(oldPath.length()));
-			child.setLevel(self.getLevel() + delta);
+			child.setLevel(EnterpriseLevel.of(Math.max(1, Math.min(self.getLevel().getCode() + delta, 2))));
 			updateById(child);
 		}
 	}

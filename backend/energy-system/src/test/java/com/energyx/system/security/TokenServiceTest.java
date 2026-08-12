@@ -1,5 +1,6 @@
 package com.energyx.system.security;
 
+import com.energyx.common.enums.UserStatus;
 import com.energyx.common.redis.RedisUtils;
 import com.energyx.security.JwtClaims;
 import com.energyx.security.JwtConstants;
@@ -51,7 +52,7 @@ class TokenServiceTest {
 
 	private LoginUser session(String sid, Long userId, Set<String> roleCodes) {
 		LoginUser loginUser = new LoginUser(userId, 1L, 1L, "admin", "u" + userId, Set.of("old:perm"), roleCodes, null,
-				1);
+				UserStatus.ENABLED);
 		loginUser.setToken(sid);
 		loginUser.setLoginTime(1_000L);
 		loginUser.setExpireTime(1_000L + 7_200_000L);

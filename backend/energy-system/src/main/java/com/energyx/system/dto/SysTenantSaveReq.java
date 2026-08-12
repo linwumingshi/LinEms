@@ -1,5 +1,6 @@
 package com.energyx.system.dto;
 
+import com.energyx.common.enums.TenantStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -28,6 +29,6 @@ public class SysTenantSaveReq {
 	private String quota;
 
 	/** 默认启用 */
-	private Integer status;
+	private TenantStatus status;
 
 }

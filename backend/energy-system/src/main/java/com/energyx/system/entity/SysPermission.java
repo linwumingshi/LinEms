@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.PermissionStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -53,8 +54,8 @@ public class SysPermission {
 	/** 是否显示：0 显示 1 隐藏 */
 	private Integer visible;
 
-	/** 状态：0 正常 1 停用 */
-	private Integer status;
+	/** 权限状态（NORMAL/DISABLED，对应 DB 0正常 1停用） */
+	private PermissionStatus status;
 
 	private String remark;
 

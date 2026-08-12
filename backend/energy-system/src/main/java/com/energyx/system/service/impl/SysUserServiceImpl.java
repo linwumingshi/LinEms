@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.UserStatus;
 import com.energyx.common.model.PageResult;
 import com.energyx.system.dto.SysUserQuery;
 import com.energyx.system.dto.SysUserSaveReq;
@@ -79,7 +80,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 			wrapper.and(w -> w.like(SysUser::getUsername, keyword).or().like(SysUser::getRealName, keyword));
 		}
 		if (query.getStatus() != null) {
-			wrapper.eq(SysUser::getStatus, query.getStatus());
+			wrapper.eq(SysUser::getStatus, UserStatus.of(query.getStatus()));
 		}
 		if (query.getEnterpriseId() != null) {
 			wrapper.eq(SysUser::getEnterpriseId, query.getEnterpriseId());
@@ -124,7 +125,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 		entity.setTenantId(tenantId);
 		entity.setPassword(passwordEncoder.encode(req.getPassword()));
 		if (entity.getStatus() == null) {
-			entity.setStatus(1);
+			entity.setStatus(UserStatus.ENABLED);
 		}
 		save(entity);
 		assignRoles(entity.getUserId(), req.getRoleIds());
@@ -187,10 +188,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
 	@Override
 	public void changeStatus(Long userId, Integer status) {
-		if (Long.valueOf(1L).equals(userId) && status != null && status != 1) {
+		boolean disabling = status != null && UserStatus.of(status) != UserStatus.ENABLED;
+		if (Long.valueOf(1L).equals(userId) && disabling) {
 			throw new BusinessException(ErrorCode.CONFLICT, "超级管理员不可禁用");
 		}
-		if (userId.equals(SecurityUtils.getUserId()) && status != null && status != 1) {
+		if (userId.equals(SecurityUtils.getUserId()) && disabling) {
 			throw new BusinessException(ErrorCode.CONFLICT, "不能禁用当前登录账号");
 		}
 		SysUser exists = getById(userId);
@@ -199,9 +201,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 		}
 		SysUser update = new SysUser();
 		update.setUserId(userId);
-		update.setStatus(status);
+		update.setStatus(UserStatus.of(status));
 		updateById(update);
-		if (status != null && status != 1) {
+		if (disabling) {
 			tokenService.revokeUserSessions(userId);
 		}
 		log.info("变更用户状态 userId={} status={}", userId, status);

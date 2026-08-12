@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.UserStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -40,8 +41,8 @@ public class SysUser extends BaseEntity {
 
 	private String avatar;
 
-	/** 状态：0 禁用 1 启用 2 锁定 */
-	private Integer status;
+	/** 用户状态（DISABLED/ENABLED/LOCKED，对应 DB 0禁用 1启用 2锁定） */
+	private UserStatus status;
 
 	private LocalDateTime lastLoginTime;
 

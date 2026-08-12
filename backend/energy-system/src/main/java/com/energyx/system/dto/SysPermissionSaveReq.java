@@ -1,5 +1,6 @@
 package com.energyx.system.dto;
 
+import com.energyx.common.enums.PermissionStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -44,8 +45,8 @@ public class SysPermissionSaveReq {
 	/** 是否显示：0 显示 1 隐藏 */
 	private Integer visible;
 
-	/** 状态：0 正常 1 停用 */
-	private Integer status;
+	/** 权限状态（NORMAL/DISABLED，对应 DB 0正常 1停用） */
+	private PermissionStatus status;
 
 	@Size(max = 500, message = "备注长度不能超过 500")
 	private String remark;

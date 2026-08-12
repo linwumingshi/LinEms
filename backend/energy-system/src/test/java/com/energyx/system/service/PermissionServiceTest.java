@@ -1,5 +1,6 @@
 package com.energyx.system.service;
 
+import com.energyx.common.enums.UserStatus;
 import com.energyx.system.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,8 @@ class PermissionServiceTest {
 	}
 
 	private void loginAs(Set<String> permissions, Set<String> roleCodes) {
-		LoginUser loginUser = new LoginUser(1L, 1L, 1L, "admin", "admin", permissions, roleCodes, null, 1);
+		LoginUser loginUser = new LoginUser(1L, 1L, 1L, "admin", "admin", permissions, roleCodes, null,
+				UserStatus.ENABLED);
 		SecurityContextHolder.getContext()
 			.setAuthentication(new UsernamePasswordAuthenticationToken(loginUser, null, loginUser.getAuthorities()));
 	}

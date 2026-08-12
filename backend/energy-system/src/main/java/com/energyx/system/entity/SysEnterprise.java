@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.EnterpriseLevel;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,8 +30,8 @@ public class SysEnterprise extends BaseEntity {
 	/** 物化路径，如 /1/3/ 便于子树查询 */
 	private String path;
 
-	/** 层级：1 集团直属 2 子企业 */
-	private Integer level;
+	/** 企业层级（GROUP/SUB，对应 DB 1集团直属 2子企业） */
+	private EnterpriseLevel level;
 
 	private String enterpriseCode;
 

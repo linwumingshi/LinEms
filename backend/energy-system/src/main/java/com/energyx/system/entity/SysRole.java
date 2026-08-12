@@ -3,6 +3,8 @@ package com.energyx.system.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.DataScope;
+import com.energyx.common.enums.RoleStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,11 +28,11 @@ public class SysRole {
 
 	private String roleName;
 
-	/** 数据范围：1本人 2本企业 3本租户 4全部 */
-	private Integer dataScope;
+	/** 数据范围（SELF/ENTERPRISE/TENANT/ALL，对应 DB 1本人 2本企业 3本租户 4全部） */
+	private DataScope dataScope;
 
-	/** 状态：0 禁用 1 启用 */
-	private Integer status;
+	/** 角色状态（DISABLED/ENABLED，对应 DB 0禁用 1启用） */
+	private RoleStatus status;
 
 	private LocalDateTime createTime;
 

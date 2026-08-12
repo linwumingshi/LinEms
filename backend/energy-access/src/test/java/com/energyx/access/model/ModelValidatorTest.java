@@ -1,5 +1,6 @@
 package com.energyx.access.model;
 
+import com.energyx.common.enums.EventSeverity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -120,10 +121,9 @@ class ModelValidatorTest {
 
 	@Test
 	void severityOf_shouldMapAllLevels() {
-		assertEquals(1, ModelValidator.severityOf("INFO"));
-		assertEquals(2, ModelValidator.severityOf("WARN"));
-		assertEquals(3, ModelValidator.severityOf("ERROR"));
-		assertEquals(4, ModelValidator.severityOf("CRITICAL"));
+		assertEquals(1, ModelValidator.severityOf(EventSeverity.INFO));
+		assertEquals(2, ModelValidator.severityOf(EventSeverity.WARN));
+		assertEquals(3, ModelValidator.severityOf(EventSeverity.ERROR));
 		assertEquals(2, ModelValidator.severityOf(null));
 	}
 

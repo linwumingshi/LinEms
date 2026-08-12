@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.DataScope;
+import com.energyx.common.enums.RoleStatus;
 import com.energyx.common.model.PageResult;
 import com.energyx.system.dto.SysRoleQuery;
 import com.energyx.system.dto.SysRoleSaveReq;
@@ -69,7 +71,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 			wrapper.and(w -> w.like(SysRole::getRoleCode, keyword).or().like(SysRole::getRoleName, keyword));
 		}
 		if (query.getStatus() != null) {
-			wrapper.eq(SysRole::getStatus, query.getStatus());
+			wrapper.eq(SysRole::getStatus, RoleStatus.of(query.getStatus()));
 		}
 		wrapper.orderByDesc(SysRole::getRoleId);
 		Page<SysRole> page = page(new Page<>(current, size), wrapper);
@@ -93,10 +95,10 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 		BeanUtils.copyProperties(req, entity);
 		entity.setTenantId(tenantId);
 		if (entity.getStatus() == null) {
-			entity.setStatus(1);
+			entity.setStatus(RoleStatus.ENABLED);
 		}
 		if (entity.getDataScope() == null) {
-			entity.setDataScope(3);
+			entity.setDataScope(DataScope.TENANT);
 		}
 		save(entity);
 		log.info("创建角色 roleId={} code={}", entity.getRoleId(), entity.getRoleCode());
@@ -144,7 +146,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 
 	@Override
 	public void changeStatus(Long roleId, Integer status) {
-		if (Long.valueOf(1L).equals(roleId) && status != null && status != 1) {
+		if (Long.valueOf(1L).equals(roleId) && status != null && RoleStatus.of(status) != RoleStatus.ENABLED) {
 			throw new BusinessException(ErrorCode.CONFLICT, "内置超级管理员角色不可禁用");
 		}
 		SysRole exists = getById(roleId);
@@ -153,7 +155,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 		}
 		SysRole update = new SysRole();
 		update.setRoleId(roleId);
-		update.setStatus(status);
+		update.setStatus(RoleStatus.of(status));
 		updateById(update);
 		log.info("变更角色状态 roleId={} status={}", roleId, status);
 	}

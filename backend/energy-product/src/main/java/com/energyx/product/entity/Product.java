@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.ProductStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -46,7 +47,7 @@ public class Product extends BaseEntity {
 
 	private String description;
 
-	/** 0禁用 1启用 */
-	private Integer status;
+	/** 产品状态（DISABLED/ENABLED，对应 DB 0禁用 1启用） */
+	private ProductStatus status;
 
 }

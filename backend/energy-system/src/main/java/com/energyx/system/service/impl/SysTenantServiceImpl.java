@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.TenantStatus;
 import com.energyx.common.model.PageResult;
 import com.energyx.system.dto.SysTenantQuery;
 import com.energyx.system.dto.SysTenantSaveReq;
@@ -46,7 +47,7 @@ public class SysTenantServiceImpl extends ServiceImpl<SysTenantMapper, SysTenant
 		SysTenant entity = new SysTenant();
 		BeanUtils.copyProperties(req, entity);
 		if (entity.getStatus() == null) {
-			entity.setStatus(1);
+			entity.setStatus(TenantStatus.ENABLED);
 		}
 		save(entity);
 		log.info("创建租户 tenantId={} code={}", entity.getTenantId(), entity.getTenantCode());
@@ -80,7 +81,7 @@ public class SysTenantServiceImpl extends ServiceImpl<SysTenantMapper, SysTenant
 		}
 		SysTenant update = new SysTenant();
 		update.setTenantId(tenantId);
-		update.setStatus(status);
+		update.setStatus(TenantStatus.of(status));
 		updateById(update);
 		log.info("变更租户状态 tenantId={} status={}", tenantId, status);
 	}

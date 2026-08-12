@@ -10,6 +10,9 @@ import com.energyx.alarm.model.AlarmRuleRow;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.alarm.web.dto.AlarmRecordView;
 import com.energyx.common.constant.KafkaTopicConstant;
+import com.energyx.common.enums.AlarmLevel;
+import com.energyx.common.enums.AlarmRecordStatus;
+import com.energyx.common.enums.AlarmRuleStatus;
 import com.energyx.common.message.AlarmMessage;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
@@ -97,9 +100,9 @@ class AlarmServiceTest {
 		r.setRuleName("温度过高");
 		r.setTriggerType(1);
 		r.setCondition("{\"metric\":\"temp\",\"op\":\"GTE\",\"value\":60,\"windowSec\":60}");
-		r.setSeverity(3);
+		r.setSeverity(AlarmLevel.SERIOUS);
 		r.setSilenceSeconds(300);
-		r.setStatus(1);
+		r.setStatus(AlarmRuleStatus.ENABLED);
 		return r;
 	}
 
@@ -111,9 +114,9 @@ class AlarmServiceTest {
 		r.setRuleName("BMS 故障");
 		r.setTriggerType(2);
 		r.setCondition("{\"event\":\"bmsFault\"}");
-		r.setSeverity(2);
+		r.setSeverity(AlarmLevel.GENERAL);
 		r.setSilenceSeconds(300);
-		r.setStatus(1);
+		r.setStatus(AlarmRuleStatus.ENABLED);
 		return r;
 	}
 
@@ -126,9 +129,9 @@ class AlarmServiceTest {
 		r.setRuleName("SOC 过低");
 		r.setTriggerType(1);
 		r.setCondition("{\"metric\":\"soc\",\"op\":\"LT\",\"value\":20,\"windowSec\":0}");
-		r.setSeverity(4);
+		r.setSeverity(AlarmLevel.CRITICAL);
 		r.setSilenceSeconds(60);
-		r.setStatus(1);
+		r.setStatus(AlarmRuleStatus.ENABLED);
 		return r;
 	}
 
@@ -163,9 +166,9 @@ class AlarmServiceTest {
 		r.setProductKey("pk-1");
 		r.setRuleId(1L);
 		r.setRuleCode("ALM_TEMP_HIGH");
-		r.setLevel(3);
+		r.setLevel(AlarmLevel.SERIOUS);
 		r.setType(1);
-		r.setStatus(0);
+		r.setStatus(AlarmRecordStatus.ACTIVE);
 		r.setMessage("温度过高");
 		r.setExt("{\"metric\":\"temp\",\"currentValue\":80,\"threshold\":60}");
 		return r;

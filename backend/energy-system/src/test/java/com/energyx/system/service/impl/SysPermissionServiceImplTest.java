@@ -2,6 +2,7 @@ package com.energyx.system.service.impl;
 
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.PermissionStatus;
 import com.energyx.system.dto.SysPermissionSaveReq;
 import com.energyx.system.entity.SysPermission;
 import com.energyx.system.mapper.SysPermissionMapper;
@@ -67,7 +68,7 @@ class SysPermissionServiceImplTest {
 		p.setPermCode(code);
 		p.setPermName("菜单" + code);
 		p.setPermType(1);
-		p.setStatus(0);
+		p.setStatus(PermissionStatus.NORMAL);
 		return p;
 	}
 
@@ -83,7 +84,7 @@ class SysPermissionServiceImplTest {
 		assertEquals(0L, captor.getValue().getParentId());
 		assertEquals(0, captor.getValue().getSort());
 		assertEquals(0, captor.getValue().getVisible());
-		assertEquals(0, captor.getValue().getStatus());
+		assertEquals(PermissionStatus.NORMAL, captor.getValue().getStatus());
 		verify(tokenService).refreshAllSessions(permissionResolver);
 	}
 
@@ -159,7 +160,7 @@ class SysPermissionServiceImplTest {
 
 		ArgumentCaptor<SysPermission> captor = ArgumentCaptor.forClass(SysPermission.class);
 		verify(permissionMapper).updateById(captor.capture());
-		assertEquals(1, captor.getValue().getStatus());
+		assertEquals(PermissionStatus.DISABLED, captor.getValue().getStatus());
 		verify(tokenService).refreshAllSessions(permissionResolver);
 	}
 

@@ -1,5 +1,6 @@
 package com.energyx.system.dto;
 
+import com.energyx.common.enums.UserStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -33,8 +34,8 @@ public class SysUserSaveReq {
 
 	private Long enterpriseId;
 
-	/** 状态：0 禁用 1 启用 2 锁定 */
-	private Integer status;
+	/** 用户状态（DISABLED/ENABLED/LOCKED，对应 DB 0禁用 1启用 2锁定） */
+	private UserStatus status;
 
 	/** 创建时必填，更新时留空不改 */
 	@Size(min = 6, max = 64, message = "密码长度需在 6~64 位")

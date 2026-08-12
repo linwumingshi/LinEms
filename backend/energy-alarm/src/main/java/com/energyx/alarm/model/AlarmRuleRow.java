@@ -1,5 +1,7 @@
 package com.energyx.alarm.model;
 
+import com.energyx.common.enums.AlarmLevel;
+import com.energyx.common.enums.AlarmRuleStatus;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -29,16 +31,16 @@ public class AlarmRuleRow {
 
 	private String condition;
 
-	/** 1提示 2一般 3严重 4危急 */
-	private Integer severity;
+	/** 告警级别（PROMPT/GENERAL/SERIOUS/CRITICAL，对应 DB 1提示 2一般 3严重 4危急） */
+	private AlarmLevel severity;
 
 	/** 静默期（秒），缺省 300 */
 	private Integer silenceSeconds;
 
 	private String recovery;
 
-	/** 0停用 1启用 */
-	private Integer status;
+	/** 告警规则状态（DISABLED/ENABLED，对应 DB 0停用 1启用） */
+	private AlarmRuleStatus status;
 
 	private String description;
 

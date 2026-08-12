@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.CredentialAuthStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -38,8 +39,8 @@ public class DeviceCredential {
 	/** 设备密钥（HMAC 签名用） */
 	private String deviceSecret;
 
-	/** 1正常 2吊销 */
-	private Integer authStatus;
+	/** 凭据认证状态（NORMAL/REVOKED，对应 DB 1正常 2吊销） */
+	private CredentialAuthStatus authStatus;
 
 	/** 连续认证失败次数（封禁判定） */
 	private Integer failCount;

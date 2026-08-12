@@ -40,6 +40,7 @@ spring:
         namespace: public
 
 mybatis-plus:
+  type-enums-package: com.energyx.common.enums
   global-config:
     banner: false
     db-config:

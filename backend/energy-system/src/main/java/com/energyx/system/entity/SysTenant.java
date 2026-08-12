@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.entity.BaseEntity;
+import com.energyx.common.enums.TenantStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,7 +30,7 @@ public class SysTenant extends BaseEntity {
 	/** JSON 资源配额，如 {"deviceLimit":100000,"ingestRate":500} */
 	private String quota;
 
-	/** 状态：0 禁用 1 启用 */
-	private Integer status;
+	/** 租户状态（DISABLED/ENABLED，对应 DB 0禁用 1启用） */
+	private TenantStatus status;
 
 }

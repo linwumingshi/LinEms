@@ -2,6 +2,7 @@ package com.energyx.system.service.impl;
 
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.enums.EnterpriseLevel;
 import com.energyx.system.dto.SysEnterpriseSaveReq;
 import com.energyx.system.entity.SysEnterprise;
 import com.energyx.system.mapper.SysEnterpriseMapper;
@@ -76,7 +77,7 @@ class SysEnterpriseServiceImplTest {
 		verify(enterpriseMapper).updateById(captor.capture());
 		SysEnterprise saved = captor.getValue();
 		assertEquals("/1/", saved.getPath());
-		assertEquals(1, saved.getLevel());
+		assertEquals(EnterpriseLevel.GROUP, saved.getLevel());
 		assertEquals(0L, saved.getParentId());
 		assertEquals(1L, saved.getTenantId());
 		assertEquals(1, saved.getStatus());
@@ -101,7 +102,7 @@ class SysEnterpriseServiceImplTest {
 		ArgumentCaptor<SysEnterprise> captor = ArgumentCaptor.forClass(SysEnterprise.class);
 		verify(enterpriseMapper).updateById(captor.capture());
 		assertEquals("/1/2/", captor.getValue().getPath());
-		assertEquals(2, captor.getValue().getLevel());
+		assertEquals(EnterpriseLevel.SUB, captor.getValue().getLevel());
 	}
 
 	@Test
@@ -212,9 +213,10 @@ class SysEnterpriseServiceImplTest {
 		verify(enterpriseMapper, times(2)).updateById(captor.capture());
 		List<SysEnterprise> updates = captor.getAllValues();
 		assertEquals("/2/1/", updates.get(0).getPath());
-		assertEquals(2, updates.get(0).getLevel());
+		assertEquals(EnterpriseLevel.SUB, updates.get(0).getLevel());
 		assertEquals("/2/1/3/", updates.get(1).getPath());
-		assertEquals(3, updates.get(1).getLevel());
+		// 层级收敛为两值分类（DB 注释 1集团直属 2子企业），深度不再累加
+		assertEquals(EnterpriseLevel.SUB, updates.get(1).getLevel());
 	}
 
 	@Test
@@ -242,7 +244,7 @@ class SysEnterpriseServiceImplTest {
 		e.setTenantId(1L);
 		e.setParentId(id == 1L ? 0L : 1L);
 		e.setPath(path);
-		e.setLevel(level);
+		e.setLevel(EnterpriseLevel.of(level));
 		e.setEnterpriseCode("CODE" + id);
 		e.setEnterpriseName("单位" + id);
 		e.setStatus(1);

@@ -1,5 +1,7 @@
 package com.energyx.access.model;
 
+import com.energyx.common.enums.EventSeverity;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -158,15 +160,14 @@ public final class ModelValidator {
 		return new EventCheck(ev, severityOf(ev.getType()));
 	}
 
-	/** 事件类型 → TDengine 严重级别：1提示 2一般 3严重 4危急 */
-	public static int severityOf(String type) {
+	/** 事件级别 → TDengine 严重级别：1提示 2一般 3严重 */
+	public static int severityOf(EventSeverity type) {
 		if (type == null) {
 			return 2;
 		}
-		return switch (type.toUpperCase()) {
-			case "INFO" -> 1;
-			case "ERROR" -> 3;
-			case "CRITICAL" -> 4;
+		return switch (type) {
+			case INFO -> 1;
+			case ERROR -> 3;
 			default -> 2; // WARN 及其他
 		};
 	}

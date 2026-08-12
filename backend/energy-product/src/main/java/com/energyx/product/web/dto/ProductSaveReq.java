@@ -1,5 +1,6 @@
 package com.energyx.product.web.dto;
 
+import com.energyx.common.enums.ProductStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -37,6 +38,6 @@ public class ProductSaveReq {
 	private String description;
 
 	/** 默认 1 启用 */
-	private Integer status;
+	private ProductStatus status;
 
 }
