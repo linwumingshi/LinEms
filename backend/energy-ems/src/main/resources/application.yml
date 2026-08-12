@@ -49,8 +49,8 @@ mybatis-plus:
       logic-not-delete-value: 0
   configuration:
     map-underscore-to-camel-case: true
-  type-enums-package: com.energyx.common.enums
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  type-enums-package: com.energyx.common.enums
 
 energyx:
   taos:
