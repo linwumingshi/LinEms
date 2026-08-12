@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
@@ -105,6 +106,58 @@ class DeviceAuthServiceTest {
 
 		assertFalse(result.isAllowed());
 		verify(sessionStore).banClient(CLIENT_ID);
+	}
+
+	@Test
+	void authenticate_redisUnbannedButDbStatus5_allowAndPublishUnbanEvent() throws Exception {
+		// Critical-2：Redis 封禁 TTL 已自然解封（isAuthBanned=false，见 setUp），但 DB 仍为 5（封禁审计视图残留）。
+		// 回源 MySQL 读到 status=5 → 认证应放行，并补发 UNBANNED 事件让 access 回写 status=2。
+		when(deviceMapper.selectByProductKeyAndName("testMeter", "meter-000001"))
+			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", 5));
+
+		long ts = System.currentTimeMillis();
+		String nonce = "nonce-unban";
+		String username = CLIENT_ID + "&" + ts + "&" + nonce;
+		String password = HmacSigner.sign("secret", CLIENT_ID, String.valueOf(ts), nonce);
+
+		AuthResult result = service.authenticate(CLIENT_ID, username, password);
+
+		assertTrue(result.isAllowed());
+		verify(sessionStore).clearAuthFail(CLIENT_ID);
+		ArgumentCaptor<String> valueCaptor = ArgumentCaptor.forClass(String.class);
+		verify(producer).send(eq(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE), eq(CLIENT_ID), valueCaptor.capture());
+		LifecycleMessage msg = objectMapper.readValue(valueCaptor.getValue(), LifecycleMessage.class);
+		assertEquals("UNBANNED", msg.getEventType());
+		assertEquals("AUTH_OK_AFTER_BAN_TTL", msg.getReason());
+		assertEquals(100L, msg.getDeviceId());
+		assertNotNull(msg.getTs());
+	}
+
+	@Test
+	void authenticate_redisStillBannedWithDbStatus5_deniedNoUnbanEvent() {
+		// 封禁期内（Redis 仍封禁）：认证入口 isBanned 拦截，不允许绕过，且不发 UNBANNED
+		when(sessionStore.isAuthBanned(CLIENT_ID)).thenReturn(true);
+		when(deviceMapper.selectByProductKeyAndName("testMeter", "meter-000001"))
+			.thenReturn(new DeviceRow(100L, 9L, "testMeter", "meter-000001", 5));
+
+		AuthResult result = authenticateWithWrongPassword();
+
+		assertFalse(result.isAllowed());
+		verify(producer, never()).send(eq(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE), eq(CLIENT_ID), anyString());
+	}
+
+	@Test
+	void authenticate_dbStatus2_unbannedNoSpuriousUnbanEvent() {
+		// 正常已激活设备（status=2）认证成功：不得发 UNBANNED
+		long ts = System.currentTimeMillis();
+		String nonce = "nonce-normal";
+		String username = CLIENT_ID + "&" + ts + "&" + nonce;
+		String password = HmacSigner.sign("secret", CLIENT_ID, String.valueOf(ts), nonce);
+
+		AuthResult result = service.authenticate(CLIENT_ID, username, password);
+
+		assertTrue(result.isAllowed());
+		verify(producer, never()).send(eq(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE), eq(CLIENT_ID), anyString());
 	}
 
 	private AuthResult authenticateWithWrongPassword() {

@@ -127,6 +127,11 @@ public class DeviceAuthService {
 		// 7. 通过：清零失败计数
 		sessionStore.clearAuthFail(clientId);
 		localBanUntil.remove(clientId);
+		// 封禁残留闭环（Critical-2）：DB 仍为 5 而 Redis 已解封，放行连接并补发 UNBANNED，
+		// 由 access 回写 iot_device.status=2，消除"DB 5 无回写路径"的死锁
+		if (cred.getDeviceStatus() == 5) {
+			publishUnbanEvent(clientId);
+		}
 		return AuthResult.allow(cred);
 	}
 
@@ -159,10 +164,24 @@ public class DeviceAuthService {
 
 	/** 封禁落库通知：发 lifecycle BANNED 事件（access 消费回写 iot_device.status=5）。发布失败仅告警，不阻断认证主流程。 */
 	private void publishBanEvent(String clientId) {
+		publishLifecycleEvent(clientId, "BANNED", "AUTH_FAIL_EXCEED");
+	}
+
+	/**
+	 * 解封补发（Critical-2 封禁回写闭环）：认证成功时发现 DB 仍为 5（封禁审计视图）而 Redis 已解封， 发 lifecycle UNBANNED
+	 * 事件让 access 回写 iot_device.status=2。updateUnbanned 仅 status=5 生效，
+	 * 事件幂等可重复补发。发布失败仅告警，不阻断认证主流程。
+	 */
+	private void publishUnbanEvent(String clientId) {
+		publishLifecycleEvent(clientId, "UNBANNED", "AUTH_OK_AFTER_BAN_TTL");
+	}
+
+	/** 生命周期事件统一发布（BANNED/UNBANNED），access 消费回写设备表。 */
+	private void publishLifecycleEvent(String clientId, String eventType, String reason) {
 		try {
 			LifecycleMessage msg = new LifecycleMessage();
-			msg.setEventType("BANNED");
-			msg.setReason("AUTH_FAIL_EXCEED");
+			msg.setEventType(eventType);
+			msg.setReason(reason);
 			msg.setTs(System.currentTimeMillis());
 			DeviceRow device = resolveDevice(clientId);
 			if (device != null) {
@@ -174,7 +193,7 @@ public class DeviceAuthService {
 			producer.send(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE, clientId, objectMapper.writeValueAsString(msg));
 		}
 		catch (Exception e) {
-			log.warn("[Auth] 封禁事件发布失败 clientId={}", clientId, e);
+			log.warn("[Auth] 生命周期事件发布失败 eventType={} clientId={}", eventType, clientId, e);
 		}
 	}
 
@@ -211,15 +230,15 @@ public class DeviceAuthService {
 			recordFailureAndMaybeBan(clientId);
 			return AuthResult.deny(4, false, "设备不存在或凭据未配置");
 		}
-		// 设备主状态：仅 2 已激活 / 3 在线 允许接入
+		// 设备主状态：仅 2 已激活 / 3 在线 / 5 封禁残留（Redis 已解封）允许接入
 		int status = cred.getDeviceStatus();
 		if (status == 4) {
 			return AuthResult.deny(5, false, "设备已禁用");
 		}
-		if (status == 5) {
-			return AuthResult.deny(5, false, "设备已封禁");
-		}
-		if (status != 2 && status != 3) {
+		// 5 封禁只是"审计视图"，Redis mqtt:ban 才是权威（TTL 自然解封）。
+		// 认证入口第 2 步 isBanned 已拦截封禁期内的连接，能走到这里说明 Redis 已解封，
+		// 因此封禁残留放行进入签名校验，认证成功后由成功路径补发 UNBANNED 回写 DB 5→2。
+		if (status != 2 && status != 3 && status != 5) {
 			return AuthResult.deny(5, false, "设备未激活（status=" + status + "）");
 		}
 		if (cred.getAuthStatus() != 1) {

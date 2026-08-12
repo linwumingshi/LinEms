@@ -83,6 +83,18 @@ class LifecycleProcessorTest {
 		verify(statusMapper).updateOnline(eq(100L), eq("broker-1"), eq("1.2.3.4"), any());
 	}
 
+	@Test
+	void process_offlineEvent_callsUpdateOffline() {
+		// 离线链路仍走 updateOffline（SQL 层状态保护在 DeviceStatusMapperTest 校验：仅 2/3 态可回写）
+		LifecycleMessage msg = message("OFFLINE", 100L);
+		msg.setReason("NORMAL");
+
+		processor.process(msg);
+
+		verify(statusMapper).updateOffline(eq(100L), any());
+		verify(recordMapper).insert(anyLong(), eq(100L), eq(9L), eq(2), eq("NORMAL"), any(), any(), any());
+	}
+
 	private LifecycleMessage message(String eventType, Long deviceId) {
 		LifecycleMessage msg = new LifecycleMessage();
 		msg.setEventType(eventType);

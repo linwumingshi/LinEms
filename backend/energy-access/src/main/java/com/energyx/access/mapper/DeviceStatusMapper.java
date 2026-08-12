@@ -20,13 +20,16 @@ public interface DeviceStatusMapper {
 	int updateOnline(@Param("deviceId") long deviceId, @Param("brokerNode") String brokerNode, @Param("ip") String ip,
 			@Param("time") Date time);
 
-	/** 累计在线秒数由 last_online_time → 本次离线时间戳差值得出（离线时无并发竞争，直接累计）。 */
+	/**
+	 * 累计在线秒数由 last_online_time → 本次离线时间戳差值得出（离线时无并发竞争，直接累计）。 状态保护：仅 2 已激活(离线)/3 在线
+	 * 可回写离线态。禁用(4)/封禁(5) 属于管理态， 乱序 OFFLINE 事件（禁用在线设备踢线、封禁后延迟下线）不得覆盖，防止禁用/封禁被静默撤销。
+	 */
 	@Update("""
 			UPDATE iot_device
 			SET status = 2, broker_node = NULL, last_offline_time = #{time},
 			    online_seconds = online_seconds +
 			        COALESCE(TIMESTAMPDIFF(SECOND, last_online_time, #{time}), 0)
-			WHERE device_id = #{deviceId}
+			WHERE device_id = #{deviceId} AND status IN (2,3)
 			""")
 	int updateOffline(@Param("deviceId") long deviceId, @Param("time") Date time);
 
