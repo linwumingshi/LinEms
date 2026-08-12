@@ -3,6 +3,7 @@ package com.energyx.ems.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.PlanPointState;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -30,8 +31,8 @@ public class EmsExecutionRecord {
 	/** CHARGE/DISCHARGE/STANDBY */
 	private String action;
 
-	/** 点执行状态：0待下发 1已下发 2成功 3失败 4超时 */
-	private Integer state;
+	/** 点执行状态（PENDING/DISPATCHED/SUCCESS/FAILED/TIMEOUT） */
+	private PlanPointState state;
 
 	/** 下发参数 JSON */
 	private String params;

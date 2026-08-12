@@ -1,6 +1,8 @@
 package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.energyx.common.enums.PriceType;
+import com.energyx.common.enums.RevenuePeriodType;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.tenant.TenantContext;
@@ -93,7 +95,7 @@ public class EmsRevenueService {
 	}
 
 	/** 时段收益卡片。 */
-	public RevenueSummary summary(Long stationId, String periodType, LocalDate date) {
+	public RevenueSummary summary(Long stationId, RevenuePeriodType periodType, LocalDate date) {
 		LocalDate[] range = resolveRange(periodType, date);
 		Map<LocalDate, RevenueDailyResult> daily = dailyResults(stationId, range[0], range[1]);
 		RevenueSummary s = new RevenueSummary();
@@ -121,14 +123,14 @@ public class EmsRevenueService {
 	}
 
 	/** 趋势曲线：月视图按日、年视图按月。 */
-	public List<RevenueTrendPoint> trend(Long stationId, String periodType, LocalDate date) {
+	public List<RevenueTrendPoint> trend(Long stationId, RevenuePeriodType periodType, LocalDate date) {
 		LocalDate[] range = resolveRange(periodType, date);
 		Map<LocalDate, RevenueDailyResult> daily = dailyResults(stationId, range[0], range[1]);
 		List<Map.Entry<LocalDate, RevenueDailyResult>> sorted = daily.entrySet()
 			.stream()
 			.sorted(Map.Entry.comparingByKey())
 			.toList();
-		if ("MONTH".equals(periodType)) {
+		if (periodType == RevenuePeriodType.MONTH) {
 			return sorted.stream().map(e -> point(e.getKey().format(DAY_LABEL), e.getValue())).toList();
 		}
 		// YEAR → 按月归并
@@ -179,14 +181,14 @@ public class EmsRevenueService {
 	}
 
 	/** 需量节省估算（P1-2）：周期内槽位记录聚合 + 期数系数（月 ×1、年 ×12、日 ×1/30 示意）。无配置费率/无记录 → 0。 */
-	public DemandSavingsView demandSavings(Long stationId, String periodType, LocalDate date) {
+	public DemandSavingsView demandSavings(Long stationId, RevenuePeriodType periodType, LocalDate date) {
 		Long tenant = requireTenant();
 		LocalDate[] range = resolveRange(periodType, date);
 		EmsDemandConfig cfg = configService.getByStation(stationId);
 		double rate = cfg == null || cfg.getDemandRate() == null ? 0 : cfg.getDemandRate().doubleValue();
 		double factor = switch (periodType) {
-			case "DAY" -> 1.0 / 30.0; // 示意：按 30 天折算月基本电费
-			case "YEAR" -> 12.0;
+			case DAY -> 1.0 / 30.0; // 示意：按 30 天折算月基本电费
+			case YEAR -> 12.0;
 			default -> 1.0; // MONTH
 		};
 		List<EmsDemandRecord> recs = recordService.listByRange(tenant, stationId, range[0].atStartOfDay(),
@@ -331,7 +333,7 @@ public class EmsRevenueService {
 			List<PriceTier> out = new ArrayList<>();
 			for (JsonNode tier : snap) {
 				out.add(new PriceTier(LocalTime.parse(tier.path("start").asText()),
-						LocalTime.parse(tier.path("end").asText()), tier.path("priceType").asText(),
+						LocalTime.parse(tier.path("end").asText()), PriceType.of(tier.path("priceType").asText()),
 						tier.path("price").asDouble()));
 			}
 			return out;
@@ -359,11 +361,11 @@ public class EmsRevenueService {
 		}
 	}
 
-	private static LocalDate[] resolveRange(String periodType, LocalDate date) {
+	private static LocalDate[] resolveRange(RevenuePeriodType periodType, LocalDate date) {
 		return switch (periodType) {
-			case "DAY" -> new LocalDate[] { date, date };
-			case "MONTH" -> new LocalDate[] { date.withDayOfMonth(1), date.withDayOfMonth(date.lengthOfMonth()) };
-			case "YEAR" -> new LocalDate[] { date.withDayOfYear(1), date.withDayOfYear(date.lengthOfYear()) };
+			case DAY -> new LocalDate[] { date, date };
+			case MONTH -> new LocalDate[] { date.withDayOfMonth(1), date.withDayOfMonth(date.lengthOfMonth()) };
+			case YEAR -> new LocalDate[] { date.withDayOfYear(1), date.withDayOfYear(date.lengthOfYear()) };
 			default -> throw new BusinessException(ErrorCode.PARAM_INVALID, "periodType 仅支持 DAY/MONTH/YEAR");
 		};
 	}

@@ -1,5 +1,6 @@
 package com.energyx.ems.web.dto;
 
+import com.energyx.common.enums.RevenuePeriodType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -10,8 +11,8 @@ public class RevenueSummary {
 
 	private Long stationId;
 
-	/** DAY/MONTH/YEAR */
-	private String periodType;
+	/** 收益统计周期（DAY/MONTH/YEAR） */
+	private RevenuePeriodType periodType;
 
 	private String startDate;
 

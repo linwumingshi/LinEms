@@ -1,5 +1,7 @@
 package com.energyx.ems.util;
 
+import com.energyx.common.enums.PriceType;
+import com.energyx.common.enums.StrategyType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -22,9 +24,6 @@ public final class PlanGenerator {
 	/** 点序列粒度（分钟）。EmsPlanService 计算 total_energy 时复用同一粒度契约。 */
 	public static final int SLOT_MIN = 5;
 
-	/** 可产出非空计划点的策略类型（与前端 STRATEGY_GENERATABLE_TYPES 对齐；DR/SOC_CTRL 无计划产出）。 */
-	public static final Set<String> GENERATABLE_TYPES = Set.of("PEAK_VALLEY", "DEMAND", "TIME");
-
 	private PlanGenerator() {
 	}
 
@@ -36,14 +35,18 @@ public final class PlanGenerator {
 	 * @return 按时间升序的点序列
 	 */
 	public static List<PlanPoint> generate(PlanInput in) {
+		if (in.strategyType() == null || !in.strategyType().isGeneratable()) {
+			// DR（事件驱动）/SOC_CTRL（约束型）：生成期无法独立产点，返回空计划（P0-4 标注不可用）
+			return List.of();
+		}
 		List<PlanPoint> points = new ArrayList<>();
 		try {
 			JsonNode cfg = MAPPER.readTree(in.config());
 			double soc = in.socInit();
 			switch (in.strategyType()) {
-				case "DEMAND" -> soc = generateByWindows(in, cfg, soc, points);
-				case "TIME" -> soc = generateBySchedule(in, cfg, soc, points);
-				case "PEAK_VALLEY" -> {
+				case DEMAND -> soc = generateByWindows(in, cfg, soc, points);
+				case TIME -> soc = generateBySchedule(in, cfg, soc, points);
+				case PEAK_VALLEY -> {
 					if (cfg.path("priceDriven").asBoolean(false)) {
 						soc = generatePriceDriven(in, cfg, soc, points);
 					}
@@ -52,7 +55,7 @@ public final class PlanGenerator {
 					}
 				}
 				default -> {
-					// DR（事件驱动）/SOC_CTRL（约束型）：生成期无法独立产点，返回空计划（P0-4 标注不可用）
+					// isGeneratable 已收敛，此处不可达（DR/SOC_CTRL 提前返回）
 					return List.of();
 				}
 			}
@@ -148,9 +151,12 @@ public final class PlanGenerator {
 		for (PriceTier tier : tiers) {
 			if (!seenStarts.add(tier.start()))
 				continue; // 同 start 去重，保留首条（batchSave 非幂等残留防御）
+			if (tier.priceType() == null) {
+				continue; // 未知档位（快照脏值）→ 待机，不产点
+			}
 			String action = switch (tier.priceType()) {
-				case "DEEP", "VALLEY" -> "CHARGE";
-				case "PEAK", "PEEK" -> "DISCHARGE";
+				case DEEP, VALLEY -> "CHARGE";
+				case PEAK, PEEK -> "DISCHARGE";
 				default -> null; // FLAT/其他 → 待机，不产点
 			};
 			if (action == null)

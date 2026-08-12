@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.ElectricityPriceStatus;
+import com.energyx.common.enums.PriceType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -26,8 +28,8 @@ public class EmsElectricityPrice {
 
 	private String region;
 
-	/** DEEP/PEEK/PEAK/FLAT/VALLEY */
-	private String priceType;
+	/** 电价档位（DEEP/VALLEY/FLAT/PEAK/PEEK） */
+	private PriceType priceType;
 
 	private LocalTime startTime;
 
@@ -39,7 +41,8 @@ public class EmsElectricityPrice {
 
 	private LocalDate validTo;
 
-	private Integer status;
+	/** 电价档案状态（DISABLED/ENABLED） */
+	private ElectricityPriceStatus status;
 
 	@TableField(value = "create_time", fill = FieldFill.INSERT)
 	private LocalDateTime createTime;

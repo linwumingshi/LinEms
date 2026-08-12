@@ -3,6 +3,7 @@ package com.energyx.ems.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.energyx.common.enums.ElectricityPriceStatus;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
@@ -75,7 +76,7 @@ class EmsPriceServiceTest {
 		for (EmsElectricityPrice p : captor.getAllValues()) {
 			assertNull(p.getPriceId()); // 新增不携带主键
 			assertEquals(7L, p.getTenantId()); // 补租户
-			assertEquals(1, p.getStatus()); // status 缺省置 1
+			assertEquals(ElectricityPriceStatus.ENABLED, p.getStatus()); // status 缺省置 1
 		}
 	}
 

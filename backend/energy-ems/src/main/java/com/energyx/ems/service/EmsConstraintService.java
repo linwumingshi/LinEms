@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.enums.ConstraintStatus;
 import com.energyx.ems.entity.EmsConstraint;
 import com.energyx.ems.mapper.EmsConstraintMapper;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,7 @@ public class EmsConstraintService extends ServiceImpl<EmsConstraintMapper, EmsCo
 		c.setTenantId(tenant);
 		if (exists == null) {
 			if (c.getStatus() == null)
-				c.setStatus(1);
+				c.setStatus(ConstraintStatus.ENABLED);
 			save(c);
 		}
 		else {

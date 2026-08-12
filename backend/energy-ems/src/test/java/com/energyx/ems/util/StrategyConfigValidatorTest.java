@@ -1,6 +1,7 @@
 package com.energyx.ems.util;
 
 import org.junit.jupiter.api.Test;
+import com.energyx.common.enums.StrategyType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -15,7 +16,7 @@ class StrategyConfigValidatorTest {
 	private static final BigDecimal DISCHARGE_MAX = new BigDecimal("80");
 
 	private static List<String> pv(String config) {
-		return StrategyConfigValidator.validate(config, "PEAK_VALLEY", CHARGE_MAX, DISCHARGE_MAX);
+		return StrategyConfigValidator.validate(config, StrategyType.PEAK_VALLEY, CHARGE_MAX, DISCHARGE_MAX);
 	}
 
 	@Test
@@ -34,7 +35,8 @@ class StrategyConfigValidatorTest {
 	@Test
 	void nonGeneratableTypeOnlyRequiresJsonObject() {
 		// DR（事件驱动）/SOC_CTRL（约束型）：不可生成（P0-4），仅要求合法 JSON 对象
-		List<String> issues = StrategyConfigValidator.validate("{\"any\":true}", "DR", CHARGE_MAX, DISCHARGE_MAX);
+		List<String> issues = StrategyConfigValidator.validate("{\"any\":true}", StrategyType.DR, CHARGE_MAX,
+				DISCHARGE_MAX);
 		assertTrue(issues.isEmpty());
 	}
 
@@ -121,18 +123,18 @@ class StrategyConfigValidatorTest {
 		// 未配置安全约束：跳过包络上限检查，仅结构校验
 		String config = "{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":999}],"
 				+ "\"dischargeWindows\":[]}";
-		List<String> issues = StrategyConfigValidator.validate(config, "PEAK_VALLEY", null, null);
+		List<String> issues = StrategyConfigValidator.validate(config, StrategyType.PEAK_VALLEY, null, null);
 		assertTrue(issues.isEmpty());
 	}
 
 	// —— P0-4：DEMAND / TIME 结构化校验 ——
 
 	private static List<String> demand(String config) {
-		return StrategyConfigValidator.validate(config, "DEMAND", CHARGE_MAX, DISCHARGE_MAX);
+		return StrategyConfigValidator.validate(config, StrategyType.DEMAND, CHARGE_MAX, DISCHARGE_MAX);
 	}
 
 	private static List<String> time(String config) {
-		return StrategyConfigValidator.validate(config, "TIME", CHARGE_MAX, DISCHARGE_MAX);
+		return StrategyConfigValidator.validate(config, StrategyType.TIME, CHARGE_MAX, DISCHARGE_MAX);
 	}
 
 	@Test

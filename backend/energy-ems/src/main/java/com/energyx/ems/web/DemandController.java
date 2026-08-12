@@ -1,6 +1,7 @@
 package com.energyx.ems.web;
 
 import com.energyx.common.exception.BusinessException;
+import com.energyx.common.enums.RevenuePeriodType;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.model.Result;
 import com.energyx.common.tenant.TenantContext;
@@ -70,7 +71,7 @@ public class DemandController {
 
 	/** 需量节省估算（复用收益服务，避免两套口径）。 */
 	@GetMapping("/savings")
-	public Result<DemandSavingsView> savings(@RequestParam Long stationId, @RequestParam String periodType,
+	public Result<DemandSavingsView> savings(@RequestParam Long stationId, @RequestParam RevenuePeriodType periodType,
 			@RequestParam LocalDate date) {
 		return Result.ok(revenueService.demandSavings(stationId, periodType, date));
 	}

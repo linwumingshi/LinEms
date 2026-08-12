@@ -2,6 +2,8 @@ package com.energyx.ems.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.energyx.common.enums.StrategyStatus;
+import com.energyx.common.enums.StrategyType;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
@@ -51,7 +53,7 @@ class EmsStrategyServiceTest {
 	private static EmsStrategy pvStrategy(String config) {
 		EmsStrategy s = new EmsStrategy();
 		s.setStationId(10L);
-		s.setStrategyType("PEAK_VALLEY");
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
 		s.setConfig(config);
 		return s;
 	}
@@ -102,7 +104,7 @@ class EmsStrategyServiceTest {
 		ArgumentCaptor<EmsStrategy> captor = ArgumentCaptor.forClass(EmsStrategy.class);
 		verify(stratMapper).insert(captor.capture());
 		assertEquals(7L, captor.getValue().getTenantId());
-		assertEquals(0, captor.getValue().getStatus()); // 新建即草稿
+		assertEquals(StrategyStatus.DRAFT, captor.getValue().getStatus()); // 新建即草稿
 	}
 
 	@Test

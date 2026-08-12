@@ -1,6 +1,7 @@
 package com.energyx.ems.web;
 
 import com.energyx.common.model.Result;
+import com.energyx.common.enums.RevenuePeriodType;
 import com.energyx.ems.entity.EmsStationMeta;
 import com.energyx.ems.service.EmsRevenueService;
 import com.energyx.ems.web.dto.RevenueDetailRow;
@@ -29,14 +30,14 @@ public class EmsRevenueController {
 	}
 
 	@GetMapping("/summary")
-	public Result<RevenueSummary> summary(@RequestParam Long stationId, @RequestParam String periodType,
+	public Result<RevenueSummary> summary(@RequestParam Long stationId, @RequestParam RevenuePeriodType periodType,
 			@RequestParam LocalDate date) {
 		return Result.ok(service.summary(stationId, periodType, date));
 	}
 
 	@GetMapping("/trend")
-	public Result<List<RevenueTrendPoint>> trend(@RequestParam Long stationId, @RequestParam String periodType,
-			@RequestParam LocalDate date) {
+	public Result<List<RevenueTrendPoint>> trend(@RequestParam Long stationId,
+			@RequestParam RevenuePeriodType periodType, @RequestParam LocalDate date) {
 		return Result.ok(service.trend(stationId, periodType, date));
 	}
 

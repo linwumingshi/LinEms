@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.enums.ElectricityPriceStatus;
 import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import org.springframework.stereotype.Service;
@@ -53,7 +54,7 @@ public class EmsPriceService extends ServiceImpl<EmsElectricityPriceMapper, EmsE
 		for (EmsElectricityPrice p : prices) {
 			p.setTenantId(tenant);
 			if (p.getStatus() == null)
-				p.setStatus(1);
+				p.setStatus(ElectricityPriceStatus.ENABLED);
 			EmsElectricityPrice hit = existing.get(upsertKey(p.getStationId(), p.getStartTime()));
 			if (hit != null) {
 				p.setPriceId(hit.getPriceId()); // 原位更新，保留主键与 create_time

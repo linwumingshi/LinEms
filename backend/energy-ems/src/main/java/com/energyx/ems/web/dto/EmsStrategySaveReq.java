@@ -1,5 +1,6 @@
 package com.energyx.ems.web.dto;
 
+import com.energyx.common.enums.StrategyType;
 import com.energyx.ems.entity.EmsStrategy;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,8 +17,8 @@ public class EmsStrategySaveReq {
 	@NotBlank
 	private String strategyName;
 
-	@NotBlank
-	private String strategyType;
+	@NotNull
+	private StrategyType strategyType;
 
 	@NotBlank
 	private String config;

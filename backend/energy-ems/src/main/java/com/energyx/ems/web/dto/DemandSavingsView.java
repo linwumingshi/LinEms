@@ -1,5 +1,6 @@
 package com.energyx.ems.web.dto;
 
+import com.energyx.common.enums.RevenuePeriodType;
 import lombok.Data;
 
 /** 需量节省估算视图（P1-2）。金额 元、功率 kW。 */
@@ -8,8 +9,8 @@ public class DemandSavingsView {
 
 	private Long stationId;
 
-	/** DAY/MONTH/YEAR */
-	private String periodType;
+	/** 收益统计周期（DAY/MONTH/YEAR） */
+	private RevenuePeriodType periodType;
 
 	private String startDate;
 

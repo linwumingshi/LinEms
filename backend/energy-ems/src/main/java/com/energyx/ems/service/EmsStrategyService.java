@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.enums.StrategyStatus;
+import com.energyx.common.enums.StrategyType;
 import com.energyx.ems.entity.EmsConstraint;
 import com.energyx.ems.entity.EmsStrategy;
 import com.energyx.ems.mapper.EmsConstraintMapper;
@@ -32,7 +34,7 @@ public class EmsStrategyService extends ServiceImpl<EmsStrategyMapper, EmsStrate
 	public EmsStrategy create(EmsStrategy s) {
 		s.setTenantId(requireTenant());
 		validateConfig(s);
-		s.setStatus(0);
+		s.setStatus(StrategyStatus.DRAFT);
 		s.setVersion(1);
 		save(s);
 		return s;
@@ -41,8 +43,8 @@ public class EmsStrategyService extends ServiceImpl<EmsStrategyMapper, EmsStrate
 	public Page<EmsStrategy> page(long pageNo, long pageSize, Long stationId, String type, Integer status) {
 		return page(new Page<>(pageNo, pageSize),
 				new LambdaQueryWrapper<EmsStrategy>().eq(stationId != null, EmsStrategy::getStationId, stationId)
-					.eq(type != null, EmsStrategy::getStrategyType, type)
-					.eq(status != null, EmsStrategy::getStatus, status)
+					.eq(type != null, EmsStrategy::getStrategyType, StrategyType.of(type))
+					.eq(status != null, EmsStrategy::getStatus, StrategyStatus.of(status))
 					.orderByDesc(EmsStrategy::getPriority));
 	}
 
@@ -74,7 +76,7 @@ public class EmsStrategyService extends ServiceImpl<EmsStrategyMapper, EmsStrate
 		EmsStrategy s = getById(id);
 		if (s == null)
 			throw new BusinessException(ErrorCode.NOT_FOUND, "策略不存在: " + id);
-		if (s.getStatus() == 1)
+		if (s.getStatus() == StrategyStatus.ENABLED)
 			throw new BusinessException(ErrorCode.CONFLICT, "启用中的策略不能删除，请先停用");
 		removeById(id);
 	}
@@ -83,7 +85,10 @@ public class EmsStrategyService extends ServiceImpl<EmsStrategyMapper, EmsStrate
 		EmsStrategy s = getById(id);
 		if (s == null)
 			throw new BusinessException(ErrorCode.NOT_FOUND, "策略不存在: " + id);
-		s.setStatus(status);
+		StrategyStatus target = StrategyStatus.of(status);
+		if (target == null)
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "未知策略状态 status=" + status);
+		s.setStatus(target);
 		s.setVersion(s.getVersion() + 1);
 		updateById(s);
 	}

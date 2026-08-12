@@ -1,5 +1,6 @@
 package com.energyx.ems.util;
 
+import com.energyx.common.enums.StrategyType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -24,7 +25,7 @@ public final class StrategyConfigValidator {
 	}
 
 	/** 返回校验问题列表（空 = 通过）。 */
-	public static List<String> validate(String config, String strategyType, BigDecimal chargePowerMax,
+	public static List<String> validate(String config, StrategyType strategyType, BigDecimal chargePowerMax,
 			BigDecimal dischargePowerMax) {
 		List<String> issues = new ArrayList<>();
 		JsonNode obj;
@@ -39,10 +40,13 @@ public final class StrategyConfigValidator {
 			issues.add("配置必须是一个 JSON 对象");
 			return issues;
 		}
+		if (strategyType == null) {
+			return issues;
+		}
 		switch (strategyType) {
-			case "PEAK_VALLEY" -> validatePeakValley(obj, issues, chargePowerMax, dischargePowerMax);
-			case "DEMAND" -> validateDemand(obj, issues, chargePowerMax, dischargePowerMax);
-			case "TIME" -> validateTime(obj, issues, chargePowerMax, dischargePowerMax);
+			case PEAK_VALLEY -> validatePeakValley(obj, issues, chargePowerMax, dischargePowerMax);
+			case DEMAND -> validateDemand(obj, issues, chargePowerMax, dischargePowerMax);
+			case TIME -> validateTime(obj, issues, chargePowerMax, dischargePowerMax);
 			default -> {
 				// DR（事件驱动）/SOC_CTRL（约束型）：生成期不可独立产点（P0-4 标注不可用），仅要求 JSON 对象
 			}

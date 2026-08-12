@@ -1,6 +1,7 @@
 package com.energyx.ems.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.energyx.common.enums.PlanPointState;
 import com.energyx.common.kafka.KafkaRecordHandler;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.ems.entity.EmsExecutionRecord;
@@ -57,25 +58,26 @@ public class EmsAckConsumer implements KafkaRecordHandler {
 			log.debug("[EmsAck] 非计划指令 ACK，忽略 commandId={}", ack.getCommandId());
 			return;
 		}
-		Integer state = mapState(ack.getStatus());
+		PlanPointState state = mapState(ack.getStatus());
 		String result = ack.getResult() == null ? null : objectMapper.writeValueAsString(ack.getResult());
 		if (state != null) {
-			execMapper.updateStateAndResult(exec.getExecId(), state, result);
-			log.info("[EmsAck] 回写执行记录 execId={} commandId={} state={}", exec.getExecId(), ack.getCommandId(), state);
+			execMapper.updateStateAndResult(exec.getExecId(), state.getCode(), result);
+			log.info("[EmsAck] 回写执行记录 execId={} commandId={} state={}", exec.getExecId(), ack.getCommandId(),
+					state.getCode());
 		}
 		// 任何 ACK（含中间态）都尝试推进计划状态：终态足够时收敛，中间态不影响
 		planService.refreshPlanStatus(exec.getPlanId());
 	}
 
 	/** ACK 状态 → 执行记录 state；中间态返回 null（保持已下发） */
-	private Integer mapState(String ackStatus) {
+	private PlanPointState mapState(String ackStatus) {
 		if (ackStatus == null) {
 			return null;
 		}
 		return switch (ackStatus) {
-			case ACK_SUCCESS -> 2;
-			case ACK_FAILED -> 3;
-			case ACK_TIMEOUT -> 4;
+			case ACK_SUCCESS -> PlanPointState.SUCCESS;
+			case ACK_FAILED -> PlanPointState.FAILED;
+			case ACK_TIMEOUT -> PlanPointState.TIMEOUT;
 			default -> null;
 		};
 	}

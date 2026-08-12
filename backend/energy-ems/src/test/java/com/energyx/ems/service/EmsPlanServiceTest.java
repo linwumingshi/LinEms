@@ -6,6 +6,11 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.common.exception.BusinessException;
+import com.energyx.common.enums.PlanPointState;
+import com.energyx.common.enums.PlanStatus;
+import com.energyx.common.enums.PriceType;
+import com.energyx.common.enums.StrategyStatus;
+import com.energyx.common.enums.StrategyType;
 import com.energyx.ems.entity.EmsConstraint;
 import com.energyx.ems.entity.EmsElectricityPrice;
 import com.energyx.ems.entity.EmsExecutionRecord;
@@ -70,8 +75,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"06:00\",\"powerLimit\":100}],"
 				+ "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"22:00\",\"powerLimit\":80}],"
 				+ "\"socRange\":{\"min\":10,\"max\":90}}");
@@ -114,8 +119,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1);
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED);
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}]}"); // 仅充电窗口
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -144,7 +149,7 @@ class EmsPlanServiceTest {
 		EmsPlanMapper planMapper = mock(EmsPlanMapper.class);
 		EmsPlan plan = new EmsPlan();
 		plan.setPlanId(1L);
-		plan.setStatus(1); // 已执行中 → 拒绝
+		plan.setStatus(PlanStatus.RUNNING); // 已执行中 → 拒绝
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
@@ -170,7 +175,7 @@ class EmsPlanServiceTest {
 		plan.setTenantId(7L);
 		plan.setStationId(10L);
 		plan.setPlanDate(LocalDate.now());
-		plan.setStatus(0); // 待执行
+		plan.setStatus(PlanStatus.PENDING); // 待执行
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
 		EmsConstraint constraint = new EmsConstraint();
@@ -206,8 +211,8 @@ class EmsPlanServiceTest {
 		verify(commandClient, times(1)).dispatch(eq("snd_ess_pcs"), eq("ess-dev-01"), eq("CHARGE"), anyMap(),
 				anyLong());
 		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(
-				r -> r.getPlanTime() != null && r.getState() == 1 && r.getDeviceId() == 5001L)); // 执行记录带点时刻与真实
-																									// device_id
+				r -> r.getPlanTime() != null && r.getState() == PlanPointState.DISPATCHED && r.getDeviceId() == 5001L)); // 执行记录带点时刻与真实
+		// device_id
 	}
 
 	@Test
@@ -222,7 +227,7 @@ class EmsPlanServiceTest {
 		plan.setTenantId(7L);
 		plan.setStationId(10L);
 		plan.setPlanDate(LocalDate.now());
-		plan.setStatus(1); // 执行中
+		plan.setStatus(PlanStatus.RUNNING); // 执行中
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
 		// 电站 10 的 PCS 下发设备（状态推进须能解析到，否则不收敛）
@@ -234,7 +239,7 @@ class EmsPlanServiceTest {
 		rec.setPlanId(1L);
 		rec.setPlanTime(LocalTime.of(2, 0));
 		rec.setDeviceId(5001L);
-		rec.setState(2); // 成功
+		rec.setState(PlanPointState.SUCCESS); // 成功
 		when(execMapper.selectByPlanId(1L)).thenReturn(List.of(rec));
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
@@ -244,7 +249,7 @@ class EmsPlanServiceTest {
 
 		svc.refreshPlanStatus(1L);
 
-		assertEquals(2, plan.getStatus()); // 完成
+		assertEquals(PlanStatus.COMPLETED, plan.getStatus()); // 完成
 		verify(planMapper).updateById(plan);
 	}
 
@@ -260,7 +265,7 @@ class EmsPlanServiceTest {
 		plan.setTenantId(7L);
 		plan.setStationId(10L);
 		plan.setPlanDate(LocalDate.now());
-		plan.setStatus(1);
+		plan.setStatus(PlanStatus.RUNNING);
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
 		when(pcsMapper.selectByStation(eq(7L), eq(10L), any()))
@@ -271,7 +276,7 @@ class EmsPlanServiceTest {
 		rec.setPlanId(1L);
 		rec.setPlanTime(LocalTime.of(2, 0));
 		rec.setDeviceId(5001L);
-		rec.setState(3); // 失败
+		rec.setState(PlanPointState.FAILED); // 失败
 		when(execMapper.selectByPlanId(1L)).thenReturn(List.of(rec));
 
 		EmsPlanService svc = new EmsPlanService(mock(EmsStrategyMapper.class), mock(EmsElectricityPriceMapper.class),
@@ -281,7 +286,7 @@ class EmsPlanServiceTest {
 
 		svc.refreshPlanStatus(1L);
 
-		assertEquals(4, plan.getStatus()); // 失败
+		assertEquals(PlanStatus.FAILED, plan.getStatus()); // 失败
 	}
 
 	@Test
@@ -296,8 +301,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -331,8 +336,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"priceDriven\":true,\"chargePower\":80}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -344,7 +349,7 @@ class EmsPlanServiceTest {
 		when(constraintMapper.selectOne(any())).thenReturn(constraint);
 
 		EmsElectricityPrice p = new EmsElectricityPrice();
-		p.setPriceType("VALLEY");
+		p.setPriceType(PriceType.VALLEY);
 		p.setStartTime(LocalTime.of(0, 0));
 		p.setEndTime(LocalTime.of(8, 0));
 		p.setPrice(new BigDecimal("0.3"));
@@ -374,8 +379,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1); // 启用态（status=1）才可生成（P0-5d）
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED); // 启用态（status=1）才可生成（P0-5d）
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}],"
 				+ "\"dischargeWindows\":[{\"start\":\"18:00\",\"end\":\"20:00\",\"powerLimit\":80}]}"); // 手工模式
 		when(stratMapper.selectById(1L)).thenReturn(s);
@@ -412,8 +417,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(0); // 草稿 → 显式指定也拒绝
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.DRAFT); // 草稿 → 显式指定也拒绝
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
 		EmsPlanService svc = new EmsPlanService(stratMapper, mock(EmsElectricityPriceMapper.class),
@@ -435,8 +440,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("DR");
-		s.setStatus(1);
+		s.setStrategyType(StrategyType.DR);
+		s.setStatus(StrategyStatus.ENABLED);
 		s.setConfig("{\"event\":\"x\"}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -471,7 +476,7 @@ class EmsPlanServiceTest {
 		plan.setTenantId(7L);
 		plan.setStationId(10L);
 		plan.setPlanDate(LocalDate.now());
-		plan.setStatus(0); // 待执行
+		plan.setStatus(PlanStatus.PENDING); // 待执行
 		when(planMapper.selectById(1L)).thenReturn(plan);
 		when(pcsMapper.selectByStation(eq(7L), eq(10L), any())).thenReturn(List.of()); // 电站未登记
 																						// PCS
@@ -503,7 +508,7 @@ class EmsPlanServiceTest {
 		plan.setTenantId(7L);
 		plan.setStationId(10L);
 		plan.setPlanDate(LocalDate.now());
-		plan.setStatus(0);
+		plan.setStatus(PlanStatus.PENDING);
 		when(planMapper.selectById(1L)).thenReturn(plan);
 
 		EmsConstraint constraint = new EmsConstraint();
@@ -533,7 +538,8 @@ class EmsPlanServiceTest {
 
 		assertEquals(2, sent); // 1 个到点 × 2 台 PCS = 2 条下发
 		verify(commandClient, times(2)).dispatch(anyString(), anyString(), eq("DISCHARGE"), anyMap(), anyLong());
-		verify(execMapper, times(2)).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getState() == 1));
+		verify(execMapper, times(2))
+			.insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getState() == PlanPointState.DISPATCHED));
 		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getDeviceId() == 5001L));
 		verify(execMapper).insert(ArgumentMatchers.<EmsExecutionRecord>argThat(r -> r.getDeviceId() == 5002L));
 	}
@@ -552,8 +558,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1);
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED);
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}]}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -600,8 +606,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1);
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED);
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}]}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 
@@ -648,8 +654,8 @@ class EmsPlanServiceTest {
 		s.setStrategyId(1L);
 		s.setStationId(10L);
 		s.setTenantId(7L);
-		s.setStrategyType("PEAK_VALLEY");
-		s.setStatus(1);
+		s.setStrategyType(StrategyType.PEAK_VALLEY);
+		s.setStatus(StrategyStatus.ENABLED);
 		s.setConfig("{\"chargeWindows\":[{\"start\":\"02:00\",\"end\":\"04:00\",\"powerLimit\":100}]}");
 		when(stratMapper.selectById(1L)).thenReturn(s);
 

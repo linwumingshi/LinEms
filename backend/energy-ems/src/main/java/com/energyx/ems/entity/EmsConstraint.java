@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.ConstraintStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -39,7 +40,8 @@ public class EmsConstraint {
 	/** 扩展安全包络 JSON */
 	private String safetyEnvelope;
 
-	private Integer status;
+	/** 约束状态（DISABLED/ENABLED） */
+	private ConstraintStatus status;
 
 	@TableField(value = "create_time", fill = FieldFill.INSERT)
 	private LocalDateTime createTime;

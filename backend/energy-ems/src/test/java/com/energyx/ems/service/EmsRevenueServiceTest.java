@@ -1,5 +1,8 @@
 package com.energyx.ems.service;
 
+import com.energyx.common.enums.ElectricityPriceStatus;
+import com.energyx.common.enums.PriceType;
+import com.energyx.common.enums.RevenuePeriodType;
 import com.energyx.common.tenant.TenantContext;
 import com.energyx.common.tenant.TenantInfo;
 import com.energyx.ems.entity.EmsDemandConfig;
@@ -77,7 +80,7 @@ class EmsRevenueServiceTest {
 	void summary_noDevicesReturnsZeros() {
 		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of());
 
-		RevenueSummary s = svc.summary(10L, "DAY", DAY);
+		RevenueSummary s = svc.summary(10L, RevenuePeriodType.DAY, DAY);
 
 		assertEquals(0.0, s.getTotalEnergy(), 1e-9);
 		assertEquals(0.0, s.getArbitrageRevenue(), 1e-9);
@@ -98,7 +101,7 @@ class EmsRevenueServiceTest {
 				new TsdbClient.TelemetryRow(start + 1_200_000L, 60.0, 1),
 				new TsdbClient.TelemetryRow(start + 1_800_000L, 60.0, 1)));
 
-		RevenueSummary s = svc.summary(10L, "DAY", DAY);
+		RevenueSummary s = svc.summary(10L, RevenuePeriodType.DAY, DAY);
 
 		assertEquals(20.0, s.getDischargeEnergy(), 1e-9);
 		assertEquals(10.0, s.getChargeEnergy(), 1e-9);
@@ -114,13 +117,13 @@ class EmsRevenueServiceTest {
 		tier.setPriceId(1L);
 		tier.setTenantId(7L);
 		tier.setStationId(10L);
-		tier.setPriceType("PEAK");
+		tier.setPriceType(PriceType.PEAK);
 		tier.setStartTime(java.time.LocalTime.of(0, 0));
 		tier.setEndTime(java.time.LocalTime.of(0, 30));
 		tier.setPrice(new BigDecimal("1.0"));
 		tier.setValidFrom(DAY);
 		tier.setValidTo(DAY);
-		tier.setStatus(1);
+		tier.setStatus(ElectricityPriceStatus.ENABLED);
 		when(priceMapper.selectList(any())).thenReturn(List.of(tier));
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List
@@ -137,7 +140,7 @@ class EmsRevenueServiceTest {
 		meta.setInstallDate(DAY);
 		when(stationMetaService.getByStation(10L)).thenReturn(meta);
 
-		RevenueSummary s = svc.summary(10L, "DAY", DAY);
+		RevenueSummary s = svc.summary(10L, RevenuePeriodType.DAY, DAY);
 
 		assertTrue(s.isHasInvestment());
 		assertEquals(10.0, s.getArbitrageRevenue(), 1e-9);
@@ -160,7 +163,7 @@ class EmsRevenueServiceTest {
 		second.setShavedKw(BigDecimal.ZERO);
 		when(recordService.listByRange(anyLong(), eq(10L), any(), any())).thenReturn(List.of(peak, second));
 		// 未削峰 700 − 实际 650 = 50 × 40 × 月系数 1 = 2000
-		RevenueSummary s = svc.summary(10L, "MONTH", LocalDate.of(2026, 8, 11));
+		RevenueSummary s = svc.summary(10L, RevenuePeriodType.MONTH, LocalDate.of(2026, 8, 11));
 		assertEquals(2000.0, s.getDemandSavings(), 0.01);
 	}
 
@@ -208,7 +211,7 @@ class EmsRevenueServiceTest {
 		when(tsdbClient.history(anyLong(), any(), any())).thenReturn(List
 			.of(new TsdbClient.TelemetryRow(start, 60.0, 2), new TsdbClient.TelemetryRow(start + 600_000L, 60.0, 2)));
 
-		List<RevenueTrendPoint> points = svc.trend(10L, "MONTH", DAY);
+		List<RevenueTrendPoint> points = svc.trend(10L, RevenuePeriodType.MONTH, DAY);
 
 		assertEquals(31, points.size()); // 8 月 31 天
 		assertEquals("08-01", points.get(0).getLabel());

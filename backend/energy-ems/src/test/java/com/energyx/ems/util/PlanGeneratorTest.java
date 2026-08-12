@@ -1,5 +1,7 @@
 package com.energyx.ems.util;
 
+import com.energyx.common.enums.PriceType;
+import com.energyx.common.enums.StrategyType;
 import org.junit.jupiter.api.Test;
 import java.time.LocalTime;
 import java.util.List;
@@ -9,13 +11,13 @@ class PlanGeneratorTest {
 
 	@Test
 	void peakValley_basicChargeValleyDischargePeak() {
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],
 				 "dischargeWindows":[{"start":"18:00","end":"22:00","powerLimit":80}],
 				 "socRange":{"min":10,"max":90}}
 				""",
-				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), "VALLEY", 0.3),
-						new PriceTier(LocalTime.of(8, 0), LocalTime.of(23, 59), "PEAK", 1.2)),
+				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), PriceType.VALLEY, 0.3),
+						new PriceTier(LocalTime.of(8, 0), LocalTime.of(23, 59), PriceType.PEAK, 1.2)),
 				50.0, 10.0, 90.0, 100.0, 80.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		assertNotNull(points);
@@ -32,14 +34,14 @@ class PlanGeneratorTest {
 
 	@Test
 	void priceDriven_standardValleyChargePeakDischarge() {
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true,"chargePower":80,"dischargePower":60}
 				""",
-				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), "DEEP", 0.2),
-						new PriceTier(LocalTime.of(8, 0), LocalTime.of(11, 0), "PEAK", 1.2),
-						new PriceTier(LocalTime.of(11, 0), LocalTime.of(14, 0), "FLAT", 0.6),
-						new PriceTier(LocalTime.of(14, 0), LocalTime.of(18, 0), "VALLEY", 0.3),
-						new PriceTier(LocalTime.of(18, 0), LocalTime.of(22, 0), "PEEK", 1.5)),
+				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), PriceType.DEEP, 0.2),
+						new PriceTier(LocalTime.of(8, 0), LocalTime.of(11, 0), PriceType.PEAK, 1.2),
+						new PriceTier(LocalTime.of(11, 0), LocalTime.of(14, 0), PriceType.FLAT, 0.6),
+						new PriceTier(LocalTime.of(14, 0), LocalTime.of(18, 0), PriceType.VALLEY, 0.3),
+						new PriceTier(LocalTime.of(18, 0), LocalTime.of(22, 0), PriceType.PEEK, 1.5)),
 				50.0, 10.0, 90.0, 100.0, 100.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		assertNotNull(points);
@@ -59,11 +61,11 @@ class PlanGeneratorTest {
 
 	@Test
 	void priceDriven_powerFallsBackToEnvelopeWhenConfigMissing() {
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true}
 				""",
-				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(4, 0), "VALLEY", 0.3),
-						new PriceTier(LocalTime.of(12, 0), LocalTime.of(16, 0), "PEAK", 1.2)),
+				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(4, 0), PriceType.VALLEY, 0.3),
+						new PriceTier(LocalTime.of(12, 0), LocalTime.of(16, 0), PriceType.PEAK, 1.2)),
 				50.0, 10.0, 90.0, 100.0, 80.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		PlanPoint charge = points.stream().filter(p -> p.action().equals("CHARGE")).findFirst().orElseThrow();
@@ -74,7 +76,7 @@ class PlanGeneratorTest {
 
 	@Test
 	void priceDriven_noPricesThrows() {
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true}
 				""", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
 		assertThrows(IllegalArgumentException.class, () -> PlanGenerator.generate(in));
@@ -84,10 +86,10 @@ class PlanGeneratorTest {
 	void priceDriven_socReachesMaxThenChargeStops() {
 		// socInit=89 贴近上限：100kW 每 5min 推进 0.0833% SOC，约 12 点到达 90 上限即停；若无 socMax break，4h
 		// 满窗 48 点
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true,"chargePower":100}
-				""", List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(4, 0), "VALLEY", 0.3)), 89.0, 10.0, 90.0,
-				100.0, 80.0);
+				""", List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(4, 0), PriceType.VALLEY, 0.3)), 89.0, 10.0,
+				90.0, 100.0, 80.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		List<PlanPoint> charges = points.stream().filter(p -> p.action().equals("CHARGE")).toList();
 		// 充电点本身从不越界（break 在加点前判断）
@@ -102,11 +104,11 @@ class PlanGeneratorTest {
 	@Test
 	void priceDriven_duplicateStartDedup() {
 		// 同 start 双档（batchSave 非幂等残留）：保留首条 VALLEY(0-2)，跳过 DEEP(0-3)
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true}
 				""",
-				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(2, 0), "VALLEY", 0.3),
-						new PriceTier(LocalTime.of(0, 0), LocalTime.of(3, 0), "DEEP", 0.2)),
+				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(2, 0), PriceType.VALLEY, 0.3),
+						new PriceTier(LocalTime.of(0, 0), LocalTime.of(3, 0), PriceType.DEEP, 0.2)),
 				50.0, 10.0, 90.0, 100.0, 80.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		long chargePoints = points.stream().filter(p -> p.action().equals("CHARGE")).count();
@@ -116,12 +118,12 @@ class PlanGeneratorTest {
 	@Test
 	void priceDriven_falseKeepsWindowBehavior() {
 		// priceDriven=false + 手工窗口：走窗口逻辑，电价存在但不影响
-		PlanInput in = new PlanInput("PEAK_VALLEY",
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY,
 				"""
 						{"priceDriven":false,"chargeWindows":[{"start":"02:00","end":"04:00","powerLimit":100}],"dischargeWindows":[{"start":"18:00","end":"20:00","powerLimit":80}]}
 						""",
-				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), "VALLEY", 0.3)), 50.0, 10.0, 90.0, 100.0,
-				80.0);
+				List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(8, 0), PriceType.VALLEY, 0.3)), 50.0, 10.0, 90.0,
+				100.0, 80.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		PlanPoint charge = points.stream().filter(p -> p.action().equals("CHARGE")).findFirst().orElseThrow();
 		assertEquals(LocalTime.of(2, 0), charge.time());
@@ -132,10 +134,10 @@ class PlanGeneratorTest {
 	void priceDriven_dischargeStopsAtSocMin() {
 		// socInit=11 贴近下限：100kW 放电每 5min 推进 0.0833% SOC，约 12 点到达 10 下限即停；若无 socMin
 		// break，10h 满窗 120 点
-		PlanInput in = new PlanInput("PEAK_VALLEY", """
+		PlanInput in = new PlanInput(StrategyType.PEAK_VALLEY, """
 				{"priceDriven":true,"dischargePower":100}
-				""", List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(10, 0), "PEAK", 1.2)), 11.0, 10.0, 90.0,
-				100.0, 100.0);
+				""", List.of(new PriceTier(LocalTime.of(0, 0), LocalTime.of(10, 0), PriceType.PEAK, 1.2)), 11.0, 10.0,
+				90.0, 100.0, 100.0);
 		List<PlanPoint> points = PlanGenerator.generate(in);
 		List<PlanPoint> discharges = points.stream().filter(p -> p.action().equals("DISCHARGE")).toList();
 		// 放电点本身从不越界（break 在加点前判断）
@@ -150,7 +152,7 @@ class PlanGeneratorTest {
 	@Test
 	void demand_windowsProduceChargeDischarge() {
 		// 需量削峰：谷段充电备能 + 需量时段放电，窗口形状同峰谷
-		PlanInput in = new PlanInput("DEMAND", """
+		PlanInput in = new PlanInput(StrategyType.DEMAND, """
 				{"chargeWindows":[{"start":"02:00","end":"06:00","powerLimit":100}],
 				 "dischargeWindows":[{"start":"08:00","end":"11:00","powerLimit":200}],
 				 "demandLimit":500}
@@ -173,7 +175,7 @@ class PlanGeneratorTest {
 	@Test
 	void time_scheduleExplicitActions() {
 		// 时间策略：CHARGE 时段出充电点、DISCHARGE 时段出放电点、STANDBY 时段不产点
-		PlanInput in = new PlanInput("TIME", """
+		PlanInput in = new PlanInput(StrategyType.TIME, """
 				{"schedule":[
 				  {"start":"08:00","end":"09:00","action":"CHARGE","power":100},
 				  {"start":"14:00","end":"15:00","action":"DISCHARGE","power":80},
@@ -198,7 +200,7 @@ class PlanGeneratorTest {
 	@Test
 	void time_powerFallsBackToEnvelopeWhenMissing() {
 		// 时段缺 power：充电回退 chargePowerMax、放电回退 dischargePowerMax
-		PlanInput in = new PlanInput("TIME", """
+		PlanInput in = new PlanInput(StrategyType.TIME, """
 				{"schedule":[
 				  {"start":"08:00","end":"08:05","action":"CHARGE"},
 				  {"start":"14:00","end":"14:05","action":"DISCHARGE"}
@@ -214,7 +216,7 @@ class PlanGeneratorTest {
 	@Test
 	void unsupportedTypeReturnsEmpty() {
 		// DR（事件驱动）/SOC_CTRL（约束型）：生成期不可独立产点（P0-4 标注不可用）
-		PlanInput in = new PlanInput("DR", "{\"event\":\"x\"}", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
+		PlanInput in = new PlanInput(StrategyType.DR, "{\"event\":\"x\"}", List.of(), 50.0, 10.0, 90.0, 100.0, 80.0);
 		assertTrue(PlanGenerator.generate(in).isEmpty());
 	}
 

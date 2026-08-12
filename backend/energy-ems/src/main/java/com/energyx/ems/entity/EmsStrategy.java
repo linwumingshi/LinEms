@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.StrategyStatus;
+import com.energyx.common.enums.StrategyType;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -26,8 +28,8 @@ public class EmsStrategy {
 
 	private String strategyName;
 
-	/** PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME */
-	private String strategyType;
+	/** 策略类型（PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME） */
+	private StrategyType strategyType;
 
 	/** 策略配置 JSON（chargeWindows/dischargeWindows/socRange） */
 	private String config;
@@ -35,8 +37,8 @@ public class EmsStrategy {
 	/** 多策略冲突仲裁优先级 */
 	private Integer priority;
 
-	/** 0草稿 1启用 2停用 */
-	private Integer status;
+	/** 策略状态（DRAFT/ENABLED/DISABLED） */
+	private StrategyStatus status;
 
 	private Integer version;
 

@@ -1,6 +1,7 @@
 package com.energyx.ems.scheduler;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.energyx.common.enums.PlanStatus;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.mapper.EmsPlanMapper;
@@ -52,7 +53,8 @@ public class PlanExecutionScheduler {
 		LocalDate today = LocalDate.now();
 		// 今日执行中计划：到点下发当前槽位点，并尝试推进状态
 		List<EmsPlan> running = planMapper
-			.selectList(new LambdaQueryWrapper<EmsPlan>().eq(EmsPlan::getStatus, 1).eq(EmsPlan::getPlanDate, today));
+			.selectList(new LambdaQueryWrapper<EmsPlan>().eq(EmsPlan::getStatus, PlanStatus.RUNNING)
+				.eq(EmsPlan::getPlanDate, today));
 		for (EmsPlan plan : running) {
 			try {
 				planService.dispatchDuePoints(plan);
@@ -64,7 +66,8 @@ public class PlanExecutionScheduler {
 		}
 		// 昨日遗留执行中计划：状态推进收尾（不补发，仅收敛状态）
 		List<EmsPlan> stale = planMapper
-			.selectList(new LambdaQueryWrapper<EmsPlan>().eq(EmsPlan::getStatus, 1).lt(EmsPlan::getPlanDate, today));
+			.selectList(new LambdaQueryWrapper<EmsPlan>().eq(EmsPlan::getStatus, PlanStatus.RUNNING)
+				.lt(EmsPlan::getPlanDate, today));
 		for (EmsPlan plan : stale) {
 			try {
 				planService.refreshPlanStatus(plan.getPlanId());

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.enums.PlanStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -35,8 +36,8 @@ public class EmsPlan {
 	/** 计划参数快照 JSON */
 	private String planParam;
 
-	/** 0待执行 1执行中 2完成 3已取消 */
-	private Integer status;
+	/** 计划状态（PENDING/RUNNING/COMPLETED/CANCELED/FAILED） */
+	private PlanStatus status;
 
 	@TableField(value = "create_time", fill = FieldFill.INSERT)
 	private LocalDateTime createTime;

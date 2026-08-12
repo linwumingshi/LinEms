@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.redis.DistributedLock;
+import com.energyx.common.enums.ElectricityPriceStatus;
+import com.energyx.common.enums.PlanPointState;
+import com.energyx.common.enums.PlanStatus;
+import com.energyx.common.enums.StrategyStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -130,7 +134,7 @@ public class EmsPlanService {
 		List<EmsElectricityPrice> prices = priceMapper
 			.selectList(new LambdaQueryWrapper<EmsElectricityPrice>().eq(EmsElectricityPrice::getTenantId, tenant)
 				.eq(EmsElectricityPrice::getStationId, stationId)
-				.eq(EmsElectricityPrice::getStatus, 1)
+				.eq(EmsElectricityPrice::getStatus, ElectricityPriceStatus.ENABLED)
 				.le(EmsElectricityPrice::getValidFrom, planDate)
 				.ge(EmsElectricityPrice::getValidTo, planDate)
 				.orderByAsc(EmsElectricityPrice::getStartTime));
@@ -161,7 +165,7 @@ public class EmsPlanService {
 		plan.setPlanDate(planDate);
 		plan.setPlanType(derivePlanType(points));
 		plan.setTotalEnergy(computeTotalEnergy(points));
-		plan.setStatus(0); // 待执行
+		plan.setStatus(PlanStatus.PENDING);
 		plan.setPlanParam(priceDriven ? buildPriceDrivenParam(strategy.getConfig(), prices) : strategy.getConfig());
 		planMapper.insert(plan);
 		publishPlanEvent(plan, points.size());
@@ -207,10 +211,10 @@ public class EmsPlanService {
 	private void doGenerateDailyPlans() {
 		LocalDate tomorrow = LocalDate.now().plusDays(1);
 		List<EmsStrategy> enabled = strategyMapper
-			.selectList(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStatus, 1));
+			.selectList(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStatus, StrategyStatus.ENABLED));
 		Set<String> handled = new HashSet<>();
 		for (EmsStrategy s : enabled) {
-			if (!PlanGenerator.GENERATABLE_TYPES.contains(s.getStrategyType())) {
+			if (s.getStrategyType() == null || !s.getStrategyType().isGeneratable()) {
 				continue; // DR/SOC_CTRL 无计划产出，定时不空转（P0-4）
 			}
 			String key = s.getTenantId() + ":" + s.getStationId();
@@ -238,8 +242,8 @@ public class EmsPlanService {
 		if (plan == null) {
 			throw new BusinessException(ErrorCode.NOT_FOUND, "计划不存在: " + planId);
 		}
-		if (plan.getStatus() != 0) {
-			throw new BusinessException(ErrorCode.CONFLICT, "计划状态非待执行: " + plan.getStatus());
+		if (plan.getStatus() != PlanStatus.PENDING) {
+			throw new BusinessException(ErrorCode.CONFLICT, "计划状态非待执行: " + plan.getStatus().getCode());
 		}
 		List<PcsDevice> devices = resolveDispatchDevices(plan);
 		if (devices == null || devices.isEmpty()) {
@@ -250,7 +254,7 @@ public class EmsPlanService {
 		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
 		validateEnvelope(plan, points);
 		// 受理：置执行中，后续由调度器到点下发（先置位防重复受理）
-		plan.setStatus(1);
+		plan.setStatus(PlanStatus.RUNNING);
 		planMapper.updateById(plan);
 		int sent = dispatchDuePoints(plan, devices);
 		// 立即推进一次：全部点已错过窗口/已终态时马上收敛，不必等调度器下一轮
@@ -317,7 +321,7 @@ public class EmsPlanService {
 					rec.setPlanTime(p.time());
 					rec.setDeviceId(dev.deviceId());
 					rec.setAction(p.action());
-					rec.setState(1); // 已下发，待 ACK
+					rec.setState(PlanPointState.DISPATCHED);
 					rec.setParams(paramsJson);
 					execMapper.insert(rec);
 					sent++;
@@ -349,7 +353,7 @@ public class EmsPlanService {
 	 */
 	public void refreshPlanStatus(Long planId) {
 		EmsPlan plan = planMapper.selectById(planId);
-		if (plan == null || plan.getStatus() != 1) {
+		if (plan == null || plan.getStatus() != PlanStatus.RUNNING) {
 			return; // 非执行中无需推进
 		}
 		List<PcsDevice> devices = pcsDeviceMapper.selectByStation(plan.getTenantId(), plan.getStationId(), productKey);
@@ -386,7 +390,7 @@ public class EmsPlanService {
 					rec.setPlanTime(p.time());
 					rec.setDeviceId(d.deviceId());
 					rec.setAction(p.action());
-					rec.setState(4); // 超时（错过下发窗口）
+					rec.setState(PlanPointState.TIMEOUT);
 					rec.setParams(null); // 未实际下发，无参数（JSON 列不允许空串，null 合法）
 					execMapper.insert(rec);
 				}
@@ -397,12 +401,12 @@ public class EmsPlanService {
 		if (!allDispatched) {
 			return; // 还有未到期/未下发的点，继续保持执行中
 		}
-		boolean allTerminal = records.stream().allMatch(r -> r.getState() != null && r.getState() >= 2);
+		boolean allTerminal = records.stream().allMatch(r -> r.getState() != null && r.getState().isTerminal());
 		if (!allTerminal) {
 			return; // 尚有在途点（已下发未回执），继续等待 ACK
 		}
-		boolean hasFailure = records.stream().anyMatch(r -> r.getState() >= 3);
-		plan.setStatus(hasFailure ? 4 : 2);
+		boolean hasFailure = records.stream().anyMatch(r -> r.getState().isFailure());
+		plan.setStatus(hasFailure ? PlanStatus.FAILED : PlanStatus.COMPLETED);
 		planMapper.updateById(plan);
 		log.info("计划状态收敛 planId={} 状态={} 点数={} 失败={}", planId, plan.getStatus(), records.size(), hasFailure);
 	}
@@ -449,7 +453,7 @@ public class EmsPlanService {
 	public Page<EmsPlan> page(long pageNo, long pageSize, Long stationId, Integer status) {
 		return planMapper.selectPage(new Page<>(pageNo, pageSize),
 				new LambdaQueryWrapper<EmsPlan>().eq(stationId != null, EmsPlan::getStationId, stationId)
-					.eq(status != null, EmsPlan::getStatus, status)
+					.eq(status != null, EmsPlan::getStatus, PlanStatus.of(status))
 					.orderByDesc(EmsPlan::getPlanDate));
 	}
 
@@ -465,14 +469,14 @@ public class EmsPlanService {
 		if (strategyId != null) {
 			EmsStrategy s = strategyMapper.selectById(strategyId);
 			// 显式指定策略时同样强制 status=1：草稿/停用策略不能生成计划（P0-5d）
-			if (s != null && s.getStatus() != 1) {
+			if (s != null && s.getStatus() != StrategyStatus.ENABLED) {
 				throw new BusinessException(ErrorCode.CONFLICT,
-						"策略未启用（status=" + s.getStatus() + "），不能生成计划: strategyId=" + strategyId);
+						"策略未启用（status=" + s.getStatus().getCode() + "），不能生成计划: strategyId=" + strategyId);
 			}
 			return s;
 		}
 		return strategyMapper.selectOne(new LambdaQueryWrapper<EmsStrategy>().eq(EmsStrategy::getStationId, stationId)
-			.eq(EmsStrategy::getStatus, 1)
+			.eq(EmsStrategy::getStatus, StrategyStatus.ENABLED)
 			.orderByDesc(EmsStrategy::getPriority)
 			.last("LIMIT 1"));
 	}
@@ -496,7 +500,7 @@ public class EmsPlanService {
 			ArrayNode snapshot = node.putArray("priceSnapshot");
 			for (EmsElectricityPrice p : prices) {
 				ObjectNode tier = snapshot.addObject();
-				tier.put("priceType", p.getPriceType());
+				tier.put("priceType", p.getPriceType().getCode());
 				tier.put("start", p.getStartTime().toString());
 				tier.put("end", p.getEndTime().toString());
 				tier.put("price", p.getPrice().doubleValue());
