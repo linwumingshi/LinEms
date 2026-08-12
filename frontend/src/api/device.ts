@@ -21,6 +21,18 @@ export const deviceApi = {
   remove(deviceId: string): Promise<void> {
     return http.delete(`/api/device/${deviceId}`)
   },
+  /** 激活：0 未注册 / 1 未激活 → 2 已激活离线 */
+  activate(deviceId: string): Promise<void> {
+    return http.post(`/api/device/${deviceId}/activate`)
+  },
+  /** 禁用：2 已激活离线 / 3 在线 → 4 禁用 */
+  disable(deviceId: string): Promise<void> {
+    return http.post(`/api/device/${deviceId}/disable`)
+  },
+  /** 启用：4 禁用 → 2 已激活离线 */
+  enable(deviceId: string): Promise<void> {
+    return http.post(`/api/device/${deviceId}/enable`)
+  },
   /** 凭据查询：密钥脱敏（abcd****wxyz） */
   credential(deviceId: string): Promise<CredentialView> {
     return http.get(`/api/device/${deviceId}/credential`)

@@ -98,7 +98,7 @@ async function save() {
     if (isEdit.value) {
       await deviceApi.update(form.value.deviceId!, {
         deviceName: form.value.deviceName, deviceType: form.value.deviceType,
-        stationId: form.value.stationId, status: form.value.status,
+        stationId: form.value.stationId,
         firmwareVersion: form.value.firmwareVersion, mac: form.value.mac,
         ip: form.value.ip, sort: form.value.sort,
       })
@@ -114,7 +114,6 @@ async function save() {
         mac: form.value.mac || undefined,
         ip: form.value.ip || undefined,
         sort: form.value.sort ?? 0,
-        status: form.value.status,
         protocol: form.value.protocol || 'MQTT',
       })
       ElMessage.success(`创建成功，设备 ID=${id}，凭据已生成——请打开该设备详情查看/复制`)
@@ -336,6 +335,21 @@ async function remove(row: Device) {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 
+type StateAction = 'activate' | 'disable' | 'enable'
+const stateActionLabel: Record<StateAction, string> = { activate: '激活', disable: '禁用', enable: '启用' }
+
+/** 状态动作：激活(0/1→2)/禁用(2/3→4)/启用(4→2)，确认后调用对应 API 并刷新当前页 */
+async function setState(row: Device, action: StateAction) {
+  const label = stateActionLabel[action]
+  try { await ElMessageBox.confirm(`确定${label}设备「${row.deviceName}」吗？`, '提示', { type: 'warning' }) } catch { return }
+  const api = { activate: deviceApi.activate, disable: deviceApi.disable, enable: deviceApi.enable }[action]
+  try {
+    await api(row.deviceId)
+    ElMessage.success(`${label}成功`)
+    void load(); void loadReadout()
+  } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
+}
+
 watch([detail, activeTab], () => { void loadRuntime() }, { flush: 'post' })
 
 onMounted(() => { void load(); void loadReadout(); void loadOptions(); void loadStationOptions() })
@@ -407,8 +421,11 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
         <el-table-column label="创建时间" width="150">
           <template #default="{ row }"><span class="ex-num">{{ toLocal(row.createTime) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="row.status === 0 || row.status === 1" link type="primary" @click.stop="setState(row, 'activate')">激活</el-button>
+            <el-button v-if="row.status === 2 || row.status === 3" link type="warning" @click.stop="setState(row, 'disable')">禁用</el-button>
+            <el-button v-if="row.status === 4" link type="success" @click.stop="setState(row, 'enable')">启用</el-button>
             <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
             <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="remove(row)">删除</el-button>
@@ -453,11 +470,6 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
         <el-form-item label="MAC / IP">
           <el-input v-model="form.mac" placeholder="MAC" style="width: 48%" />
           <el-input v-model="form.ip" placeholder="IP" style="width: 48%; margin-left: 4%" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="form.status" style="width: 200px">
-            <el-option v-for="i in [0, 1, 2, 3, 4, 5]" :key="i" :label="deviceStatusText(i)" :value="i" />
-          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
