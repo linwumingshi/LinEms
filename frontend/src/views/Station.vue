@@ -7,6 +7,7 @@ import { stationApi } from '@/api/station'
 import { enterpriseApi } from '@/api/system'
 import type { Station, StationSaveReq, SysEnterprise } from '@/types/models'
 import { GRID_TYPE_OPTIONS, stationStatusTag, stationStatusText } from '@/utils/dicts'
+import { StationStatus } from '@/utils/enums'
 import { resetStationCache } from '@/utils/stationDict'
 
 const router = useRouter()
@@ -65,7 +66,7 @@ watch(
   () => [form.value.stationCode, form.value.stationName, form.value.enterpriseId],
   () => { errs.value = {} },
 )
-function openCreate() { form.value = { status: 1 }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { status: StationStatus.RUNNING }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Station) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   errs.value = {}
@@ -85,7 +86,7 @@ async function save() {
     pcsCapacity: form.value.pcsCapacity ?? null,
     batteryCapacity: form.value.batteryCapacity ?? null,
     gridType: form.value.gridType || undefined,
-    status: form.value.status ?? 1,
+    status: form.value.status ?? StationStatus.RUNNING,
   }
   try {
     if (isEdit.value) await stationApi.update(form.value.stationId!, body)
@@ -136,7 +137,7 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width: 110px">
-            <el-option v-for="i in [1, 0]" :key="i" :label="stationStatusText(i)" :value="i" />
+            <el-option v-for="i in [StationStatus.RUNNING, StationStatus.STOPPED]" :key="i" :label="stationStatusText(i)" :value="i" />
           </el-select>
         </el-form-item>
         <el-form-item label="电网类型">
@@ -234,8 +235,8 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
-            <el-radio :value="1">运行</el-radio>
-            <el-radio :value="0">停运</el-radio>
+            <el-radio :value="StationStatus.RUNNING">运行</el-radio>
+            <el-radio :value="StationStatus.STOPPED">停运</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { permApi } from '@/api/system'
 import type { SysPermission, SysPermissionSaveReq } from '@/types/models'
 import { permTypeText, resourceTypeText } from '@/utils/dicts'
+import { PermissionStatus, PermType, PERMISSION_STATUS_TEXT } from '@/utils/enums'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermi } from '@/utils/permission'
 
@@ -26,7 +27,7 @@ const form = ref<Partial<SysPermission>>({})
 const errs = ref<{ permCode?: string; permName?: string }>({})
 watch(() => [form.value.permCode, form.value.permName], () => { errs.value = {} })
 function openCreate(parent?: SysPermission) {
-  form.value = { parentId: parent?.permId ?? '0', permType: 1, status: 0, visible: 0, sort: 0 }
+  form.value = { parentId: parent?.permId ?? '0', permType: PermType.MENU, status: PermissionStatus.NORMAL, visible: 0, sort: 0 }
   isEdit.value = false
   dialogVisible.value = true
 }
@@ -45,10 +46,10 @@ async function save() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 
-async function switchStatus(row: SysPermission, status: number) {
+async function switchStatus(row: SysPermission, status: PermissionStatus) {
   try {
     await permApi.switchStatus(row.permId, status)
-    ElMessage.success(status === 0 ? '已启用' : '已停用')
+    ElMessage.success(status === PermissionStatus.NORMAL ? '已启用' : '已停用')
     void load()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
@@ -84,7 +85,7 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.permType === 1 ? 'primary' : row.permType === 2 ? 'success' : 'info'">{{ permTypeText(row.permType) }}</el-tag>
+            <el-tag size="small" :type="row.permType === PermType.MENU ? 'primary' : row.permType === PermType.BUTTON ? 'success' : 'info'">{{ permTypeText(row.permType) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="path" label="路由" min-width="130" show-overflow-tooltip>
@@ -98,7 +99,7 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.status === 0 ? 'success' : 'danger'" size="small">{{ row.status === 0 ? '正常' : '停用' }}</el-tag>
+            <el-tag :type="row.status === PermissionStatus.NORMAL ? 'success' : 'danger'" size="small">{{ PERMISSION_STATUS_TEXT[row.status as PermissionStatus] }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="sort" label="排序" width="70">
@@ -108,8 +109,8 @@ onMounted(load)
           <template #default="{ row }">
             <el-button v-if="hasPermi(authStore.permissions, 'system:perm:add')" link type="primary" @click="openCreate(row)">新增子</el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:perm:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:edit')" link :type="row.status === 0 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 0 ? 1 : 0)">
-              {{ row.status === 0 ? '停用' : '启用' }}
+            <el-button v-if="hasPermi(authStore.permissions, 'system:perm:edit')" link :type="row.status === PermissionStatus.NORMAL ? 'warning' : 'success'" @click="switchStatus(row, row.status === PermissionStatus.NORMAL ? PermissionStatus.DISABLED : PermissionStatus.NORMAL)">
+              {{ row.status === PermissionStatus.NORMAL ? '停用' : '启用' }}
             </el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:perm:remove')" link type="danger" @click="remove(row)">删除</el-button>
           </template>
@@ -126,9 +127,9 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="类型">
           <el-radio-group v-model="form.permType">
-            <el-radio :value="1">菜单</el-radio>
-            <el-radio :value="2">按钮</el-radio>
-            <el-radio :value="3">数据</el-radio>
+            <el-radio :value="PermType.MENU">菜单</el-radio>
+            <el-radio :value="PermType.BUTTON">按钮</el-radio>
+            <el-radio :value="PermType.DATA">数据</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="权限编码" required :error="errs.permCode">
@@ -148,13 +149,13 @@ onMounted(load)
             <el-option v-for="t in ['DEVICE', 'STRATEGY', 'ALARM', 'STATION']" :key="t" :label="`${resourceTypeText(t)} (${t})`" :value="t" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.permType === 1" label="路由">
+        <el-form-item v-if="form.permType === PermType.MENU" label="路由">
           <el-input v-model="form.path" placeholder="如 /system/user" maxlength="200" />
         </el-form-item>
-        <el-form-item v-if="form.permType === 1" label="图标">
+        <el-form-item v-if="form.permType === PermType.MENU" label="图标">
           <el-input v-model="form.icon" placeholder="如 Setting" maxlength="64" />
         </el-form-item>
-        <el-form-item v-if="form.permType === 1" label="组件">
+        <el-form-item v-if="form.permType === PermType.MENU" label="组件">
           <el-input v-model="form.component" placeholder="如 system/user/index" maxlength="128" />
         </el-form-item>
         <el-form-item label="排序">
@@ -168,8 +169,8 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
-            <el-radio :value="0">正常</el-radio>
-            <el-radio :value="1">停用</el-radio>
+            <el-radio :value="PermissionStatus.NORMAL">正常</el-radio>
+            <el-radio :value="PermissionStatus.DISABLED">停用</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注">

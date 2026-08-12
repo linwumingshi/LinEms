@@ -6,12 +6,13 @@ import { emsApi } from '@/api/ems'
 import type { EmsStationMeta, RevenueDetailRow, RevenueSummary, RevenueTrendPoint, Station } from '@/types/models'
 import { loadStations } from '@/utils/stationDict'
 import { useEChart } from '@/composables/useEChart'
+import { RevenuePeriodType } from '@/utils/enums'
 
 const route = useRoute()
 
 const stations = ref<Station[]>([])
 const stationId = ref('')
-const periodType = ref<'DAY' | 'MONTH' | 'YEAR'>('DAY')
+const periodType = ref<RevenuePeriodType>(RevenuePeriodType.DAY)
 const date = ref(todayStr())
 const loading = ref(false)
 const summary = ref<RevenueSummary | null>(null)
@@ -21,9 +22,9 @@ const meta = ref<EmsStationMeta | null>(null)
 const chartEl = ref<HTMLElement>()
 
 const PERIODS = [
-  { key: 'DAY', label: '日' },
-  { key: 'MONTH', label: '月' },
-  { key: 'YEAR', label: '年' },
+  { key: RevenuePeriodType.DAY, label: '日' },
+  { key: RevenuePeriodType.MONTH, label: '月' },
+  { key: RevenuePeriodType.YEAR, label: '年' },
 ] as const
 
 function todayStr(): string {
@@ -44,8 +45,8 @@ async function load(): Promise<void> {
     const params = { stationId: stationId.value, periodType: periodType.value, date: date.value }
     const [s, t, d] = await Promise.all([
       emsApi.revenueSummary(params),
-      periodType.value === 'DAY' ? Promise.resolve([] as RevenueTrendPoint[]) : emsApi.revenueTrend(params),
-      periodType.value === 'DAY' ? emsApi.revenueDetail({ stationId: stationId.value, date: date.value }) : Promise.resolve([] as RevenueDetailRow[]),
+      periodType.value === RevenuePeriodType.DAY ? Promise.resolve([] as RevenueTrendPoint[]) : emsApi.revenueTrend(params),
+      periodType.value === RevenuePeriodType.DAY ? emsApi.revenueDetail({ stationId: stationId.value, date: date.value }) : Promise.resolve([] as RevenueDetailRow[]),
     ])
     summary.value = s
     trend.value = t
@@ -115,7 +116,7 @@ onMounted(async () => {
 
 /** 组装当前视图的 ECharts option 并渲染（日=逐槽、月/年=趋势点）。renderChart 已在 Step 1 绑定 useEChart 组合式。 */
 function refreshChart(): void {
-  const isDay = periodType.value === 'DAY'
+  const isDay = periodType.value === RevenuePeriodType.DAY
   // DAY 视图：按 time 分组聚合（同刻多设备/多行合并为一柱），series 与 x 轴类目 1:1 对齐
   const grouped = new Map<string, { charge: number; discharge: number; revenue: number }>()
   if (isDay) {
@@ -169,7 +170,7 @@ function refreshChart(): void {
           </el-radio-group>
         </el-form-item>
         <el-form-item label="日期">
-          <el-date-picker v-model="date" :type="periodType === 'DAY' ? 'date' : periodType === 'MONTH' ? 'month' : 'year'"
+          <el-date-picker v-model="date" :type="periodType === RevenuePeriodType.DAY ? 'date' : periodType === RevenuePeriodType.MONTH ? 'month' : 'year'"
             value-format="YYYY-MM-DD" :clearable="false" @change="onChange" />
         </el-form-item>
       </el-form>
@@ -191,7 +192,7 @@ function refreshChart(): void {
       <div ref="chartEl" class="chart" role="img" aria-label="收益趋势曲线"></div>
     </section>
 
-    <section v-if="periodType === 'DAY'" class="ex-card table-card">
+    <section v-if="periodType === RevenuePeriodType.DAY" class="ex-card table-card">
       <h3 class="ex-section">单日逐槽明细</h3>
       <el-table :data="detail" size="small" empty-text="该日无遥测或方向均未知">
         <el-table-column prop="time" label="时刻" width="90" />

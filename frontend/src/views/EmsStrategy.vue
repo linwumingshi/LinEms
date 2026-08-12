@@ -5,6 +5,7 @@ import { emsApi } from '@/api/ems'
 import type { EmsConstraint, EmsStrategy, Station } from '@/types/models'
 import { isStrategyGeneratable } from '@/utils/dicts'
 import { loadStations, stationName } from '@/utils/stationDict'
+import { STRATEGY_STATUS_TAG, STRATEGY_STATUS_TEXT, STRATEGY_TYPE_TAG, STRATEGY_TYPE_TEXT, StrategyStatus, StrategyType } from '@/utils/enums'
 import StrategyConfigEditor from '@/components/StrategyConfigEditor.vue'
 import { validateStrategyConfig } from '@/utils/strategyConfig'
 import { constraintReady } from '@/utils/planGate'
@@ -28,31 +29,13 @@ const envelope = ref<EmsConstraint | null>(null)
 /** 电站下拉/列表名称数据源（loadStations 模块级缓存；失败回退裸 id） */
 const stations = ref<Station[]>([])
 
-/** 策略类型语义色（充电/放电/钢蓝/中性） */
-const TYPE_TAG: Record<string, 'success' | 'warning' | 'primary' | 'info'> = {
-  PEAK_VALLEY: 'success',
-  DEMAND: 'primary',
-  DR: 'warning',
-  SOC_CTRL: 'info',
-  TIME: 'info',
-}
-const TYPE_TEXT: Record<string, string> = {
-  PEAK_VALLEY: '峰谷套利',
-  DEMAND: '需量管理',
-  DR: '需求响应',
-  SOC_CTRL: 'SOC 约束',
-  TIME: '时间策略',
-}
-
 /** 类型下拉：未实现生成的类型追加标注 */
 const strategyTypeOptions = computed(() =>
-  Object.entries(TYPE_TEXT).map(([value, label]) => ({
+  Object.entries(STRATEGY_TYPE_TEXT).map(([value, label]) => ({
     value,
     label: isStrategyGeneratable(value) ? label : `${label}（暂不支持生成）`,
   })),
 )
-const STATUS_TEXT: Record<number, string> = { 0: '草稿', 1: '启用', 2: '停用' }
-const STATUS_TAG: Record<number, 'info' | 'success' | 'danger'> = { 0: 'info', 1: 'success', 2: 'danger' }
 
 async function load() {
   loading.value = true
@@ -168,10 +151,10 @@ async function remove(row: EmsStrategy) {
   }
 }
 
-async function switchStatus(row: EmsStrategy, status: number) {
+async function switchStatus(row: EmsStrategy, status: StrategyStatus) {
   try {
     await emsApi.strategySwitchStatus(row.strategyId, status)
-    ElMessage.success(status === 1 ? '已启用' : '已停用')
+    ElMessage.success(status === StrategyStatus.ENABLED ? '已启用' : '已停用')
     load()
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e))
@@ -218,8 +201,8 @@ onMounted(() => {
         <el-table-column prop="strategyName" label="策略名称" min-width="160" show-overflow-tooltip />
         <el-table-column label="类型" width="120">
           <template #default="{ row }">
-            <el-tag :type="TYPE_TAG[row.strategyType] ?? 'info'" size="small">
-              {{ TYPE_TEXT[row.strategyType] ?? row.strategyType }}
+            <el-tag :type="STRATEGY_TYPE_TAG[row.strategyType as StrategyType] ?? 'info'" size="small">
+              {{ STRATEGY_TYPE_TEXT[row.strategyType as StrategyType] ?? row.strategyType }}
             </el-tag>
           </template>
         </el-table-column>
@@ -231,8 +214,8 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="STATUS_TAG[row.status as number] ?? 'info'" size="small">
-              {{ STATUS_TEXT[row.status as number] }}
+            <el-tag :type="STRATEGY_STATUS_TAG[row.status as StrategyStatus] ?? 'info'" size="small">
+              {{ STRATEGY_STATUS_TEXT[row.status as StrategyStatus] }}
             </el-tag>
           </template>
         </el-table-column>
@@ -245,11 +228,11 @@ onMounted(() => {
             <el-button link type="primary" @click="copyStrategy(row)">复制</el-button>
             <el-tooltip :disabled="isStrategyGeneratable(row.strategyType)" content="该策略类型暂不支持生成计划（需求响应为事件驱动、SOC 约束为约束型策略）">
               <span>
-                <el-button v-if="row.status === 1" link type="success" :disabled="!isStrategyGeneratable(row.strategyType)" @click="generatePlan(row)">生成计划</el-button>
+                <el-button v-if="row.status === StrategyStatus.ENABLED" link type="success" :disabled="!isStrategyGeneratable(row.strategyType)" @click="generatePlan(row)">生成计划</el-button>
               </span>
             </el-tooltip>
-            <el-button link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 2 : 1)">
-              {{ row.status === 1 ? '停用' : '启用' }}
+            <el-button link :type="row.status === StrategyStatus.ENABLED ? 'warning' : 'success'" @click="switchStatus(row, row.status === StrategyStatus.ENABLED ? StrategyStatus.DISABLED : StrategyStatus.ENABLED)">
+              {{ row.status === StrategyStatus.ENABLED ? '停用' : '启用' }}
             </el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>

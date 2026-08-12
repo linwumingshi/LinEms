@@ -6,12 +6,13 @@ import { emsApi } from '@/api/ems'
 import type { DemandSavingsView, EmsDemandConfig, EmsDemandRecord, Station } from '@/types/models'
 import { loadStations } from '@/utils/stationDict'
 import { useEChart } from '@/composables/useEChart'
+import { RevenuePeriodType } from '@/utils/enums'
 
 const route = useRoute()
 
 const stations = ref<Station[]>([])
 const stationId = ref('')
-const periodType = ref<'DAY' | 'MONTH' | 'YEAR'>('DAY')
+const periodType = ref<RevenuePeriodType>(RevenuePeriodType.DAY)
 const date = ref(todayStr())
 const loading = ref(false)
 const records = ref<EmsDemandRecord[]>([])
@@ -20,9 +21,9 @@ const config = ref<EmsDemandConfig | null>(null)
 const chartEl = ref<HTMLElement>()
 
 const PERIODS = [
-  { key: 'DAY', label: '日' },
-  { key: 'MONTH', label: '月' },
-  { key: 'YEAR', label: '年' },
+  { key: RevenuePeriodType.DAY, label: '日' },
+  { key: RevenuePeriodType.MONTH, label: '月' },
+  { key: RevenuePeriodType.YEAR, label: '年' },
 ] as const
 
 const ACTION_TEXT: Record<string, string> = {
@@ -176,7 +177,7 @@ onMounted(async () => {
           </el-radio-group>
         </el-form-item>
         <el-form-item label="日期">
-          <el-date-picker v-model="date" :type="periodType === 'DAY' ? 'date' : periodType === 'MONTH' ? 'month' : 'year'"
+          <el-date-picker v-model="date" :type="periodType === RevenuePeriodType.DAY ? 'date' : periodType === RevenuePeriodType.MONTH ? 'month' : 'year'"
             value-format="YYYY-MM-DD" :clearable="false" @change="onChange" />
         </el-form-item>
       </el-form>

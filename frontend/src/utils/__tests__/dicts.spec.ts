@@ -53,11 +53,11 @@ describe('dicts', () => {
   })
 
   it('设备类型中文', () => {
-    expect(deviceTypeText('PCS')).toBe('变流器 PCS')
+    expect(deviceTypeText('PCS')).toBe('变流器')
     expect(deviceTypeText('ENERGY_CABINET')).toBe('储能柜')
     expect(deviceTypeText('NOPE')).toBe('NOPE')
     expect(deviceTypeText(null)).toBe('—')
-    expect(deviceTypeLabel('PCS')).toBe('变流器 PCS (PCS)')
+    expect(deviceTypeLabel('PCS')).toBe('变流器 (PCS)')
   })
 
   it('资源类型中文', () => {

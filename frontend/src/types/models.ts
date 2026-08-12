@@ -2,6 +2,12 @@
  * 与后端统一响应体/各业务 DTO 对应的 TypeScript 类型。
  * 字段命名与 Java（Jackson 默认驼峰）一一对应，见 Phase6 设计文档与对应 Controller 注释。
  */
+import type {
+  AlarmLevel, AlarmRecordStatus, CommandState, CredentialAuthStatus, DataScope,
+  DeviceStatus, DeviceType, ElectricityPriceStatus, GridType, PermissionStatus,
+  PlanStatus, PlanPointState, PriceType, ProductStatus, RevenuePeriodType, RoleStatus,
+  StationStatus, StrategyStatus, StrategyType, ThingModelStatus, UserStatus,
+} from '@/utils/enums'
 
 /** 统一响应体 Result<T> */
 export interface ApiResult<T> {
@@ -72,8 +78,8 @@ export interface CommandView {
   command: string
   commandType: number
   params: Record<string, unknown>
-  /** 状态机数值：见 command 域 state 字典 */
-  state: number
+  /** 状态机数值：见 CommandState 枚举（0已创建~6超时） */
+  state: CommandState
   /** CREATED/SENT/DEVICE_RECEIVED/EXECUTING/SUCCESS/FAILED/TIMEOUT */
   stateName: string
   retryCount: number
@@ -99,12 +105,12 @@ export interface AlarmRecord {
   productKey: string
   ruleId: string
   ruleCode: string
-  /** 1 提示 2 一般 3 严重 4 危急 */
-  level: number
+  /** 告警级别（AlarmLevel：1提示 2一般 3严重 4危急） */
+  level: AlarmLevel
   /** 1 属性 2 事件 3 策略 */
   type: number
-  /** 0 触发中 1 已恢复 2 已确认 */
-  status: number
+  /** 记录状态（AlarmRecordStatus：0触发中 1已恢复 2已确认） */
+  status: AlarmRecordStatus
   /** ACTIVE / RECOVERED / ACKED */
   statusName: string
   message: string
@@ -124,7 +130,8 @@ export interface AlarmRule {
   deviceId: string | null
   triggerType: number
   condition: string
-  severity: number
+  /** 规则级别（AlarmLevel：1提示 2一般 3严重 4危急） */
+  severity: AlarmLevel
   silenceSeconds: number
   recovery: string | null
   status: number
@@ -134,7 +141,7 @@ export interface AlarmRule {
   updateTime: string
 }
 
-/** /ws/alarm 实时推送的告警事件（与 AlarmMessage 对应） */
+  /** /ws/alarm 实时推送的告警事件（与 AlarmMessage 对应） */
 export interface AlarmPush {
   alarmEventId: string
   tenantId: string
@@ -142,7 +149,7 @@ export interface AlarmPush {
   productKey: string
   ruleId: string
   ruleCode: string
-  level: number
+  level: AlarmLevel
   type: number
   /** ACTIVE（触发）/ RECOVERED（恢复） */
   status: 'ACTIVE' | 'RECOVERED'
@@ -181,10 +188,12 @@ export interface EmsStrategy {
   strategyId: string
   stationId: string
   strategyName: string
-  strategyType: string
+  /** 策略类型（StrategyType：PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME） */
+  strategyType: StrategyType
   config: string
   priority: number
-  status: number
+  /** 策略状态（StrategyStatus：0草稿 1启用 2停用） */
+  status: StrategyStatus
   version: number
   tenantId: string
   createTime: string
@@ -197,7 +206,8 @@ export interface EmsPlan {
   planDate: string
   planType: number
   totalEnergy: number | null
-  status: number
+  /** 计划状态（PlanStatus：0待执行 1执行中 2完成 3已取消 4失败） */
+  status: PlanStatus
 }
 
 export interface EmsPlanPoint {
@@ -214,8 +224,8 @@ export interface EmsExecutionRecord {
   /** 计划点时刻 HH:mm */
   planTime: string
   action: string
-  /** 0待下发 1已下发 2成功 3失败 4超时 */
-  state: number
+  /** 计划点执行状态（PlanPointState：0待下发 1已下发 2成功 3失败 4超时） */
+  state: PlanPointState
   params: string | null
   result: string | null
   executeTime: string
@@ -243,14 +253,15 @@ export interface EmsElectricityPrice {
   tenantId: string
   stationId: string
   region: string
-  /** DEEP/PEEK/PEAK/FLAT/VALLEY */
-  priceType: string
+  /** 电价档位（PriceType：DEEP/VALLEY/FLAT/PEAK/PEEK） */
+  priceType: PriceType
   startTime: string
   endTime: string
   price: number
   validFrom: string
   validTo: string
-  status: number
+  /** 档案状态（ElectricityPriceStatus：0停用 1启用） */
+  status: ElectricityPriceStatus
   createTime: string
 }
 
@@ -258,8 +269,8 @@ export interface EmsElectricityPrice {
 
 export interface RevenueSummary {
   stationId: string
-  /** DAY/MONTH/YEAR */
-  periodType: string
+  /** 统计周期（RevenuePeriodType：DAY/MONTH/YEAR） */
+  periodType: RevenuePeriodType
   startDate: string
   endDate: string
   daysCount: number
@@ -338,8 +349,8 @@ export interface EmsDemandRecord {
 
 export interface DemandSavingsView {
   stationId: string
-  /** DAY/MONTH/YEAR */
-  periodType: string
+  /** 统计周期（RevenuePeriodType：DAY/MONTH/YEAR） */
+  periodType: RevenuePeriodType
   startDate: string
   endDate: string
   /** 实际最大需量 kW */
@@ -365,8 +376,10 @@ export interface Station {
   installCapacity?: number | null
   pcsCapacity?: number | null
   batteryCapacity?: number | null
-  gridType?: string | null
-  status?: number
+  /** 电网类型（GridType：工商业/园区/电网侧） */
+  gridType?: GridType | null
+  /** 电站状态（StationStatus：0停运 1运行） */
+  status?: StationStatus
   createTime?: string
   updateTime?: string
 }
@@ -391,8 +404,10 @@ export interface StationSaveReq {
   installCapacity?: number | null
   pcsCapacity?: number | null
   batteryCapacity?: number | null
-  gridType?: string
-  status?: number
+  /** 电网类型（GridType：工商业/园区/电网侧） */
+  gridType?: GridType
+  /** 电站状态（StationStatus：0停运 1运行） */
+  status?: StationStatus
 }
 
 // ---------------- 产品 Product ----------------
@@ -403,12 +418,14 @@ export interface Product {
   categoryId: string | null
   productKey: string
   productName: string
-  deviceType: string
+  /** 设备类型（DeviceType：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+  deviceType: DeviceType
   authType: string
   protocol: string
   modelVersion: string | null
   description: string | null
-  status: number
+  /** 产品状态（ProductStatus：0禁用 1启用） */
+  status: ProductStatus
   createTime: string
   updateTime: string
   deleted: number
@@ -422,7 +439,8 @@ export interface ThingModelView {
   productId: string
   version: string
   schemaJson: string
-  status: number
+  /** 物模型状态（ThingModelStatus：0草稿 1已发布 2已废弃） */
+  status: ThingModelStatus
   isCurrent: number
 }
 
@@ -470,12 +488,14 @@ export interface Device {
   stationId: string | null
   productKey: string
   deviceName: string
-  deviceType: string
+  /** 设备类型（DeviceType：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+  deviceType: DeviceType
   parentId: string
   path: string
   level: number
   sort: number
-  status: number
+  /** 设备生命周期状态（DeviceStatus：0未注册~5封禁） */
+  status: DeviceStatus
   firmwareVersion: string | null
   protocol: string
   brokerNode: string | null
@@ -492,7 +512,8 @@ export interface Device {
 
 export interface DeviceCreateReq {
   deviceName: string
-  deviceType: string
+  /** 设备类型（DeviceType：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+  deviceType: DeviceType
   productKey: string
   parentId?: string
   stationId?: string
@@ -501,7 +522,8 @@ export interface DeviceCreateReq {
   mac?: string
   ip?: string
   sort?: number
-  status?: number
+  /** 设备状态（DeviceStatus：0未注册~5封禁） */
+  status?: DeviceStatus
   protocol?: string
 }
 
@@ -513,7 +535,8 @@ export interface CredentialView {
   deviceId: string
   deviceName: string
   deviceSecret: string
-  authStatus: number
+  /** 凭据状态（CredentialAuthStatus：1正常 2吊销） */
+  authStatus: CredentialAuthStatus
 }
 
 // ---------------- RBAC 系统管理 ----------------
@@ -527,7 +550,8 @@ export interface SysUserVO {
   realName: string
   phone: string | null
   email: string | null
-  status: number
+  /** 用户状态（UserStatus：0禁用 1启用 2锁定） */
+  status: UserStatus
   lastLoginTime: string | null
   createTime: string
   roleIds: string[]
@@ -540,7 +564,8 @@ export interface SysUserSaveReq {
   phone?: string
   email?: string
   enterpriseId?: string
-  status?: number
+  /** 用户状态（UserStatus：0禁用 1启用 2锁定） */
+  status?: UserStatus
   /** 创建必填(6~64)；更新留空=不改 */
   password?: string
   /** null=不改；数组=全量覆盖 */
@@ -552,8 +577,10 @@ export interface SysRole {
   tenantId: string
   roleCode: string
   roleName: string
-  dataScope: number
-  status: number
+  /** 数据范围（DataScope：1本人 2本企业 3本租户 4全部） */
+  dataScope: DataScope
+  /** 角色状态（RoleStatus：0禁用 1启用） */
+  status: RoleStatus
   createTime: string
   updateTime: string
 }
@@ -561,8 +588,10 @@ export interface SysRole {
 export interface SysRoleSaveReq {
   roleCode?: string
   roleName?: string
-  dataScope?: number
-  status?: number
+  /** 数据范围（DataScope：1本人 2本企业 3本租户 4全部） */
+  dataScope?: DataScope
+  /** 角色状态（RoleStatus：0禁用 1启用） */
+  status?: RoleStatus
 }
 
 export interface SysPermission {
@@ -577,7 +606,8 @@ export interface SysPermission {
   icon: string | null
   component: string | null
   visible: number
-  status: number
+  /** 权限状态（PermissionStatus：0正常 1停用） */
+  status: PermissionStatus
   remark: string | null
   createTime: string
   updateTime: string
@@ -595,7 +625,8 @@ export interface SysPermissionSaveReq {
   icon?: string
   component?: string
   visible?: number
-  status?: number
+  /** 权限状态（PermissionStatus：0正常 1停用） */
+  status?: PermissionStatus
   remark?: string
 }
 

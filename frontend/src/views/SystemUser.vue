@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { enterpriseApi, roleApi, userApi } from '@/api/system'
 import type { SysEnterprise, SysRole, SysUserVO } from '@/types/models'
 import { userStatusTag, userStatusText } from '@/utils/dicts'
+import { UserStatus } from '@/utils/enums'
 import { toLocal } from '@/utils/alarmFormat'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermi } from '@/utils/permission'
@@ -44,7 +45,7 @@ function isProtected(row: SysUserVO): boolean {
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<SysUserVO> & { password?: string; roleIds?: string[] }>({})
-function openCreate() { form.value = { status: 1, roleIds: [] }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { status: UserStatus.ENABLED, roleIds: [] }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: SysUserVO) { form.value = { ...row, password: '', roleIds: [...row.roleIds] }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   if (!form.value.username?.trim() || !form.value.realName?.trim()) { ElMessage.warning('用户名 / 姓名 为必填'); return }
@@ -103,13 +104,13 @@ async function savePwd() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 
-async function switchStatus(row: SysUserVO, status: number) {
-  if (status === 0) {
+async function switchStatus(row: SysUserVO, status: UserStatus) {
+  if (status === UserStatus.DISABLED) {
     try { await ElMessageBox.confirm(`确定禁用用户「${row.username}」吗？禁用后该用户将无法登录。`, '提示', { type: 'warning' }) } catch { return }
   }
   try {
     await userApi.switchStatus(row.userId, status)
-    ElMessage.success(status === 1 ? '已启用' : '已禁用')
+    ElMessage.success(status === UserStatus.ENABLED ? '已启用' : '已禁用')
     void load()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
@@ -149,7 +150,7 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
-            <el-option v-for="i in [0, 1, 2]" :key="i" :label="userStatusText(i)" :value="i" />
+            <el-option v-for="i in Object.values(UserStatus)" :key="i" :label="userStatusText(i)" :value="i" />
           </el-select>
         </el-form-item>
         <el-form-item label="企业">
@@ -194,8 +195,8 @@ onMounted(async () => {
             <el-button v-if="hasPermi(authStore.permissions, 'system:user:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:user:role')" link type="primary" @click="openRoles(row)">分配角色</el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:user:resetPwd')" link type="warning" @click="openPwd(row)">重置密码</el-button>
-            <el-button v-if="hasPermi(authStore.permissions, 'system:user:edit') && !isProtected(row)" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
-              {{ row.status === 1 ? '禁用' : '启用' }}
+            <el-button v-if="hasPermi(authStore.permissions, 'system:user:edit') && !isProtected(row)" link :type="row.status === UserStatus.ENABLED ? 'warning' : 'success'" @click="switchStatus(row, row.status === UserStatus.ENABLED ? UserStatus.DISABLED : UserStatus.ENABLED)">
+              {{ row.status === UserStatus.ENABLED ? '禁用' : '启用' }}
             </el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:user:remove') && !isProtected(row)" link type="danger" @click="remove(row)">删除</el-button>
           </template>
@@ -234,8 +235,8 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
-            <el-radio :value="1">启用</el-radio>
-            <el-radio :value="0">禁用</el-radio>
+            <el-radio :value="UserStatus.ENABLED">启用</el-radio>
+            <el-radio :value="UserStatus.DISABLED">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="密码" :required="!isEdit">

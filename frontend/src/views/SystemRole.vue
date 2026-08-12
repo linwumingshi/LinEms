@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { permApi, roleApi } from '@/api/system'
 import type { SysPermission, SysRole } from '@/types/models'
 import { dataScopeText, roleStatusTag, roleStatusText } from '@/utils/dicts'
+import { DataScope, RoleStatus } from '@/utils/enums'
 import { toLocal } from '@/utils/alarmFormat'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermi } from '@/utils/permission'
@@ -32,7 +33,7 @@ function resetQuery() { query.value = { keyword: '', status: undefined }; pageNo
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<SysRole>>({})
-function openCreate() { form.value = { status: 1, dataScope: 3 }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { status: RoleStatus.ENABLED, dataScope: DataScope.TENANT }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: SysRole) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   if (!form.value.roleCode?.trim() || !form.value.roleName?.trim()) { ElMessage.warning('角色编码 / 名称 为必填'); return }
@@ -75,10 +76,10 @@ async function savePerms() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
 
-async function switchStatus(row: SysRole, status: number) {
+async function switchStatus(row: SysRole, status: RoleStatus) {
   try {
     await roleApi.switchStatus(row.roleId, status)
-    ElMessage.success(status === 1 ? '已启用' : '已停用')
+    ElMessage.success(status === RoleStatus.ENABLED ? '已启用' : '已停用')
     void load()
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
 }
@@ -111,7 +112,7 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
-            <el-option v-for="i in [0, 1]" :key="i" :label="roleStatusText(i)" :value="i" />
+            <el-option v-for="i in Object.values(RoleStatus)" :key="i" :label="roleStatusText(i)" :value="i" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -140,8 +141,8 @@ onMounted(load)
           <template #default="{ row }">
             <el-button v-if="hasPermi(authStore.permissions, 'system:role:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:role:perm') && Number(row.roleId) !== 1" link type="primary" @click="openPerms(row)">授权权限</el-button>
-            <el-button v-if="hasPermi(authStore.permissions, 'system:role:edit') && Number(row.roleId) !== 1" link :type="row.status === 1 ? 'warning' : 'success'" @click="switchStatus(row, row.status === 1 ? 0 : 1)">
-              {{ row.status === 1 ? '停用' : '启用' }}
+            <el-button v-if="hasPermi(authStore.permissions, 'system:role:edit') && Number(row.roleId) !== 1" link :type="row.status === RoleStatus.ENABLED ? 'warning' : 'success'" @click="switchStatus(row, row.status === RoleStatus.ENABLED ? RoleStatus.DISABLED : RoleStatus.ENABLED)">
+              {{ row.status === RoleStatus.ENABLED ? '停用' : '启用' }}
             </el-button>
             <el-button v-if="hasPermi(authStore.permissions, 'system:role:remove') && Number(row.roleId) !== 1" link type="danger" @click="remove(row)">删除</el-button>
           </template>
@@ -164,16 +165,16 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="数据范围">
           <el-select v-model="form.dataScope" style="width: 100%">
-            <el-option label="本人" :value="1" />
-            <el-option label="本企业" :value="2" />
-            <el-option label="本租户" :value="3" />
-            <el-option label="全部" :value="4" />
+            <el-option label="本人" :value="DataScope.SELF" />
+            <el-option label="本企业" :value="DataScope.ENTERPRISE" />
+            <el-option label="本租户" :value="DataScope.TENANT" />
+            <el-option label="全部" :value="DataScope.ALL" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
-            <el-radio :value="1">启用</el-radio>
-            <el-radio :value="0">停用</el-radio>
+            <el-radio :value="RoleStatus.ENABLED">启用</el-radio>
+            <el-radio :value="RoleStatus.DISABLED">停用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>

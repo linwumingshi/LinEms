@@ -9,6 +9,7 @@ import AlarmLevelTag from '@/components/AlarmLevelTag.vue'
 import { useAlarmStore } from '@/stores/alarm'
 import type { AlarmRecord, AlarmRule, Device, Product } from '@/types/models'
 import { statusTag, statusText, toLocal, tsToLocal, typeText } from '@/utils/alarmFormat'
+import { AlarmLevel, AlarmRecordStatus } from '@/utils/enums'
 
 const alarmStore = useAlarmStore()
 const { liveEvents, connected } = storeToRefs(alarmStore)
@@ -217,17 +218,17 @@ onMounted(() => {
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="级别">
           <el-select v-model="filters.level" placeholder="全部" clearable style="width: 110px">
-            <el-option label="提示" :value="1" />
-            <el-option label="一般" :value="2" />
-            <el-option label="严重" :value="3" />
-            <el-option label="危急" :value="4" />
+            <el-option label="提示" :value="AlarmLevel.INFO" />
+            <el-option label="一般" :value="AlarmLevel.GENERAL" />
+            <el-option label="严重" :value="AlarmLevel.MAJOR" />
+            <el-option label="危急" :value="AlarmLevel.CRITICAL" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="filters.status" placeholder="全部" clearable style="width: 110px">
-            <el-option label="触发中" :value="0" />
-            <el-option label="已恢复" :value="1" />
-            <el-option label="已确认" :value="2" />
+            <el-option label="触发中" :value="AlarmRecordStatus.TRIGGERING" />
+            <el-option label="已恢复" :value="AlarmRecordStatus.RECOVERED" />
+            <el-option label="已确认" :value="AlarmRecordStatus.ACKED" />
           </el-select>
         </el-form-item>
         <el-form-item label="设备">
@@ -298,8 +299,8 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="恢复/确认" width="150">
           <template #default="{ row }">
-            <span v-if="row.status === 1" class="ex-num">恢复 {{ toLocal(row.recoveredTime) }}</span>
-            <span v-else-if="row.status === 2" class="ex-num">
+            <span v-if="row.status === AlarmRecordStatus.RECOVERED" class="ex-num">恢复 {{ toLocal(row.recoveredTime) }}</span>
+            <span v-else-if="row.status === AlarmRecordStatus.ACKED" class="ex-num">
               {{ row.ackedBy }} @ {{ toLocal(row.ackTime) }}
             </span>
             <span v-else>-</span>
@@ -308,7 +309,7 @@ onMounted(() => {
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.status !== 2"
+              v-if="row.status !== AlarmRecordStatus.ACKED"
               link
               type="primary"
               :loading="acking === row.alarmEventId"

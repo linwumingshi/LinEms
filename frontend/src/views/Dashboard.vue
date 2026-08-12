@@ -10,6 +10,7 @@ import { tsdbApi } from '@/api/tsdb'
 import AlarmLevelTag from '@/components/AlarmLevelTag.vue'
 import { useEChart } from '@/composables/useEChart'
 import { levelText, statusTag, statusText, summarizeRecords, toLocal, typeText } from '@/utils/alarmFormat'
+import { AlarmRecordStatus, ALARM_RECORD_STATUS_TEXT, RevenuePeriodType } from '@/utils/enums'
 import type { AlarmRecord, Device, RevenueSummary, ShadowView, Station } from '@/types/models'
 
 const loading = ref(false)
@@ -44,7 +45,11 @@ const LEVEL_COLOR: Record<number, string> = {
   4: '#D64541',
 }
 /** 告警状态语义色（触发中/已恢复/已确认） */
-const STATUS_COLOR = ['#D64541', '#2E9E5B', '#5B6B8C']
+const STATUS_COLOR: Record<AlarmRecordStatus, string> = {
+  [AlarmRecordStatus.TRIGGERING]: '#D64541',
+  [AlarmRecordStatus.RECOVERED]: '#2E9E5B',
+  [AlarmRecordStatus.ACKED]: '#5B6B8C',
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -52,9 +57,9 @@ async function load(): Promise<void> {
   try {
     // 1) 精确总口径（每状态一条查询，size=1 仅取 total）
     const [r0, r1, r2, sample] = await Promise.all([
-      alarmApi.records({ status: 0, page: 1, size: 1 }),
-      alarmApi.records({ status: 1, page: 1, size: 1 }),
-      alarmApi.records({ status: 2, page: 1, size: 1 }),
+      alarmApi.records({ status: AlarmRecordStatus.TRIGGERING, page: 1, size: 1 }),
+      alarmApi.records({ status: AlarmRecordStatus.RECOVERED, page: 1, size: 1 }),
+      alarmApi.records({ status: AlarmRecordStatus.ACKED, page: 1, size: 1 }),
       alarmApi.records({ page: 1, size: 500 }),
     ])
     stats.value = { active: r0.total, recovered: r1.total, acked: r2.total }
@@ -125,9 +130,9 @@ watch(
           itemStyle: { borderColor: '#fff', borderWidth: 2 },
           label: { color: '#5B6B8C' },
           data: [
-            { name: '触发中', value: s.active, itemStyle: { color: STATUS_COLOR[0] } },
-            { name: '已恢复', value: s.recovered, itemStyle: { color: STATUS_COLOR[1] } },
-            { name: '已确认', value: s.acked, itemStyle: { color: STATUS_COLOR[2] } },
+            { name: ALARM_RECORD_STATUS_TEXT[AlarmRecordStatus.TRIGGERING], value: s.active, itemStyle: { color: STATUS_COLOR[AlarmRecordStatus.TRIGGERING] } },
+            { name: ALARM_RECORD_STATUS_TEXT[AlarmRecordStatus.RECOVERED], value: s.recovered, itemStyle: { color: STATUS_COLOR[AlarmRecordStatus.RECOVERED] } },
+            { name: ALARM_RECORD_STATUS_TEXT[AlarmRecordStatus.ACKED], value: s.acked, itemStyle: { color: STATUS_COLOR[AlarmRecordStatus.ACKED] } },
           ],
         },
       ],
@@ -317,7 +322,7 @@ async function loadRevenue(seq: number): Promise<void> {
   try {
     const r = await emsApi.revenueSummary({
       stationId: selectedStation.value,
-      periodType: 'DAY',
+      periodType: RevenuePeriodType.DAY,
       date: todayStr(),
     })
     if (seq !== stationSeq) return

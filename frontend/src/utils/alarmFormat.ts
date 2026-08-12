@@ -1,61 +1,24 @@
 import type { AlarmRecord } from '@/types/models'
+import { AlarmLevel, ALARM_LEVEL_TAG, ALARM_LEVEL_TEXT, AlarmRecordStatus, ALARM_RECORD_STATUS_TAG, ALARM_RECORD_STATUS_TEXT } from '@/utils/enums'
 
 /** 告警级别 → 展示文案 */
 export function levelText(level: number): string {
-  switch (level) {
-    case 1:
-      return '提示'
-    case 2:
-      return '一般'
-    case 3:
-      return '严重'
-    case 4:
-      return '危急'
-    default:
-      return `未知(${level})`
-  }
+  return ALARM_LEVEL_TEXT[level as AlarmLevel] ?? `未知(${level})`
 }
 
 /** 告警级别 → Element Plus tag 类型 */
 export function levelTag(level: number): 'info' | 'primary' | 'warning' | 'danger' {
-  switch (level) {
-    case 1:
-      return 'info'
-    case 2:
-      return 'primary'
-    case 3:
-      return 'warning'
-    case 4:
-      return 'danger'
-    default:
-      return 'info'
-  }
+  return ALARM_LEVEL_TAG[level as AlarmLevel] ?? 'info'
 }
 
-/** 记录状态（0 触发中 1 已恢复 2 已确认） → 展示文案 */
+/** 记录状态（AlarmRecordStatus：0 触发中 1 已恢复 2 已确认） → 展示文案 */
 export function statusText(status: number): string {
-  switch (status) {
-    case 0:
-      return '触发中'
-    case 1:
-      return '已恢复'
-    case 2:
-      return '已确认'
-    default:
-      return `未知(${status})`
-  }
+  return ALARM_RECORD_STATUS_TEXT[status as AlarmRecordStatus] ?? `未知(${status})`
 }
 
 /** 记录状态 → tag 类型 */
 export function statusTag(status: number): 'danger' | 'success' | 'info' {
-  switch (status) {
-    case 0:
-      return 'danger'
-    case 1:
-      return 'success'
-    default:
-      return 'info'
-  }
+  return ALARM_RECORD_STATUS_TAG[status as AlarmRecordStatus] ?? 'info'
 }
 
 /** 触发类型（1 属性 2 事件 3 策略）→ 文案 */
@@ -114,9 +77,9 @@ export function summarizeRecords(records: AlarmRecord[], days = 7): AlarmSummary
   for (const r of records) {
     levelCount[r.level] = (levelCount[r.level] ?? 0) + 1
     deviceIds.add(r.deviceId)
-    if (r.status === 0) active += 1
-    else if (r.status === 1) recovered += 1
-    else if (r.status === 2) acked += 1
+    if (r.status === AlarmRecordStatus.TRIGGERING) active += 1
+    else if (r.status === AlarmRecordStatus.RECOVERED) recovered += 1
+    else if (r.status === AlarmRecordStatus.ACKED) acked += 1
   }
 
   const trend = buildTrend(records, days)

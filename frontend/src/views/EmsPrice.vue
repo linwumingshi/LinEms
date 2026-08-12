@@ -6,6 +6,7 @@ import { emsApi } from '@/api/ems'
 import type { EmsElectricityPrice, Station } from '@/types/models'
 import { loadStations } from '@/utils/stationDict'
 import { priceTypeTag, priceTypeText } from '@/utils/dicts'
+import { ElectricityPriceStatus, PriceType } from '@/utils/enums'
 
 const route = useRoute()
 
@@ -19,7 +20,7 @@ const isEdit = ref(false)
 const saving = ref(false)
 const form = reactive<Partial<EmsElectricityPrice>>({})
 
-const PRICE_TYPES = ['DEEP', 'VALLEY', 'FLAT', 'PEAK', 'PEEK']
+const PRICE_TYPES: PriceType[] = Object.values(PriceType)
 
 /** 后端 LocalTime 序列化为 "HH:mm:ss"，页面统一截取 "HH:mm" 展示 */
 function fmtTime(t?: string | null): string {
@@ -63,7 +64,7 @@ function openCreate(): void {
     price: 0.5,
     validFrom: todayStr(),
     validTo: todayStr(),
-    status: 1,
+    status: ElectricityPriceStatus.ENABLED,
   })
   dialogVisible.value = true
 }
@@ -192,7 +193,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="row.status === ElectricityPriceStatus.ENABLED ? 'success' : 'info'">{{ row.status === ElectricityPriceStatus.ENABLED ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="130" align="center" fixed="right">
@@ -227,7 +228,7 @@ onMounted(async () => {
           <el-date-picker v-model="form.validTo" type="date" value-format="YYYY-MM-DD" placeholder="失效日期" style="width: 100%" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" />
+          <el-switch v-model="form.status" :active-value="ElectricityPriceStatus.ENABLED" :inactive-value="ElectricityPriceStatus.DISABLED" active-text="启用" inactive-text="停用" />
         </el-form-item>
       </el-form>
       <template #footer>

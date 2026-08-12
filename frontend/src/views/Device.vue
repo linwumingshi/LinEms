@@ -5,7 +5,8 @@ import { deviceApi } from '@/api/device'
 import { productApi } from '@/api/product'
 import { enterpriseApi } from '@/api/system'
 import type { CredentialView, Device, Product, Station, SysEnterprise } from '@/types/models'
-import { deviceStatusTag, deviceStatusText, deviceTypeLabel, deviceTypeOptions, deviceTypeText } from '@/utils/dicts'
+import { authStatusTag, authStatusText, deviceStatusTag, deviceStatusText, deviceTypeLabel, deviceTypeOptions, deviceTypeText } from '@/utils/dicts'
+import { DeviceStatus } from '@/utils/enums'
 import { toLocal } from '@/utils/alarmFormat'
 import { loadStations, stationName } from '@/utils/stationDict'
 import { useEChart } from '@/composables/useEChart'
@@ -28,7 +29,7 @@ async function countByStatus(status?: number) {
 }
 async function loadReadout() {
   try {
-    const [t, on, off, dis] = await Promise.all([countByStatus(), countByStatus(3), countByStatus(2), countByStatus(4)])
+    const [t, on, off, dis] = await Promise.all([countByStatus(), countByStatus(DeviceStatus.ONLINE), countByStatus(DeviceStatus.OFFLINE), countByStatus(DeviceStatus.DISABLED)])
     readout.value = { total: t, online: on, offline: off, disabled: dis }
   } catch (e) { console.warn('设备统计加载失败', e) }
 }
@@ -305,8 +306,8 @@ async function regenerateSecret() {
     plainSecret.value = cred.value.deviceSecret
     ElMessage.success('新密钥已生成（仅本次明文展示）')
     // 生成密钥联动激活（0/1→2）：刷新详情与列表的状态展示
-    if (detail.value.status === 0 || detail.value.status === 1) {
-      detail.value = { ...detail.value, status: 2 }
+    if (detail.value.status === DeviceStatus.UNREGISTERED || detail.value.status === DeviceStatus.INACTIVE) {
+      detail.value = { ...detail.value, status: DeviceStatus.OFFLINE }
       void load()
     }
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : String(e)) }
@@ -386,7 +387,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
-            <el-option v-for="i in [0, 1, 2, 3, 4, 5]" :key="i" :label="deviceStatusText(i)" :value="i" />
+            <el-option v-for="i in Object.values(DeviceStatus)" :key="i" :label="deviceStatusText(i)" :value="i" />
           </el-select>
         </el-form-item>
         <el-form-item label="电站">
@@ -428,9 +429,9 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 0 || row.status === 1" link type="primary" @click.stop="setState(row, 'activate')">激活</el-button>
-            <el-button v-if="row.status === 2 || row.status === 3" link type="warning" @click.stop="setState(row, 'disable')">禁用</el-button>
-            <el-button v-if="row.status === 4" link type="success" @click.stop="setState(row, 'enable')">启用</el-button>
+            <el-button v-if="row.status === DeviceStatus.UNREGISTERED || row.status === DeviceStatus.INACTIVE" link type="primary" @click.stop="setState(row, 'activate')">激活</el-button>
+            <el-button v-if="row.status === DeviceStatus.OFFLINE || row.status === DeviceStatus.ONLINE" link type="warning" @click.stop="setState(row, 'disable')">禁用</el-button>
+            <el-button v-if="row.status === DeviceStatus.DISABLED" link type="success" @click.stop="setState(row, 'enable')">启用</el-button>
             <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
             <el-button link type="primary" @click.stop="openEdit(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="remove(row)">删除</el-button>
@@ -518,7 +519,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
                 <p class="cred-line">
                   <span class="cred-label">密钥（脱敏）</span>
                   <code class="cred-mask">{{ cred.deviceSecret }}</code>
-                  <el-tag size="small" :type="cred.authStatus === 1 ? 'success' : 'danger'">{{ cred.authStatus === 1 ? '正常' : '吊销' }}</el-tag>
+                  <el-tag size="small" :type="authStatusTag(cred.authStatus)">{{ authStatusText(cred.authStatus) }}</el-tag>
                 </p>
                 <el-alert v-if="plainSecret" type="warning" :closable="false" class="cred-plain">
                   <template #title>

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { productApi } from '@/api/product'
 import type { Product } from '@/types/models'
 import { deviceTypeLabel, deviceTypeOptions, deviceTypeText, productStatusText, thingModelStatusText } from '@/utils/dicts'
+import { ProductStatus, ThingModelStatus } from '@/utils/enums'
 import { toLocal } from '@/utils/alarmFormat'
 
 const loading = ref(false)
@@ -19,8 +20,8 @@ async function loadReadout() {
   try {
     const [t, on, off] = await Promise.all([
       productApi.page({ pageNum: 1, pageSize: 1 }),
-      productApi.page({ pageNum: 1, pageSize: 1, status: 1 }),
-      productApi.page({ pageNum: 1, pageSize: 1, status: 0 }),
+      productApi.page({ pageNum: 1, pageSize: 1, status: ProductStatus.ENABLED }),
+      productApi.page({ pageNum: 1, pageSize: 1, status: ProductStatus.DISABLED }),
     ])
     readout.value = { total: t.total, enabled: on.total, disabled: off.total }
   } catch (e) { console.warn('产品统计加载失败', e) }
@@ -52,7 +53,7 @@ watch(
   () => [form.value.productKey, form.value.productName, form.value.deviceType],
   () => { errs.value = {} },
 )
-function openCreate() { form.value = { status: 1, protocol: 'MQTT', authType: 'SECRET' }; isEdit.value = false; dialogVisible.value = true }
+function openCreate() { form.value = { status: ProductStatus.ENABLED, protocol: 'MQTT', authType: 'SECRET' }; isEdit.value = false; dialogVisible.value = true }
 function openEdit(row: Product) { form.value = { ...row }; isEdit.value = true; dialogVisible.value = true }
 async function save() {
   errs.value = {}
@@ -83,14 +84,14 @@ const tmDrawer = ref(false)
 const tmProduct = ref<Product | null>(null)
 const tmVersion = ref('')
 const tmSchema = ref('')
-const tmStatus = ref(0)
+const tmStatus = ref<ThingModelStatus>(ThingModelStatus.DRAFT)
 const tmSaving = ref(false)
 async function openThingModel(row: Product) {
   tmProduct.value = row
   tmDrawer.value = true
   tmVersion.value = ''
   tmSchema.value = '{\n  "properties": [],\n  "services": [],\n  "events": []\n}'
-  tmStatus.value = 0
+  tmStatus.value = ThingModelStatus.DRAFT
   try {
     const view = await productApi.thingModelGet(row.productId)
     tmVersion.value = view.version
@@ -152,8 +153,8 @@ onMounted(() => { void load(); void loadReadout() })
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
-            <el-option label="启用" :value="1" />
-            <el-option label="禁用" :value="0" />
+            <el-option label="启用" :value="ProductStatus.ENABLED" />
+            <el-option label="禁用" :value="ProductStatus.DISABLED" />
           </el-select>
         </el-form-item>
         <el-form-item label="关键字">
@@ -179,7 +180,7 @@ onMounted(() => { void load(); void loadReadout() })
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ productStatusText(row.status) }}</el-tag>
+            <el-tag :type="row.status === ProductStatus.ENABLED ? 'success' : 'info'" size="small">{{ productStatusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="创建时间" width="150">
@@ -224,8 +225,8 @@ onMounted(() => { void load(); void loadReadout() })
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
-            <el-radio :value="1">启用</el-radio>
-            <el-radio :value="0">禁用</el-radio>
+            <el-radio :value="ProductStatus.ENABLED">启用</el-radio>
+            <el-radio :value="ProductStatus.DISABLED">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="描述">
@@ -240,7 +241,7 @@ onMounted(() => { void load(); void loadReadout() })
 
     <el-drawer v-model="tmDrawer" size="560px" :title="`物模型 · ${tmProduct?.productName ?? ''}`">
       <div class="tm-head">
-        <span>当前状态：<el-tag size="small" :type="tmStatus === 1 ? 'success' : tmStatus === 0 ? 'info' : 'danger'">{{ thingModelStatusText(tmStatus) }}</el-tag></span>
+        <span>当前状态：<el-tag size="small" :type="tmStatus === ThingModelStatus.PUBLISHED ? 'success' : tmStatus === ThingModelStatus.DRAFT ? 'info' : 'danger'">{{ thingModelStatusText(tmStatus) }}</el-tag></span>
       </div>
       <el-form label-width="70px" class="tm-form">
         <el-form-item label="版本号" required>

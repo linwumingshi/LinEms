@@ -9,6 +9,7 @@ import type { EmsElectricityPrice, EmsExecutionRecord, EmsPlan, EmsPlanPoint, Em
 import { loadStations, stationName } from '@/utils/stationDict'
 import { constraintReady } from '@/utils/planGate'
 import { fetchActualCurve, mergeCurves } from '@/utils/planCurve'
+import { DeviceType, ElectricityPriceStatus, PLAN_POINT_STATE_TAG, PLAN_POINT_STATE_TEXT, PlanPointState, PlanStatus, PLAN_STATUS_TAG, PLAN_STATUS_TEXT } from '@/utils/enums'
 
 const router = useRouter()
 
@@ -52,23 +53,10 @@ const PRICE_TINT: Record<string, string> = {
   PEEK: 'rgba(224,138,30,0.10)',
 }
 
-const STATUS_TEXT: Record<number, string> = { 0: '待执行', 1: '执行中', 2: '完成', 3: '已取消', 4: '失败' }
-const STATUS_TAG: Record<number, 'success' | 'primary' | 'info' | 'danger'> = { 0: 'info', 1: 'primary', 2: 'success', 3: 'info', 4: 'danger' }
-
 /** 计划类型：1 纯充 / 2 纯放 / 3 混合（后端 derivePlanType 推导，total_energy 同步落真） */
 const PLAN_TYPE_TEXT: Record<number, string> = { 1: '纯充', 2: '纯放', 3: '混合' }
 
-/** 计划点执行状态语义（执行记录表格用） */
-const EXEC_STATE_TEXT: Record<number, string> = { 0: '待下发', 1: '已下发', 2: '成功', 3: '失败', 4: '超时' }
-const EXEC_STATE_TAG: Record<number, 'info' | 'primary' | 'success' | 'danger' | 'warning'> = {
-  0: 'info',
-  1: 'primary',
-  2: 'success',
-  3: 'danger',
-  4: 'warning',
-}
-
-const statusText = computed(() => STATUS_TEXT[selected.value?.status ?? 0])
+const statusText = computed(() => PLAN_STATUS_TEXT[selected.value?.status ?? PlanStatus.PENDING])
 /** 仪表读数：各动作累计电量 = Σ 功率 × 30 分钟槽 */
 const chargeKwh = computed(() => round1(sumPower('CHARGE') * 0.5))
 const dischargeKwh = computed(() => round1(sumPower('DISCHARGE') * 0.5))
@@ -177,10 +165,10 @@ async function selectPlan(plan: EmsPlan): Promise<void> {
 async function loadActualCurve(plan: EmsPlan): Promise<void> {
   actualCurve.value = null
   try {
-    const page = await deviceApi.page({ pageNum: 1, pageSize: 50, stationId: plan.stationId, deviceType: 'PCS' })
+    const page = await deviceApi.page({ pageNum: 1, pageSize: 50, stationId: plan.stationId, deviceType: DeviceType.PCS })
     // 计划 ID 守卫：响应回来时已切换到其他计划，丢弃过期响应，不 set 不重绘
     if (selected.value?.planId !== plan.planId) return
-    const pcsDevices = page.records.filter((d) => d.deviceType === 'PCS')
+    const pcsDevices = page.records.filter((d) => d.deviceType === DeviceType.PCS)
     if (!pcsDevices.length) {
       // 电站未登记 PCS 下发设备：不展示实际曲线，波形照常渲染
       return
@@ -216,7 +204,7 @@ async function fetchBands(stationId: string, planDate: string): Promise<EmsElect
     const page = await emsApi.pricePage({ pageNo: 1, pageSize: 100, stationId })
     const day = planDate.slice(0, 10)
     return page.records.filter((p) => {
-      if (p.status === 0) return false
+      if (p.status === ElectricityPriceStatus.DISABLED) return false
       if (p.validFrom && day < p.validFrom.slice(0, 10)) return false
       if (p.validTo && day > p.validTo.slice(0, 10)) return false
       return true
@@ -437,7 +425,7 @@ onMounted(() => {
           </el-select>
           <!-- 状态筛选：后端 planPage 已支持 status，切换即重新查询 -->
           <el-select v-model="filters.status" placeholder="全部状态" clearable @change="onFilterChange">
-            <el-option v-for="(text, code) in STATUS_TEXT" :key="code" :label="text" :value="Number(code)" />
+            <el-option v-for="(text, code) in PLAN_STATUS_TEXT" :key="code" :label="text" :value="Number(code)" />
           </el-select>
         </div>
 
@@ -464,13 +452,13 @@ onMounted(() => {
           </el-table-column>
           <el-table-column label="状态" width="76">
             <template #default="{ row }">
-              <el-tag :type="STATUS_TAG[row.status as number]" effect="light" round size="small">{{ STATUS_TEXT[row.status as number] }}</el-tag>
+              <el-tag :type="PLAN_STATUS_TAG[row.status as PlanStatus]" effect="light" round size="small">{{ PLAN_STATUS_TEXT[row.status as PlanStatus] }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="132" align="right" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click.stop="onRowClick(row)">查看</el-button>
-              <el-button size="small" type="success" :disabled="row.status !== 0" @click.stop="dispatch(row)">下发</el-button>
+              <el-button size="small" type="success" :disabled="row.status !== PlanStatus.PENDING" @click.stop="dispatch(row)">下发</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -498,7 +486,7 @@ onMounted(() => {
           </div>
           <div class="head-actions">
             <el-button class="gen-btn" type="success" :disabled="generating" @click="openGenerate">生成计划</el-button>
-            <el-button class="dispatch-btn" type="primary" :disabled="!selected || selected.status !== 0" @click="dispatchSelected">
+            <el-button class="dispatch-btn" type="primary" :disabled="!selected || selected.status !== PlanStatus.PENDING" @click="dispatchSelected">
               下发计划
             </el-button>
           </div>
@@ -525,7 +513,7 @@ onMounted(() => {
               </div>
               <div class="ex-readout ex-readout-status">
                 <span class="ex-readout-label">状态</span>
-                <el-tag :type="STATUS_TAG[selected?.status ?? 0]" effect="light" round>{{ statusText }}</el-tag>
+                <el-tag :type="PLAN_STATUS_TAG[selected?.status ?? PlanStatus.PENDING]" effect="light" round>{{ statusText }}</el-tag>
               </div>
             </section>
 
@@ -566,7 +554,7 @@ onMounted(() => {
               </el-table-column>
               <el-table-column prop="state" label="状态" width="90" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="EXEC_STATE_TAG[row.state as number] ?? 'info'" size="small">{{ EXEC_STATE_TEXT[row.state as number] }}</el-tag>
+                  <el-tag :type="PLAN_POINT_STATE_TAG[row.state as PlanPointState] ?? 'info'" size="small">{{ PLAN_POINT_STATE_TEXT[row.state as PlanPointState] }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="commandId" label="指令 ID" min-width="180" show-overflow-tooltip>

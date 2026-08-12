@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stationApi } from '@/api/station'
+import type { Station } from '@/types/models'
 import { loadStations, stationName, resetStationCache } from '@/utils/stationDict'
 
 vi.mock('@/api/station', () => ({
@@ -8,7 +9,7 @@ vi.mock('@/api/station', () => ({
 
 const mockStationPage = vi.mocked(stationApi.stationPage)
 
-const stations = [
+const stations: Station[] = [
   { stationId: '1', stationName: '深圳一号站', status: 1 },
   { stationId: '2', stationName: '东莞储能站', status: 1 },
 ]
