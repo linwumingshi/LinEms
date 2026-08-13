@@ -3,6 +3,7 @@ package com.energyx.common.kafka;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.CommitFailedException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.CooperativeStickyAssignor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -87,6 +88,9 @@ public class BytesKafkaConsumerEngine implements AutoCloseable {
 		props.putAll(baseProps);
 		props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+		// 统一采用协作式再平衡（增量再平衡）：扩缩容 / 故障接管 / 连接锁接管时仅迁移被重分配的分区，
+		// 其余分区不中断，避免停世界式（RangeAssignor）重平衡对下行实时性的冲击。
+		props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, CooperativeStickyAssignor.class.getName());
 		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
 		try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props)) {
