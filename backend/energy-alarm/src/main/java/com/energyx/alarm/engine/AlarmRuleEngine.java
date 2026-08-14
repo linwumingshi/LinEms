@@ -1,8 +1,7 @@
 package com.energyx.alarm.engine;
 
 import com.energyx.alarm.model.AlarmCondition;
-
-import java.util.Locale;
+import com.energyx.common.util.ValueCompareUtils;
 
 /**
  * 告警规则纯计算引擎（无状态、无 IO、可单测）。
@@ -14,7 +13,8 @@ import java.util.Locale;
  * </ul>
  *
  * <p>
- * 比较语义：GT/GTE/LT/LTE 仅接受数值（字符串可解析为数值时也参与比较，解析失败视为不满足）； EQ/NEQ 两端均可解析为数值时按数值比较，否则按字符串比较。
+ * 比较语义（委托 {@link ValueCompareUtils}，与规则引擎共用）：GT/GTE/LT/LTE
+ * 仅接受数值（字符串可解析为数值时也参与比较，解析失败视为不满足）； EQ/NEQ 两端均可解析为数值时按数值比较，否则按字符串比较。
  * </p>
  */
 public final class AlarmRuleEngine {
@@ -38,62 +38,9 @@ public final class AlarmRuleEngine {
 		return c != null && c.getEvent() != null && c.getEvent().equals(eventName);
 	}
 
-	/** 通用比较（返回 false 表示不满足/无法比较） */
+	/** 通用比较（委托 ValueCompareUtils；返回 false 表示不满足/无法比较） */
 	public static boolean compare(String op, Object current, Object threshold) {
-		if (op == null || current == null || threshold == null) {
-			return false;
-		}
-		switch (op.toUpperCase(Locale.ROOT)) {
-			case "GT":
-				return cmp(current, threshold) > 0;
-			case "GTE":
-				return cmp(current, threshold) >= 0;
-			case "LT":
-				return cmp(current, threshold) < 0;
-			case "LTE":
-				return cmp(current, threshold) <= 0;
-			case "EQ":
-				return equalsValue(current, threshold);
-			case "NEQ":
-				return !equalsValue(current, threshold);
-			default:
-				return false;
-		}
-	}
-
-	/** 数值比较；任一侧不可解析为数值时返回 NaN（所有比较结果为 false） */
-	private static double cmp(Object a, Object b) {
-		Double da = toDouble(a);
-		Double db = toDouble(b);
-		if (da == null || db == null) {
-			return Double.NaN;
-		}
-		return Double.compare(da, db);
-	}
-
-	/** EQ：两侧均可解析为数值 → 数值相等；否则 → 字符串相等 */
-	private static boolean equalsValue(Object a, Object b) {
-		Double da = toDouble(a);
-		Double db = toDouble(b);
-		if (da != null && db != null) {
-			return Double.compare(da, db) == 0;
-		}
-		return String.valueOf(a).equals(String.valueOf(b));
-	}
-
-	private static Double toDouble(Object v) {
-		if (v instanceof Number n) {
-			return n.doubleValue();
-		}
-		if (v instanceof String s) {
-			try {
-				return Double.parseDouble(s.trim());
-			}
-			catch (NumberFormatException e) {
-				return null;
-			}
-		}
-		return null;
+		return ValueCompareUtils.compare(op, current, threshold);
 	}
 
 }
