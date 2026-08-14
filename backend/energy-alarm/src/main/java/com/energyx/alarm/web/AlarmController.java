@@ -68,13 +68,14 @@ public class AlarmController {
 	 * 场景联动触发告警（Phase 11：RuleEngine ALARM 动作入口）。
 	 *
 	 * <p>
-	 * 以「场景联动」名义创建告警记录（type=3 策略）并走既有发布链路；静默窗口防刷屏。
+	 * 以「场景联动」名义创建告警记录（type=3 策略）并走既有发布链路；静默窗口防刷屏。 tenantId 缺省 1（单租户环境，多租户接入 TenantContext
+	 * 后替换）。
 	 * </p>
 	 */
 	@PostMapping("/trigger")
 	public Result<Void> trigger(@Valid @RequestBody SceneAlarmRequest request) {
 		AlarmLevel level = AlarmLevel.of(request.getSeverity());
-		com.energyx.common.message.AlarmMessage alarm = alarmService.createSceneAlarm(null, request.getDeviceId(),
+		com.energyx.common.message.AlarmMessage alarm = alarmService.createSceneAlarm(1L, request.getDeviceId(),
 				request.getProductKey(), request.getRuleCode(), level, request.getMessage(), request.getExt());
 		return alarm == null ? Result.fail(409, "场景告警触发失败（参数缺失或静默期内）") : Result.ok();
 	}
