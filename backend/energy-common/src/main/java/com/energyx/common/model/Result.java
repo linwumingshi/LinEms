@@ -2,13 +2,20 @@ package com.energyx.common.model;
 
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.web.TraceContext;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.io.Serializable;
 
 /**
  * 统一响应体。 所有 REST 接口返回 {@link Result}，业务异常由
  * {@link com.energyx.common.exception.GlobalExceptionHandler} 兜底。
+ *
+ * <p>
+ * {@code @JsonIgnoreProperties(ignoreUnknown = true)}：跨服务 Feign 反序列化时，对端可能返回 额外字段（如
+ * isSuccess() 序列化的 "success"），忽略未知字段避免 FAIL_ON_UNKNOWN_PROPERTIES 报错。
+ * </p>
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Result<T> implements Serializable {
 
 	private static final long serialVersionUID = 1L;

@@ -25,6 +25,13 @@ public class GlobalExceptionHandler {
 		return Result.fail(e.getCode(), e.getMessage());
 	}
 
+	/** 业务校验失败（DSL 校验/乐观锁冲突/规则不存在等，IllegalArgumentException 语义=参数/业务校验错误） */
+	@ExceptionHandler(IllegalArgumentException.class)
+	public Result<Void> handleIllegalArgument(IllegalArgumentException e) {
+		log.warn("illegal argument: {}", e.getMessage());
+		return Result.fail(ErrorCode.BAD_REQUEST, e.getMessage());
+	}
+
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public Result<Void> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
 		FieldError fieldError = e.getBindingResult().getFieldError();
