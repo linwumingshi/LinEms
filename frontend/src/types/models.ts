@@ -645,3 +645,153 @@ export interface SysEnterprise {
   updateTime: string
   deleted: number
 }
+
+// ================================================================
+// 场景联动与规则编排（Phase 11，对应后端 energy-rule 模块）
+// ================================================================
+
+/** 设备引用（Trigger/Condition/Action 共用；deviceName 为空=产品级，仅 Trigger 支持） */
+export interface RuleDevice {
+  productKey: string
+  deviceName?: string | null
+}
+
+/** 比较操作符（与后端 DslValidator 一致） */
+export type RuleOp = 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ'
+
+/** 触发器（triggers[]，多触发器 OR） */
+export interface RuleTrigger {
+  type: 'PROPERTY' | 'TIMER' | 'LIFECYCLE' | 'ALARM' | 'MANUAL'
+  device?: RuleDevice | null
+  /** PROPERTY 属性标识，如 cellTemp / soc */
+  property?: string | null
+  /** PROPERTY 比较操作符 */
+  op?: RuleOp | null
+  /** PROPERTY 阈值 */
+  value?: string | number | null
+  /** TIMER cron（6 位：秒 分 时 日 月 周） */
+  cron?: string | null
+  /** LIFECYCLE 事件 ONLINE/OFFLINE */
+  event?: 'ONLINE' | 'OFFLINE' | null
+  /** ALARM 告警码（可空） */
+  alarmCode?: string | null
+  /** ALARM 级别 1提示 2一般 3严重 4危急（可空） */
+  level?: number | null
+  /** ALARM 状态 ACTIVE/RECOVER */
+  state?: 'ACTIVE' | 'RECOVER' | null
+}
+
+/** 执行条件（conditions[]，多条件 AND；空=恒真） */
+export interface RuleCondition {
+  type: 'DEVICE_STATUS' | 'TIME_RANGE' | 'PROPERTY'
+  device?: RuleDevice | null
+  /** DEVICE_STATUS 在线状态 */
+  status?: 'ONLINE' | 'OFFLINE' | null
+  /** TIME_RANGE 起点 HH:mm */
+  start?: string | null
+  /** TIME_RANGE 终点 HH:mm */
+  end?: string | null
+  /** PROPERTY 属性标识 */
+  property?: string | null
+  /** PROPERTY 比较操作符 */
+  op?: RuleOp | null
+  /** PROPERTY 阈值 */
+  value?: string | number | null
+}
+
+/** 执行动作（actions[]，多动作独立执行） */
+export interface RuleAction {
+  type: 'DEVICE_COMMAND' | 'ALARM' | 'NOTIFY' | 'RULE'
+  device?: RuleDevice | null
+  /** DEVICE_COMMAND 物模型服务标识 */
+  command?: string | null
+  /** DEVICE_COMMAND 参数 */
+  params?: Record<string, unknown> | null
+  /** DEVICE_COMMAND 超时（ms） */
+  timeoutMs?: number | null
+  /** DEVICE_COMMAND 最大重试 */
+  maxRetry?: number | null
+  /** ALARM 场景告警编码 */
+  ruleCode?: string | null
+  /** ALARM 级别 1提示 2一般 3严重 4危急 */
+  severity?: number | null
+  /** ALARM 告警内容 */
+  message?: string | null
+  /** NOTIFY 渠道（当前仅 WEBHOOK） */
+  channel?: string | null
+  /** NOTIFY webhook 地址 */
+  url?: string | null
+  /** NOTIFY 请求头（模板变量可渲染） */
+  headers?: Record<string, string> | null
+  /** NOTIFY 消息模板（${property.xxx} 渲染） */
+  template?: string | null
+  /** RULE 嵌套目标规则 ID */
+  ruleId?: number | null
+}
+
+/** 恢复配置（可选；条件从满足→不满足时执行恢复动作，不受防抖限制） */
+export interface RuleRecovery {
+  property: string
+  op: RuleOp
+  value: string | number
+  actions: RuleAction[]
+}
+
+/** TCA DSL 根配置（对应后端 RuleConfig） */
+export interface RuleConfig {
+  dslVersion?: number
+  name?: string | null
+  triggers: RuleTrigger[]
+  conditions: RuleCondition[]
+  actions: RuleAction[]
+  recovery?: RuleRecovery | null
+}
+
+/** 规则视图（详情/分页返回，对应后端 RuleView） */
+export interface RuleView {
+  ruleId: number
+  tenantId: string
+  ruleCode: string
+  ruleName: string
+  description: string | null
+  dslVersion: number
+  dsl: RuleConfig
+  debounceSeconds: number
+  priority: number
+  /** 0停用 1启用 */
+  enabled: number
+  /** 乐观锁版本 */
+  version: number
+  createBy: string
+  createTime: string
+  updateTime: string
+}
+
+/** 规则保存请求（创建/更新，对应后端 SaveRuleRequest；更新时 version 必填） */
+export interface RuleSaveReq {
+  ruleCode: string
+  ruleName: string
+  description?: string | null
+  dsl: RuleConfig
+  debounceSeconds?: number
+  priority?: number
+  enabled?: boolean
+  version?: number
+}
+
+/** 规则执行日志视图（对应后端 RuleLogView） */
+export interface RuleLogView {
+  logId: string
+  ruleId: string
+  ruleCode: string
+  tenantId: string
+  triggerType: 'PROPERTY' | 'TIMER' | 'LIFECYCLE' | 'ALARM' | 'MANUAL' | 'RULE'
+  deviceId: string | null
+  /** 1=条件满足执行 0=触发未过条件 */
+  matched: number
+  /** 每个动作的执行结果 JSON */
+  actionResult: string | null
+  costMs: number
+  traceId: string | null
+  createTime: string
+}
