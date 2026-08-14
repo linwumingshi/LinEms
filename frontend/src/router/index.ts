@@ -38,6 +38,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '告警中心', icon: 'Bell' },
       },
       {
+        path: 'rule',
+        name: 'Rule',
+        component: () => import('@/views/Rule.vue'),
+        meta: { title: '场景联动', icon: 'Connection' },
+      },
+      {
         path: 'ems/strategy',
         name: 'EmsStrategy',
         component: () => import('@/views/EmsStrategy.vue'),
