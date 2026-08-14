@@ -1,6 +1,6 @@
 # EnergyX 储能管理平台 — Redis Key 规范
 
-> 版本：v1.3（+§3.9 凭据失效广播通道）  日期：2026-08-10
+> 版本：v1.4（+§3.10 场景规则变更广播通道 + 场景联动 rule:* key）  日期：2026-08-14
 > 设计依据：ADR-005（Redis 承担加速 + 过程态，MySQL/TDengine 为权威源）；Phase1 §4.4（Broker 会话共享）
 
 ## 1. 命名总则
@@ -44,6 +44,10 @@
 | 缓存-认证凭据 | `cache:cred:{device_key}` | String(JSON) | 30min | MySQL `iot_device_credential` | device→认证钩子 | 凭据变更时失效 |
 | 缓存-电站 | `cache:station:{station_id}` | String(JSON) | 5min | MySQL `iot_station` | station→只读方 | 变更失效 |
 | 消息去重 | `iot:msg:dedup:{stage}:{device_id}:{message_id}` | SETNX | 300s | — | access/tsdb/shadow/rule 各消费边界 | 自然过期 |
+| 场景规则缓存 | `rule:cache:{rule_id}` | String(规则 JSON) | 10min（变更主动删） | MySQL `iot_scene_rule` | rule 服务(热加载) | 规则变更时删除 |
+| 场景规则防抖 | `rule:debounce:{rule_id}:{device_id}` | SETNX | debounceSeconds | — | rule 引擎(动作执行前) | 自然过期，恢复动作不受限 |
+| 场景规则状态 | `rule:state:{rule_id}:{device_id}` | String(FIRED/RECOVERED) | 随规则生命周期 | — | rule 引擎(边沿触发) | 规则停用/删除时清理 |
+| 场景规则定时锁 | `lock:scheduled:rule-{rule_id}` | Redisson/String 锁 | 任务最坏耗时 | — | rule 定时触发 | 到期自动释放，防多实例重复执行 |
 
 ## 3. 关键 key 细则
 
@@ -146,6 +150,18 @@ channel: mqtt:cred:revoked
 
 - 目的：凭据吊销从「cache:cred TTL 30min 后生效」缩到秒级；离线设备下次重连自动回源 MySQL 拿到最新状态。
 - 通道归属 `mqtt:` 域（Broker 连接面），与 Redis-key 规范统一管理。
+
+### 3.10 场景规则变更广播（Phase 11 新增，pub/sub 通道）
+
+```text
+channel: rule:changed
+消息体: {ruleId} 或 ALL（String）
+发布方: energy-rule（规则增删改/启停时）
+订阅方: energy-rule 其他实例 → 增量刷新本地规则缓存（rule:cache:* 删除 + 进程内索引重建）
+```
+
+- 目的：规则热更新从「cache:rule TTL 10min 后生效」缩到秒级，多实例规则引擎配置一致收敛。
+- 通道归属 `rule:` 域（规则引擎配置面），与 Redis-key 规范统一管理。
 
 ## 4. 缓存一致性策略
 
