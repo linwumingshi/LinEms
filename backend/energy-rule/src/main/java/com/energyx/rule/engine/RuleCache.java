@@ -186,17 +186,22 @@ public class RuleCache {
 		return ruleCache.get(ruleId);
 	}
 
-	/** 属性触发候选：设备精确匹配或产品级匹配（deviceName 可空=产品下全部） */
-	public List<CachedRule> candidatesForProperty(String productKey, String deviceName) {
+	/**
+	 * 属性触发候选（粗筛：仅按产品匹配，设备/属性精确匹配交给 TriggerMatcher）。
+	 *
+	 * <p>
+	 * 属性消息只有 deviceId 无 deviceName，此处无法按设备名精确匹配；产品级（deviceName 空） 与设备级（deviceName
+	 * 非空）规则都返回，由 TriggerMatcher 经 cache:device 反查 deviceId 判定。
+	 * </p>
+	 */
+	public List<CachedRule> candidatesForProperty(String productKey) {
 		List<CachedRule> result = new ArrayList<>();
 		for (CachedRule cached : ruleCache.values()) {
 			for (RuleTrigger t : cached.config().getTriggers()) {
 				if (!"PROPERTY".equals(t.getType()) || t.getDevice() == null) {
 					continue;
 				}
-				if (productKey.equals(t.getDevice().getProductKey())
-						&& (t.getDevice().getDeviceName() == null || t.getDevice().getDeviceName().isBlank()
-								|| t.getDevice().getDeviceName().equals(deviceName))) {
+				if (productKey.equals(t.getDevice().getProductKey())) {
 					result.add(cached);
 					break;
 				}

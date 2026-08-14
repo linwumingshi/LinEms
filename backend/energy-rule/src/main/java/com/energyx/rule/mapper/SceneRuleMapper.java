@@ -4,6 +4,7 @@ import com.energyx.rule.entity.SceneRuleRow;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -36,7 +37,7 @@ public interface SceneRuleMapper {
 			""")
 	SceneRuleRow selectById(@Param("ruleId") Long ruleId);
 
-	/** 新增规则（自动回填自增主键） */
+	/** 新增规则（useGeneratedKeys 回填自增主键到 row.ruleId） */
 	@Insert("""
 			INSERT INTO iot_scene_rule (tenant_id, rule_code, rule_name, description, dsl_version,
 			                            trigger_json, condition_json, action_json, recovery_json,
@@ -45,6 +46,7 @@ public interface SceneRuleMapper {
 			        #{triggerJson}, #{conditionJson}, #{actionJson}, #{recoveryJson},
 			        #{debounceSeconds}, #{priority}, #{enabled}, #{version}, #{createBy})
 			""")
+	@Options(useGeneratedKeys = true, keyProperty = "ruleId")
 	int insert(SceneRuleRow row);
 
 	/** 乐观锁更新（version 条件，返回受影响行数；0=并发冲突） */

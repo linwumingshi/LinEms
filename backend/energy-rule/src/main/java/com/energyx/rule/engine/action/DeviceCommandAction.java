@@ -4,6 +4,7 @@ import com.energyx.rule.client.CommandClient;
 import com.energyx.rule.engine.RuleContext;
 import com.energyx.rule.model.RuleAction;
 import com.energyx.rule.model.RuleDevice;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
  * 全部由命令中心负责；规则引擎只构造 CreateCommandRequest（createBy=0 系统自动）。
  * </p>
  */
+@Slf4j
 @Component
 public class DeviceCommandAction implements ActionExecutor {
 
@@ -40,6 +42,8 @@ public class DeviceCommandAction implements ActionExecutor {
 			return ActionResult.ok(type(), "命令已下发 commandId=" + commandId);
 		}
 		catch (Exception e) {
+			log.warn("[Rule] 命令下发失败 productKey={} deviceName={} command={}", device.getProductKey(),
+					device.getDeviceName(), action.getCommand(), e);
 			return ActionResult.fail(type(), "命令下发失败: " + e.getMessage());
 		}
 	}

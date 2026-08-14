@@ -78,7 +78,9 @@ public class RuleEngine {
 	/** 属性上报触发入口（iot-thing-property） */
 	public void onProperty(RuleContext ctx) {
 		long start = System.currentTimeMillis();
-		List<RuleCache.CachedRule> candidates = ruleCache.candidatesForProperty(ctx.getProductKey(), null);
+		List<RuleCache.CachedRule> candidates = ruleCache.candidatesForProperty(ctx.getProductKey());
+		log.info("[Rule] 属性触发候选 deviceId={} productKey={} candidates={}", ctx.getDeviceId(), ctx.getProductKey(),
+				candidates.size());
 		for (RuleCache.CachedRule cached : candidates) {
 			processRule(cached, ctx, start);
 		}

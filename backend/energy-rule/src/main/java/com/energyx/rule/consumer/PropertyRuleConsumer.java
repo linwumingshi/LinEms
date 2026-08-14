@@ -41,7 +41,10 @@ public class PropertyRuleConsumer implements KafkaRecordHandler {
 			return;
 		}
 		// rule 消费边界独立去重（重放不重复触发规则）
-		if (!messageDedup.tryOnce("rule", msg.getDeviceId(), msg.getMessageId(), 300)) {
+		boolean first = messageDedup.tryOnce("rule", msg.getDeviceId(), msg.getMessageId(), 300);
+		log.info("[Rule] 属性消息消费 deviceId={} messageId={} productKey={} first={}", msg.getDeviceId(), msg.getMessageId(),
+				msg.getProductKey(), first);
+		if (!first) {
 			return;
 		}
 		RuleContext ctx = new RuleContext();

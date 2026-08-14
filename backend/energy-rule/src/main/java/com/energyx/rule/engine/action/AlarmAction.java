@@ -4,6 +4,7 @@ import com.energyx.common.model.Result;
 import com.energyx.rule.client.AlarmFeignClient;
 import com.energyx.rule.engine.RuleContext;
 import com.energyx.rule.model.RuleAction;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -17,6 +18,7 @@ import java.util.Map;
  * 发布链路；告警的合并/静默/通知由告警中心负责。
  * </p>
  */
+@Slf4j
 @Component
 public class AlarmAction implements ActionExecutor {
 
@@ -57,6 +59,7 @@ public class AlarmAction implements ActionExecutor {
 			return ActionResult.ok(type(), "告警已触发 ruleCode=" + action.getRuleCode());
 		}
 		catch (Exception e) {
+			log.warn("[Rule] 告警触发失败 ruleCode={} deviceId={}", action.getRuleCode(), ctx.getDeviceId(), e);
 			return ActionResult.fail(type(), "告警触发失败: " + e.getMessage());
 		}
 	}

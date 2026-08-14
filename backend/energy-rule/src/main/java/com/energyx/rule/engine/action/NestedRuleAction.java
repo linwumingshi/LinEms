@@ -3,6 +3,7 @@ package com.energyx.rule.engine.action;
 import com.energyx.rule.engine.RuleContext;
 import com.energyx.rule.engine.RuleEngine;
 import com.energyx.rule.model.RuleAction;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,14 +14,20 @@ import org.springframework.stereotype.Component;
  * 5（RuleProperties.nestMaxDepth）+ 环检测（RuleContext.visitedRuleIds 沿调用链传递），
  * 成环/超深拒绝执行并返回失败结果。
  * </p>
+ *
+ * <p>
+ * RuleEngine 经 {@link ObjectProvider} 延迟注入：NestedRuleAction 由 ActionExecutorService 收集、
+ * ActionExecutorService 由 RuleEngine 持有，构造时直接注入 RuleEngine 会构成
+ * {@code NestedRuleAction → RuleEngine → ActionExecutorService → NestedRuleAction} 循环依赖。
+ * </p>
  */
 @Component
 public class NestedRuleAction implements ActionExecutor {
 
-	private final RuleEngine ruleEngine;
+	private final ObjectProvider<RuleEngine> ruleEngineProvider;
 
-	public NestedRuleAction(RuleEngine ruleEngine) {
-		this.ruleEngine = ruleEngine;
+	public NestedRuleAction(ObjectProvider<RuleEngine> ruleEngineProvider) {
+		this.ruleEngineProvider = ruleEngineProvider;
 	}
 
 	@Override
@@ -33,7 +40,7 @@ public class NestedRuleAction implements ActionExecutor {
 		if (action.getRuleId() == null) {
 			return ActionResult.fail(type(), "RULE 动作缺 ruleId");
 		}
-		var results = ruleEngine.executeNested(action.getRuleId(), ctx, 1);
+		var results = ruleEngineProvider.getObject().executeNested(action.getRuleId(), ctx, 1);
 		if (results.isEmpty()) {
 			return ActionResult.fail(type(), "嵌套规则未执行（条件不满足/深度超限/成环）: " + action.getRuleId());
 		}
