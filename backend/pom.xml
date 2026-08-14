@@ -40,6 +40,7 @@
     <module>energy-command</module>
     <module>energy-alarm</module>
     <module>energy-ems</module>
+    <module>energy-rule</module>
   </modules>
 
   <properties>
