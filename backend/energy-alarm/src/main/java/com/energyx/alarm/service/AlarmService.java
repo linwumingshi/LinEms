@@ -77,6 +77,8 @@ public class AlarmService {
 
 	private static final int TRIGGER_EVENT = 2;
 
+	private static final int TRIGGER_STRATEGY = 3;
+
 	private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
 	};
 
@@ -433,6 +435,59 @@ public class AlarmService {
 			return new ArrayList<>(ruleCache);
 		}
 		return ruleCache.stream().filter(r -> r.getTenantId() != null && r.getTenantId().equals(tenantId)).toList();
+	}
+
+	/**
+	 * 场景联动触发告警（Phase 11：RuleEngine ALARM 动作入口，POST /api/alarm/trigger）。
+	 *
+	 * <p>
+	 * 不依赖告警规则缓存：直接以「场景联动」名义创建一条告警记录（type=3 策略）并发布 iot-alarm / WS / ES 三路。ruleId
+	 * 置空（非告警规则产生）；静默复用既有 {@code alarm:silence} 语义，ruleId 用 0 占位（场景告警由场景规则的防抖窗口兜底，
+	 * 告警中心侧静默仅防多实例重复）。
+	 * </p>
+	 * @return 告警消息（成功）或 null（设备/编码缺失或静默期内）
+	 */
+	public AlarmMessage createSceneAlarm(Long tenantId, Long deviceId, String productKey, String ruleCode,
+			AlarmLevel level, String message, Map<String, Object> ext) {
+		if (deviceId == null || ruleCode == null || ruleCode.isBlank()) {
+			log.warn("[Alarm] 场景告警参数缺失 deviceId={} ruleCode={}", deviceId, ruleCode);
+			return null;
+		}
+		// 场景告警 ruleId=0 占位（非告警规则），防多实例重复触发
+		String silenceKey = AlarmRedisKeys.silence(0L, deviceId);
+		if (Boolean.TRUE.equals(redis.hasKey(silenceKey))) {
+			return null;
+		}
+		AlarmLevel severity = level == null ? AlarmLevel.SERIOUS : level;
+		String alarmEventId = idGenerator.nextIdStr();
+		LocalDateTime now = LocalDateTime.now();
+		Map<String, Object> payload = ext == null ? new LinkedHashMap<>() : new LinkedHashMap<>(ext);
+		payload.put("scene", ruleCode);
+		int inserted = recordMapper.insert(alarmEventId, tenantId, deviceId, productKey, 0L, ruleCode,
+				severity.getCode(), TRIGGER_STRATEGY, message, toJson(payload), now);
+		if (inserted <= 0) {
+			return null;
+		}
+		// 静默 SETNX：默认 300s，防同一设备场景告警刷屏
+		redis.opsForValue()
+			.setIfAbsent(silenceKey, String.valueOf(System.currentTimeMillis()), Duration.ofSeconds(300));
+		AlarmMessage alarm = new AlarmMessage();
+		alarm.setAlarmEventId(alarmEventId);
+		alarm.setTenantId(tenantId);
+		alarm.setDeviceId(deviceId);
+		alarm.setProductKey(productKey);
+		alarm.setRuleId(0L);
+		alarm.setRuleCode(ruleCode);
+		alarm.setLevel(severity.getCode());
+		alarm.setType(TRIGGER_STRATEGY);
+		alarm.setStatus("ACTIVE");
+		alarm.setMessage(message == null ? ruleCode : message);
+		alarm.setExt(payload);
+		alarm.setTs(System.currentTimeMillis());
+		publish(alarm);
+		log.warn("[Alarm] 场景联动告警触发 ruleCode={} deviceId={} level={} eventId={}", ruleCode, deviceId, severity.getCode(),
+				alarmEventId);
+		return alarm;
 	}
 
 	// ------------------------------------------------------------------
