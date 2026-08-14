@@ -1,11 +1,19 @@
 package com.energyx.rule.config;
 
 import com.xxl.job.core.executor.impl.XxlJobSpringExecutor;
+import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** xxl-job 执行器装配（定时触发：规则 TIMER 触发器动态 job，Phase 11 §10） */
+/**
+ * xxl-job 执行器装配（定时触发：规则 TIMER 触发器动态 job，Phase 11 §10）。
+ *
+ * <p>
+ * getter 供 {@link com.energyx.rule.job.XxlJobAdminClient} 复用 admin 地址/令牌配置。
+ * </p>
+ */
+@Getter
 @Configuration
 public class XxlJobConfig {
 

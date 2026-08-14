@@ -75,6 +75,9 @@ public class RuleCache {
 
 	private volatile boolean listenerRegistered;
 
+	/** 规则变更监听器（Phase D：TimerJobManager 据此同步调度中心动态 job）；ruleId=ALL 表示全量变化 */
+	private volatile java.util.function.Consumer<String> changeListener;
+
 	public RuleCache(SceneRuleMapper ruleMapper, RuleService ruleService, RedisUtils redis, RuleProperties props,
 			RedisMessageListenerContainer listenerContainer) {
 		this.ruleMapper = ruleMapper;
@@ -82,6 +85,11 @@ public class RuleCache {
 		this.redis = redis;
 		this.props = props;
 		this.listenerContainer = listenerContainer;
+	}
+
+	/** 注册规则变更监听器（TimerJobManager 同步 xxl-job 用；幂等，后者覆盖前者） */
+	public void setChangeListener(java.util.function.Consumer<String> listener) {
+		this.changeListener = listener;
 	}
 
 	@PostConstruct
@@ -121,6 +129,7 @@ public class RuleCache {
 			}
 			ruleCache = fresh;
 			log.info("[Rule] 规则缓存全量刷新 count={}", fresh.size());
+			notifyChange("ALL");
 		}
 		catch (Exception e) {
 			// MySQL 不可用不阻塞消费，等待下次刷新重试
@@ -142,13 +151,28 @@ public class RuleCache {
 			if (row == null || row.getEnabled() == null || row.getEnabled() != 1) {
 				ruleCache.remove(ruleId);
 				log.info("[Rule] 规则已删除/停用，移除本地缓存 ruleId={}", ruleId);
+				notifyChange(ruleIdOrAll);
 				return;
 			}
 			ruleCache.put(ruleId, new CachedRule(row, ruleService.buildConfig(row)));
 			log.info("[Rule] 规则增量刷新 ruleId={}", ruleId);
+			notifyChange(ruleIdOrAll);
 		}
 		catch (Exception e) {
 			log.error("[Rule] 规则增量刷新失败 ruleIdOrAll={}", ruleIdOrAll, e);
+		}
+	}
+
+	/** 通知规则变更监听器（异常不传播，防打断缓存刷新主链路） */
+	private void notifyChange(String ruleIdOrAll) {
+		var listener = changeListener;
+		if (listener != null) {
+			try {
+				listener.accept(ruleIdOrAll);
+			}
+			catch (Exception e) {
+				log.warn("[Rule] 规则变更监听器执行失败 ruleIdOrAll={}", ruleIdOrAll, e);
+			}
 		}
 	}
 
