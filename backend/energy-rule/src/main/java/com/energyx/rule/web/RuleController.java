@@ -2,8 +2,12 @@ package com.energyx.rule.web;
 
 import com.energyx.common.model.PageResult;
 import com.energyx.common.model.Result;
+import com.energyx.rule.engine.RuleContext;
+import com.energyx.rule.engine.RuleEngine;
+import com.energyx.rule.engine.action.ActionResult;
 import com.energyx.rule.service.RuleLogService;
 import com.energyx.rule.service.RuleService;
+import com.energyx.rule.web.dto.ManualTriggerRequest;
 import com.energyx.rule.web.dto.RuleLogView;
 import com.energyx.rule.web.dto.RuleView;
 import com.energyx.rule.web.dto.SaveRuleRequest;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 场景联动规则管理 API。
@@ -31,6 +36,7 @@ import java.time.LocalDateTime;
  * <li>DELETE /api/rule/{ruleId} 删除规则（先停用后删）；</li>
  * <li>GET /api/rule/{ruleId} 详情；GET /api/rule/page 分页；</li>
  * <li>POST /api/rule/{ruleId}/enable|disable 启停；</li>
+ * <li>POST /api/rule/{ruleId}/trigger 手动触发（MANUAL 触发器规则，body 载荷注入上下文）；</li>
  * <li>GET /api/rule/log/page 执行日志分页。</li>
  * </ul>
  */
@@ -43,9 +49,12 @@ public class RuleController {
 
 	private final RuleLogService ruleLogService;
 
-	public RuleController(RuleService ruleService, RuleLogService ruleLogService) {
+	private final RuleEngine ruleEngine;
+
+	public RuleController(RuleService ruleService, RuleLogService ruleLogService, RuleEngine ruleEngine) {
 		this.ruleService = ruleService;
 		this.ruleLogService = ruleLogService;
+		this.ruleEngine = ruleEngine;
 	}
 
 	@PostMapping
@@ -86,6 +95,23 @@ public class RuleController {
 	@PostMapping("/{ruleId}/disable")
 	public Result<Void> disable(@PathVariable Long ruleId) {
 		ruleService.setEnabled(ruleId, false);
+		return Result.ok();
+	}
+
+	/**
+	 * 手动触发规则（Phase 11 设计 §8.2）：要求规则含 MANUAL 触发器且启用； body 载荷注入
+	 * RuleContext.payload，供条件求值/模板渲染引用。
+	 */
+	@PostMapping("/{ruleId}/trigger")
+	public Result<List<ActionResult>> trigger(@PathVariable Long ruleId,
+			@RequestBody(required = false) ManualTriggerRequest request) {
+		RuleContext ctx = new RuleContext();
+		ctx.setTriggerType("MANUAL");
+		ctx.setTs(System.currentTimeMillis());
+		if (request != null && request.getPayload() != null) {
+			ctx.setPayload(request.getPayload());
+		}
+		ruleEngine.onManual(ruleId, ctx);
 		return Result.ok();
 	}
 
