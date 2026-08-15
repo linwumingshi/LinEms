@@ -446,40 +446,61 @@ export interface ThingModelView {
 
 // ---------------- 时序历史 Tsdb ----------------
 
-/** 物模型属性（TSL properties 条目，parseThingModel 解析产物） */
+/** 物模型数据类型（TSL 标准 dataType，字符串枚举；specs 携带该类型的扩展字段如 min/max/length/enumValues/elementType） */
+export type TsDataType = 'int' | 'long' | 'float' | 'double' | 'text' | 'bool' | 'date' | 'enum' | 'struct' | 'array'
+
+/** 物模型属性（TSL properties 条目） */
 export interface TsProperty {
   identifier: string
   name: string
-  dataType: string
+  dataType: TsDataType
   unit?: string
-  accessMode?: string
-  /** 枚举属性取值说明（runMode 等）；本子项目仅透传不映射 */
-  enumValues?: Array<{ value: number; desc: string }>
+  /** r=只读 w=只写 rw=读写 */
+  accessMode?: 'r' | 'w' | 'rw'
+  /** 数据类型扩展规格（min/max/length/unit/step/enumValues/elementType/structFields 等） */
+  specs?: Record<string, unknown>
+  required?: boolean
+  desc?: string
 }
 
-/** 物模型服务入参（TSL services.inputParams 条目） */
-export interface TsServiceParam {
+/** 物模型入参/出参/事件输出参数（通用 Param；dataType 字符串 + specs） */
+export interface TsParam {
   identifier: string
   name: string
-  dataType: string
+  dataType: TsDataType
+  unit?: string
   required?: boolean
-  /** 文本/数值/枚举说明（runMode 等） */
   specs?: Record<string, unknown>
+  desc?: string
 }
 
-/** 物模型服务/命令（TSL services 条目；callType=ASYNC/SYNC） */
+/** 物模型服务/命令（TSL services 条目；callType ASYNC/SYNC） */
 export interface TsService {
   identifier: string
   name: string
-  callType?: string
-  inputParams?: TsServiceParam[]
+  callType?: 'SYNC' | 'ASYNC'
+  /** 输入参数列表 */
+  input?: TsParam[]
+  /** 输出参数列表 */
+  output?: TsParam[]
+  desc?: string
+}
+
+/** 物模型事件（TSL events 条目；type INFO/WARN/ERROR） */
+export interface TsEvent {
+  identifier: string
+  name: string
+  type?: 'INFO' | 'WARN' | 'ERROR'
+  /** 事件输出参数 */
+  data?: TsParam[]
+  desc?: string
 }
 
 /** 物模型 schema_json 顶层结构 */
 export interface ThingModelSchema {
   properties: TsProperty[]
   services: TsService[]
-  events: unknown[]
+  events: TsEvent[]
 }
 
 /** TDengine 属性历史单行（某属性该行为 NULL 时 values 省略该键） */

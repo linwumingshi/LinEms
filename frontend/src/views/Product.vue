@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { productApi } from '@/api/product'
 import type { Product } from '@/types/models'
 import { deviceTypeLabel, deviceTypeOptions, deviceTypeText, productStatusText, thingModelStatusText } from '@/utils/dicts'
+import ThingModelEditor from '@/components/ThingModelEditor.vue'
 import { ProductStatus, ThingModelStatus } from '@/utils/enums'
 import { toLocal } from '@/utils/alarmFormat'
 
@@ -101,11 +102,8 @@ async function openThingModel(row: Product) {
     // 未发布：保留空模板提示
   }
 }
-function formatJson() {
-  try { tmSchema.value = JSON.stringify(JSON.parse(tmSchema.value), null, 2) }
-  catch { ElMessage.error('JSON 语法错误，无法格式化') }
-}
 function validateJson(): boolean {
+  // 物模型 schema 由 ThingModelEditor 内部维护；保存前仅校验 JSON 格式
   try { JSON.parse(tmSchema.value); return true }
   catch (e) { ElMessage.error(`JSON 语法错误：${e instanceof Error ? e.message : String(e)}`); return false }
 }
@@ -239,18 +237,18 @@ onMounted(() => { void load(); void loadReadout() })
       </template>
     </el-dialog>
 
-    <el-drawer v-model="tmDrawer" size="560px" :title="`物模型 · ${tmProduct?.productName ?? ''}`">
+    <el-drawer v-model="tmDrawer" size="900px" :title="`物模型 · ${tmProduct?.productName ?? ''}`">
       <div class="tm-head">
         <span>当前状态：<el-tag size="small" :type="tmStatus === ThingModelStatus.PUBLISHED ? 'success' : tmStatus === ThingModelStatus.DRAFT ? 'info' : 'danger'">{{ thingModelStatusText(tmStatus) }}</el-tag></span>
+        <span class="tm-head-tip">可视化编辑更直观；切到「JSON 高级」可手写完整 specs/structFields/enumValues 等高级字段</span>
       </div>
       <el-form label-width="70px" class="tm-form">
         <el-form-item label="版本号" required>
           <el-input v-model="tmVersion" placeholder="同版本=覆盖并生效，新版本=发布并切换当前" />
         </el-form-item>
       </el-form>
-      <el-input v-model="tmSchema" type="textarea" :rows="14" class="tm-editor" spellcheck="false" />
+      <ThingModelEditor v-model="tmSchema" />
       <div class="tm-actions">
-        <el-button @click="formatJson">格式化</el-button>
         <el-button type="primary" :loading="tmSaving" @click="publishModel">保存发布</el-button>
       </div>
       <p class="tm-note">保存语义由后端处理：同版本覆盖置当前，异版本新增并切换当前，同时回写产品 model_version。</p>
