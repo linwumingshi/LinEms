@@ -102,7 +102,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("无行 → 插入初始化 reported，落 Redis 热缓存与变更历史")
 	void applyReported_insertWhenNoRow() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(null);
+		when(shadowMapper.selectById(100L)).thenReturn(null);
 		when(shadowMapper.insertReported(eq(100L), eq(1L), anyString(), any(LocalDateTime.class))).thenReturn(1);
 
 		service.applyReported(100L, 1L, props("soc", 88.5));
@@ -116,7 +116,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("已有行 → 合并更新（保留未上报属性），版本 +1")
 	void applyReported_mergeAndUpdate() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{\"soc\":88.5,\"voltage\":720}", 5));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{\"soc\":88.5,\"voltage\":720}", 5));
 		when(shadowMapper.updateReported(eq(100L), anyString(), eq(5), any(LocalDateTime.class))).thenReturn(1);
 
 		service.applyReported(100L, 1L, props("voltage", 730));
@@ -129,7 +129,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("版本冲突 → 重试后收敛（乐观锁最大重试内）")
 	void applyReported_versionConflictRetry() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{\"a\":1,\"b\":2}", 5));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{\"a\":1,\"b\":2}", 5));
 		when(shadowMapper.updateReported(eq(100L), anyString(), eq(5), any(LocalDateTime.class))).thenReturn(0)
 			.thenReturn(1);
 
@@ -142,7 +142,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("同值上报 → 跳过写库与历史，仅刷 Redis")
 	void applyReported_noChangeSkipsUpdate() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{\"a\":1}", 3));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{\"a\":1}", 3));
 
 		service.applyReported(100L, 1L, props("a", 1));
 
@@ -154,7 +154,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("乐观锁重试耗尽 → 抛 IllegalStateException")
 	void applyReported_retryExhaustedThrows() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{\"a\":1}", 5));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{\"a\":1}", 5));
 		when(shadowMapper.updateReported(eq(100L), anyString(), eq(5), any(LocalDateTime.class))).thenReturn(0);
 
 		assertThrows(IllegalStateException.class, () -> service.applyReported(100L, 1L, props("b", 3)));
@@ -166,7 +166,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("desired 与 reported 不一致 → 写 desired + 发布 delta")
 	void setDesired_publishDelta() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{}", 2));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{}", 2));
 		when(shadowMapper.updateDesired(eq(100L), anyString(), eq(2), any(LocalDateTime.class))).thenReturn(1);
 		when(hashOps.entries("iot:shadow:reported:100")).thenReturn(Map.of("power", "50"));
 
@@ -182,7 +182,7 @@ class ShadowServiceTest {
 	@Test
 	@DisplayName("desired 已与 reported 收敛 → 不发布 delta、不落历史")
 	void setDesired_convergedNoDelta() {
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row("{}", 2));
+		when(shadowMapper.selectById(100L)).thenReturn(row("{}", 2));
 		when(shadowMapper.updateDesired(eq(100L), anyString(), eq(2), any(LocalDateTime.class))).thenReturn(1);
 		when(hashOps.entries("iot:shadow:reported:100")).thenReturn(Map.of("power", "100"));
 
@@ -200,7 +200,7 @@ class ShadowServiceTest {
 		when(hashOps.entries("iot:shadow:desired:100")).thenReturn(Map.of());
 		ShadowRow row = row("{\"soc\":88.5}", 4);
 		row.setDesired("{\"power\":100}");
-		when(shadowMapper.selectByDeviceId(100L)).thenReturn(row);
+		when(shadowMapper.selectById(100L)).thenReturn(row);
 
 		var view = service.getShadow(100L);
 

@@ -1,8 +1,8 @@
 package com.energyx.rule.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.energyx.rule.entity.SceneExecLogRow;
 import org.apache.ibatis.annotations.Delete;
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -12,18 +12,13 @@ import java.util.List;
 
 /**
  * iot_scene_exec_log 数据访问（执行日志，按月分区，保留 N 天定时清理）。
+ *
+ * <p>
+ * 基础插入由 MyBatis-Plus BaseMapper 提供；动态分页与批量清理保留手写 SQL。
+ * </p>
  */
 @Mapper
-public interface SceneExecLogMapper {
-
-	/** 插入执行日志（log_id 雪花主键 + create_time 分区键） */
-	@Insert("""
-			INSERT INTO iot_scene_exec_log (log_id, rule_id, rule_code, tenant_id, trigger_type, device_id,
-			                                matched, action_result, cost_ms, trace_id, create_time)
-			VALUES (#{logId}, #{ruleId}, #{ruleCode}, #{tenantId}, #{triggerType}, #{deviceId},
-			        #{matched}, #{actionResult}, #{costMs}, #{traceId}, #{createTime})
-			""")
-	int insert(SceneExecLogRow row);
+public interface SceneExecLogMapper extends BaseMapper<SceneExecLogRow> {
 
 	/** 分页查询执行日志（组合条件，动态 SQL） */
 	@Select("""

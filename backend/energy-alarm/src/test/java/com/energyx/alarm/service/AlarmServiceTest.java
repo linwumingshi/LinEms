@@ -182,14 +182,11 @@ class AlarmServiceTest {
 	void propertyRule_firesWhenSustained() {
 		when(valueOps.get("alarm:sustain:1:100")).thenReturn(String.valueOf(System.currentTimeMillis() - 70_000));
 		when(redis.hasKey("alarm:silence:1:100")).thenReturn(false);
-		when(recordMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(), anyInt(),
-				anyInt(), anyString(), anyString(), any(LocalDateTime.class)))
-			.thenReturn(1);
+		when(recordMapper.insert(any(AlarmRecordRow.class))).thenReturn(1);
 
 		service.handlePropertyReport(propertyMsg(Map.of("temp", 80), "pk-1"));
 
-		verify(recordMapper).insert(anyString(), eq(1L), eq(100L), eq("pk-1"), eq(1L), eq("ALM_TEMP_HIGH"), eq(3),
-				eq(1), anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper).insert(any(AlarmRecordRow.class));
 		verify(valueOps).setIfAbsent(eq("alarm:silence:1:100"), anyString(), any(Duration.class));
 		verify(publisher).send(eq(KafkaTopicConstant.IOT_ALARM), eq("100"), contains("ALM_TEMP_HIGH"));
 		verify(publisher).broadcast(anyString());
@@ -203,8 +200,7 @@ class AlarmServiceTest {
 
 		service.handlePropertyReport(propertyMsg(Map.of("temp", 80), "pk-1"));
 
-		verify(recordMapper, never()).insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(),
-				anyInt(), anyInt(), anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper, never()).insert(any(AlarmRecordRow.class));
 		verify(valueOps, never()).setIfAbsent(eq("alarm:sustain:1:100"), anyString(), any(Duration.class));
 	}
 
@@ -216,8 +212,7 @@ class AlarmServiceTest {
 
 		service.handlePropertyReport(propertyMsg(Map.of("temp", 80), "pk-1"));
 
-		verify(recordMapper, never()).insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(),
-				anyInt(), anyInt(), anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper, never()).insert(any(AlarmRecordRow.class));
 	}
 
 	@Test
@@ -226,13 +221,11 @@ class AlarmServiceTest {
 		// 第一次上报触发
 		when(valueOps.get("alarm:sustain:1:100")).thenReturn(String.valueOf(System.currentTimeMillis() - 70_000));
 		when(redis.hasKey("alarm:silence:1:100")).thenReturn(false);
-		when(recordMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(), anyInt(),
-				anyInt(), anyString(), anyString(), any(LocalDateTime.class)))
-			.thenReturn(1);
+		when(recordMapper.insert(any(AlarmRecordRow.class))).thenReturn(1);
 		service.handlePropertyReport(propertyMsg(Map.of("temp", 80), "pk-1"));
 
 		// 第二次上报回正常：恢复
-		when(recordMapper.selectActiveRecords(1L, 100L)).thenReturn(List.of(activeRow()));
+		when(recordMapper.selectList(any())).thenReturn(List.of(activeRow()));
 		when(recordMapper.recoverActive(eq(1L), eq(100L), any(LocalDateTime.class))).thenReturn(1);
 
 		service.handlePropertyReport(propertyMsg(Map.of("temp", 50), "pk-1"));
@@ -250,14 +243,11 @@ class AlarmServiceTest {
 	@DisplayName("事件命中 → 级别取事件携带 severity（高于规则默认）")
 	void eventRule_firesWithEventSeverity() {
 		when(redis.hasKey("alarm:silence:2:100")).thenReturn(false);
-		when(recordMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(), anyInt(),
-				anyInt(), anyString(), anyString(), any(LocalDateTime.class)))
-			.thenReturn(1);
+		when(recordMapper.insert(any(AlarmRecordRow.class))).thenReturn(1);
 
 		service.handleEventReport(eventMsg("bmsFault", 3));
 
-		verify(recordMapper).insert(anyString(), eq(1L), eq(100L), eq("pk-1"), eq(2L), eq("ALM_BMS_FAULT"), eq(3),
-				eq(2), anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper).insert(any(AlarmRecordRow.class));
 		verify(publisher).send(eq(KafkaTopicConstant.IOT_ALARM), eq("100"), contains("bmsFault"));
 	}
 
@@ -266,8 +256,7 @@ class AlarmServiceTest {
 	void eventRule_notMatchedSkips() {
 		service.handleEventReport(eventMsg("overVolt", 2));
 
-		verify(recordMapper, never()).insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(),
-				anyInt(), anyInt(), anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper, never()).insert(any(AlarmRecordRow.class));
 	}
 
 	// ---------------------------------------------------------- product scope
@@ -277,16 +266,13 @@ class AlarmServiceTest {
 	void productScopedRuleMatches() {
 		when(productFeignClient.productIdByKey("pk-1")).thenReturn(Result.ok(10L));
 		when(redis.hasKey("alarm:silence:3:100")).thenReturn(false);
-		when(recordMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(), anyInt(),
-				anyInt(), anyString(), anyString(), any(LocalDateTime.class)))
-			.thenReturn(1);
+		when(recordMapper.insert(any(AlarmRecordRow.class))).thenReturn(1);
 
 		Map<String, Object> props = new LinkedHashMap<>();
 		props.put("soc", 5);
 		service.handlePropertyReport(propertyMsg(props, "pk-1"));
 
-		verify(recordMapper).insert(anyString(), eq(1L), eq(100L), eq("pk-1"), eq(3L), eq("ALM_SOC_LOW"), eq(4), eq(1),
-				anyString(), anyString(), any(LocalDateTime.class));
+		verify(recordMapper).insert(any(AlarmRecordRow.class));
 	}
 
 	// ---------------------------------------------------------- query / ack

@@ -102,7 +102,7 @@ public class ShadowService {
 		Map<String, Object> reported = readReportedRedis(deviceId);
 		Map<String, Object> delta = DeltaCalculator.compute(target, reported);
 		if (DeltaCalculator.needsSync(delta)) {
-			ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+			ShadowRow row = shadowMapper.selectById(deviceId);
 			int version = row == null ? 0 : (row.getVersion() == null ? 0 : row.getVersion());
 			deltaPublisher.publish(deviceId, tenantId, version, delta);
 			maybeWriteHistory(deviceId, toJson(target), version, OP_DESIRED);
@@ -119,7 +119,7 @@ public class ShadowService {
 		Integer version = null;
 		LocalDateTime lastReportedTime = null;
 		if (reported.isEmpty() || desired.isEmpty()) {
-			ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+			ShadowRow row = shadowMapper.selectById(deviceId);
 			if (row != null) {
 				if (reported.isEmpty()) {
 					reported = parse(row.getReported());
@@ -133,7 +133,7 @@ public class ShadowService {
 		}
 		else {
 			// Redis 热路径：reported/desired 齐备但缓存不含时间字段 → 补一次主键查询（PK 命中，管理端可接受）
-			ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+			ShadowRow row = shadowMapper.selectById(deviceId);
 			if (row != null) {
 				lastReportedTime = row.getLastReportedTime();
 			}
@@ -153,7 +153,7 @@ public class ShadowService {
 	private ReportedResult upsertReported(long deviceId, long tenantId, Map<String, Object> properties) {
 		int attempt = 0;
 		while (attempt++ < props.getOptimisticMaxRetry()) {
-			ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+			ShadowRow row = shadowMapper.selectById(deviceId);
 			if (row == null) {
 				String json = toJson(properties);
 				int n = shadowMapper.insertReported(deviceId, tenantId, json, LocalDateTime.now());
@@ -180,7 +180,7 @@ public class ShadowService {
 		int attempt = 0;
 		String desiredJson = toJson(desired);
 		while (attempt++ < props.getOptimisticMaxRetry()) {
-			ShadowRow row = shadowMapper.selectByDeviceId(deviceId);
+			ShadowRow row = shadowMapper.selectById(deviceId);
 			if (row == null) {
 				int n = shadowMapper.insertDesired(deviceId, tenantId, desiredJson, LocalDateTime.now());
 				if (n > 0) {

@@ -3,6 +3,7 @@ package com.energyx.rule.engine;
 import com.energyx.common.redis.RedisChannelConstant;
 import com.energyx.common.redis.RedisUtils;
 import com.energyx.rule.config.RuleProperties;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.energyx.rule.entity.SceneRuleRow;
 import com.energyx.rule.mapper.SceneRuleMapper;
 import com.energyx.rule.model.RuleConfig;
@@ -122,7 +123,8 @@ public class RuleCache {
 	/** 全量重载启用规则（启动 / 定时兜底 / ALL 广播） */
 	public synchronized void reload() {
 		try {
-			List<SceneRuleRow> rows = ruleMapper.selectEnabledRules();
+			List<SceneRuleRow> rows = ruleMapper
+				.selectList(new LambdaQueryWrapper<SceneRuleRow>().eq(SceneRuleRow::getEnabled, 1));
 			Map<Long, CachedRule> fresh = new ConcurrentHashMap<>();
 			for (SceneRuleRow row : rows) {
 				fresh.put(row.getRuleId(), new CachedRule(row, ruleService.buildConfig(row)));

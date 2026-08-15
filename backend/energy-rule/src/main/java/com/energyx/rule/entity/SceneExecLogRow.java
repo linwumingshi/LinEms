@@ -1,5 +1,8 @@
 package com.energyx.rule.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -8,8 +11,11 @@ import java.time.LocalDateTime;
  * iot_scene_exec_log 行投影（执行日志，按月分区）。
  */
 @Data
+@TableName("iot_scene_exec_log")
 public class SceneExecLogRow {
 
+	/** 日志 ID（雪花主键） */
+	@TableId(type = IdType.INPUT)
 	private Long logId;
 
 	private Long ruleId;

@@ -1,7 +1,7 @@
 package com.energyx.alarm.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.energyx.alarm.model.AlarmRecordRow;
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -14,24 +14,12 @@ import java.util.List;
  * iot_alarm_record 数据访问。
  *
  * <p>
- * 规则触发的写为单条插入（alarm_event_id 雪花主键，天然唯一）； 恢复/确认用「WHERE status=0 /
- * status!=2」条件更新，重复请求自然空操作（幂等）。
+ * 基础 CRUD 与简单条件查询由 MyBatis-Plus BaseMapper 提供（insert/selectList）； 恢复/确认保留手写 条件更新（WHERE
+ * status 幂等：重复请求空操作）；动态组合分页（selectPage/count）保留手写 SQL。
  * </p>
  */
 @Mapper
-public interface AlarmRecordMapper {
-
-	@Insert("""
-			INSERT INTO iot_alarm_record (alarm_event_id, tenant_id, device_id, product_key, rule_id, rule_code,
-			                              level, type, status, message, ext, triggered_time)
-			VALUES (#{alarmEventId}, #{tenantId}, #{deviceId}, #{productKey}, #{ruleId}, #{ruleCode},
-			        #{level}, #{type}, 0, #{message}, #{ext}, #{triggeredTime})
-			""")
-	int insert(@Param("alarmEventId") String alarmEventId, @Param("tenantId") Long tenantId,
-			@Param("deviceId") Long deviceId, @Param("productKey") String productKey, @Param("ruleId") Long ruleId,
-			@Param("ruleCode") String ruleCode, @Param("level") Integer level, @Param("type") Integer type,
-			@Param("message") String message, @Param("ext") String ext,
-			@Param("triggeredTime") LocalDateTime triggeredTime);
+public interface AlarmRecordMapper extends BaseMapper<AlarmRecordRow> {
 
 	/** 恢复：规则+设备下全部触发中记录置为已恢复（幂等） */
 	@Update("""
@@ -47,16 +35,6 @@ public interface AlarmRecordMapper {
 			""")
 	int ack(@Param("alarmEventId") String alarmEventId, @Param("ackedBy") String ackedBy,
 			@Param("now") LocalDateTime now);
-
-	/** 规则+设备下触发中记录（用于恢复广播） */
-	@Select("""
-			SELECT alarm_event_id, tenant_id, device_id, product_key, rule_id, rule_code,
-			       level, type, status, message, ext, triggered_time, recovered_time, acked_by, ack_time
-			FROM iot_alarm_record
-			WHERE rule_id = #{ruleId} AND device_id = #{deviceId} AND status = 0
-			ORDER BY triggered_time ASC
-			""")
-	List<AlarmRecordRow> selectActiveRecords(@Param("ruleId") Long ruleId, @Param("deviceId") Long deviceId);
 
 	/** 组合条件分页查询（动态 SQL，参数可空） */
 	@Select("""

@@ -10,6 +10,7 @@ import com.energyx.alarm.mapper.AlarmRecordMapper;
 import com.energyx.alarm.mapper.AlarmRuleMapper;
 import com.energyx.alarm.client.ProductFeignClient;
 import com.energyx.alarm.model.AlarmCondition;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.energyx.alarm.model.AlarmRecordRow;
 import com.energyx.alarm.model.AlarmRuleRow;
 import com.energyx.alarm.util.AlarmRedisKeys;
@@ -268,8 +269,20 @@ public class AlarmService {
 			AlarmLevel level, int type, String message, Map<String, Object> ext) {
 		String alarmEventId = idGenerator.nextIdStr();
 		LocalDateTime now = LocalDateTime.now();
-		int inserted = recordMapper.insert(alarmEventId, tenantId, deviceId, productKey, rule.getRuleId(),
-				rule.getRuleCode(), level.getCode(), type, message, toJson(ext), now);
+		AlarmRecordRow row = new AlarmRecordRow();
+		row.setAlarmEventId(alarmEventId);
+		row.setTenantId(tenantId);
+		row.setDeviceId(deviceId);
+		row.setProductKey(productKey);
+		row.setRuleId(rule.getRuleId());
+		row.setRuleCode(rule.getRuleCode());
+		row.setLevel(level);
+		row.setType(type);
+		row.setStatus(AlarmRecordStatus.ACTIVE);
+		row.setMessage(message);
+		row.setExt(toJson(ext));
+		row.setTriggeredTime(now);
+		int inserted = recordMapper.insert(row);
 		if (inserted <= 0) {
 			return null;
 		}
@@ -355,7 +368,11 @@ public class AlarmService {
 	}
 
 	private void recoverActive(AlarmRuleRow rule, long deviceId) {
-		List<AlarmRecordRow> actives = recordMapper.selectActiveRecords(rule.getRuleId(), deviceId);
+		List<AlarmRecordRow> actives = recordMapper
+			.selectList(new LambdaQueryWrapper<AlarmRecordRow>().eq(AlarmRecordRow::getRuleId, rule.getRuleId())
+				.eq(AlarmRecordRow::getDeviceId, deviceId)
+				.eq(AlarmRecordRow::getStatus, AlarmRecordStatus.ACTIVE)
+				.orderByAsc(AlarmRecordRow::getTriggeredTime));
 		int updated = recordMapper.recoverActive(rule.getRuleId(), deviceId, LocalDateTime.now());
 		if (updated > 0) {
 			redis.delete(AlarmRedisKeys.sustain(rule.getRuleId(), deviceId));
@@ -552,8 +569,20 @@ public class AlarmService {
 		LocalDateTime now = LocalDateTime.now();
 		Map<String, Object> payload = ext == null ? new LinkedHashMap<>() : new LinkedHashMap<>(ext);
 		payload.put("scene", ruleCode);
-		int inserted = recordMapper.insert(alarmEventId, tenantId, deviceId, productKey, 0L, ruleCode,
-				severity.getCode(), TRIGGER_STRATEGY, message, toJson(payload), now);
+		AlarmRecordRow row = new AlarmRecordRow();
+		row.setAlarmEventId(alarmEventId);
+		row.setTenantId(tenantId);
+		row.setDeviceId(deviceId);
+		row.setProductKey(productKey);
+		row.setRuleId(0L);
+		row.setRuleCode(ruleCode);
+		row.setLevel(severity);
+		row.setType(TRIGGER_STRATEGY);
+		row.setStatus(AlarmRecordStatus.ACTIVE);
+		row.setMessage(message);
+		row.setExt(toJson(payload));
+		row.setTriggeredTime(now);
+		int inserted = recordMapper.insert(row);
 		if (inserted <= 0) {
 			return null;
 		}
