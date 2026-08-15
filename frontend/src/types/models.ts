@@ -141,6 +141,28 @@ export interface AlarmRule {
   updateTime: string
 }
 
+/** 告警规则新增/修改请求体（对齐后端 AlarmRuleSaveReq） */
+export interface AlarmRuleSaveReq {
+  /** 租户（缺省 1，单租户可省略） */
+  tenantId?: number
+  /** 规则编码，租户内唯一，编辑时不可改 */
+  ruleCode: string
+  ruleName: string
+  productId?: number | null
+  deviceId?: number | null
+  /** 1属性比较 2事件 */
+  triggerType: number
+  /** 触发条件 JSON（{metric,op,value,windowSec} / {event}） */
+  condition: string
+  severity?: number
+  silenceSeconds?: number
+  /** 恢复条件 JSON（可空） */
+  recovery?: string | null
+  /** 0停用 1启用 */
+  status?: number
+  description?: string | null
+}
+
   /** /ws/alarm 实时推送的告警事件（与 AlarmMessage 对应） */
 export interface AlarmPush {
   alarmEventId: string

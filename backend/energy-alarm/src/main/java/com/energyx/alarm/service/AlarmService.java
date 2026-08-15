@@ -19,11 +19,13 @@ import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.enums.AlarmLevel;
 import com.energyx.common.enums.AlarmRecordStatus;
 import com.energyx.common.enums.AlarmRuleStatus;
+import com.energyx.common.exception.BusinessException;
 import com.energyx.common.message.AlarmMessage;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
 import com.energyx.common.model.PageResult;
 import com.energyx.common.util.SnowflakeIdGenerator;
+import com.energyx.alarm.web.dto.AlarmRuleSaveReq;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -435,6 +437,92 @@ public class AlarmService {
 			return new ArrayList<>(ruleCache);
 		}
 		return ruleCache.stream().filter(r -> r.getTenantId() != null && r.getTenantId().equals(tenantId)).toList();
+	}
+
+	// ------------------------------------------------------------------
+	// 告警规则管理（CRUD）：写库后立即刷新缓存，最迟 30s 定时刷新兜底
+	// ------------------------------------------------------------------
+
+	/**
+	 * 新增告警规则。
+	 * @return 新规则主键
+	 */
+	public Long createRule(AlarmRuleSaveReq req) {
+		validateRuleReq(req);
+		AlarmRuleRow row = toRow(req, null);
+		row.setCreateBy(0L);
+		ruleMapper.insert(row);
+		reloadRules();
+		return row.getRuleId();
+	}
+
+	/** 更新告警规则（rule_code 不可改；找不到抛 404） */
+	public void updateRule(Long ruleId, AlarmRuleSaveReq req) {
+		validateRuleReq(req);
+		AlarmRuleRow row = toRow(req, ruleId);
+		if (ruleMapper.update(row) == 0) {
+			throw new BusinessException(40400, "告警规则不存在");
+		}
+		reloadRules();
+	}
+
+	/** 删除告警规则（物理删除；已产生的告警记录不受影响） */
+	public void deleteRule(Long ruleId) {
+		if (ruleMapper.deleteById(ruleId, 1L) == 0) {
+			throw new BusinessException(40400, "告警规则不存在");
+		}
+		reloadRules();
+	}
+
+	/** 校验请求（condition/recovery JSON 可解析 + 按触发类型补必填） */
+	private void validateRuleReq(AlarmRuleSaveReq req) {
+		try {
+			AlarmCondition cond = objectMapper.readValue(req.getCondition(), AlarmCondition.class);
+			if (req.getTriggerType() == 1) {
+				if (cond.getMetric() == null || cond.getOp() == null || cond.getValue() == null) {
+					throw new IllegalArgumentException("属性规则 condition 需含 metric/op/value");
+				}
+			}
+			else if (req.getTriggerType() == 2) {
+				if (cond.getEvent() == null) {
+					throw new IllegalArgumentException("事件规则 condition 需含 event");
+				}
+			}
+		}
+		catch (IllegalArgumentException e) {
+			throw new BusinessException(40000, e.getMessage());
+		}
+		catch (Exception e) {
+			throw new BusinessException(40000, "condition JSON 格式错误: " + e.getMessage());
+		}
+		if (req.getRecovery() != null && !req.getRecovery().isBlank()) {
+			try {
+				objectMapper.readValue(req.getRecovery(), AlarmCondition.class);
+			}
+			catch (Exception e) {
+				throw new BusinessException(40000, "recovery JSON 格式错误: " + e.getMessage());
+			}
+		}
+	}
+
+	/** SaveReq → 数据行（severity/status 缺省兜底；rule_code 在 update 时不变更） */
+	private AlarmRuleRow toRow(AlarmRuleSaveReq req, Long ruleId) {
+		AlarmRuleRow row = new AlarmRuleRow();
+		row.setRuleId(ruleId);
+		row.setTenantId(req.getTenantId() != null ? req.getTenantId() : 1L);
+		row.setRuleCode(req.getRuleCode().trim());
+		row.setRuleName(req.getRuleName().trim());
+		row.setProductId(req.getProductId());
+		row.setDeviceId(req.getDeviceId());
+		row.setTriggerType(req.getTriggerType());
+		row.setCondition(req.getCondition());
+		row.setSeverity(AlarmLevel.of(req.getSeverity() != null ? req.getSeverity() : 3));
+		row.setSilenceSeconds(req.getSilenceSeconds() != null ? req.getSilenceSeconds() : 300);
+		row.setRecovery(req.getRecovery());
+		row.setStatus(
+				req.getStatus() != null && req.getStatus() == 0 ? AlarmRuleStatus.DISABLED : AlarmRuleStatus.ENABLED);
+		row.setDescription(req.getDescription());
+		return row;
 	}
 
 	/**

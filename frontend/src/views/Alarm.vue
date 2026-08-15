@@ -145,6 +145,163 @@ async function openRules(): Promise<void> {
   }
 }
 
+// ---------------- 规则新增/编辑 ----------------
+const ruleDialog = ref(false)
+const ruleSaving = ref(false)
+const ruleEditId = ref<string | null>(null)
+
+/** 规则条件/恢复的表单态（按 triggerType 渲染属性或事件字段） */
+const ruleForm = reactive({
+  ruleCode: '',
+  ruleName: '',
+  triggerType: 1 as 1 | 2,
+  metric: '',
+  op: 'GTE' as 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ',
+  value: '',
+  windowSec: 60,
+  event: '',
+  severity: 3,
+  silenceSeconds: 300,
+  recoveryEnabled: false,
+  recMetric: '',
+  recOp: 'LT' as 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ',
+  recValue: '',
+  status: 1,
+  description: '',
+})
+
+const opOptions = [
+  { value: 'GT', label: '>' },
+  { value: 'GTE', label: '≥' },
+  { value: 'LT', label: '<' },
+  { value: 'LTE', label: '≤' },
+  { value: 'EQ', label: '=' },
+  { value: 'NEQ', label: '≠' },
+]
+
+/** 打开新增（空表单） */
+function openRuleCreate(): void {
+  ruleEditId.value = null
+  resetRuleForm()
+  ruleDialog.value = true
+}
+
+/** 打开编辑（回填；condition/recovery JSON 解析到表单） */
+function openRuleEdit(row: AlarmRule): void {
+  ruleEditId.value = row.ruleId
+  resetRuleForm()
+  ruleForm.ruleCode = row.ruleCode
+  ruleForm.ruleName = row.ruleName
+  ruleForm.triggerType = row.triggerType === 2 ? 2 : 1
+  ruleForm.severity = row.severity
+  ruleForm.silenceSeconds = row.silenceSeconds
+  ruleForm.status = row.status
+  ruleForm.description = row.description ?? ''
+  try {
+    const cond = JSON.parse(row.condition) as Record<string, unknown>
+    if (ruleForm.triggerType === 2) {
+      ruleForm.event = String(cond.event ?? '')
+    } else {
+      ruleForm.metric = String(cond.metric ?? '')
+      ruleForm.op = (cond.op as never) || 'GTE'
+      ruleForm.value = String(cond.value ?? '')
+      ruleForm.windowSec = Number(cond.windowSec ?? 60)
+    }
+  } catch {
+    // condition 解析失败保留空表单，由用户重填
+  }
+  if (row.recovery) {
+    try {
+      const rec = JSON.parse(row.recovery) as Record<string, unknown>
+      ruleForm.recoveryEnabled = true
+      ruleForm.recMetric = String(rec.metric ?? '')
+      ruleForm.recOp = (rec.op as never) || 'LT'
+      ruleForm.recValue = String(rec.value ?? '')
+    } catch {
+      ruleForm.recoveryEnabled = false
+    }
+  }
+  ruleDialog.value = true
+}
+
+function resetRuleForm(): void {
+  ruleForm.ruleCode = ''
+  ruleForm.ruleName = ''
+  ruleForm.triggerType = 1
+  ruleForm.metric = ''
+  ruleForm.op = 'GTE'
+  ruleForm.value = ''
+  ruleForm.windowSec = 60
+  ruleForm.event = ''
+  ruleForm.severity = 3
+  ruleForm.silenceSeconds = 300
+  ruleForm.recoveryEnabled = false
+  ruleForm.recMetric = ''
+  ruleForm.recOp = 'LT'
+  ruleForm.recValue = ''
+  ruleForm.status = 1
+  ruleForm.description = ''
+}
+
+/** 保存（新增/编辑共用；condition/recovery 组装 JSON） */
+async function saveRule(): Promise<void> {
+  if (!ruleForm.ruleName.trim()) { ElMessage.warning('请填写规则名称'); return }
+  if (ruleForm.triggerType === 1) {
+    if (!ruleForm.metric.trim() || ruleForm.value === '') { ElMessage.warning('属性规则需填写属性与阈值'); return }
+  } else if (!ruleForm.event.trim()) {
+    ElMessage.warning('事件规则需填写事件标识'); return
+  }
+  const condition = ruleForm.triggerType === 1
+    ? JSON.stringify({ metric: ruleForm.metric.trim(), op: ruleForm.op, value: ruleForm.value, windowSec: ruleForm.windowSec })
+    : JSON.stringify({ event: ruleForm.event.trim() })
+  const recovery = ruleForm.recoveryEnabled && ruleForm.recMetric.trim()
+    ? JSON.stringify({ metric: ruleForm.recMetric.trim(), op: ruleForm.recOp, value: ruleForm.recValue })
+    : null
+  const body = {
+    ruleCode: ruleForm.ruleCode.trim(),
+    ruleName: ruleForm.ruleName.trim(),
+    triggerType: ruleForm.triggerType,
+    condition,
+    severity: ruleForm.severity,
+    silenceSeconds: ruleForm.silenceSeconds,
+    recovery,
+    status: ruleForm.status,
+    description: ruleForm.description.trim() || null,
+  }
+  ruleSaving.value = true
+  try {
+    if (ruleEditId.value) {
+      await alarmApi.updateRule(ruleEditId.value, body)
+      ElMessage.success('规则已更新')
+    } else {
+      await alarmApi.createRule(body)
+      ElMessage.success('规则已创建')
+    }
+    ruleDialog.value = false
+    rules.value = await alarmApi.rules()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    ruleSaving.value = false
+  }
+}
+
+/** 删除规则（二次确认） */
+async function removeRule(row: AlarmRule): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`确定删除告警规则「${row.ruleName}」？已产生的告警记录不受影响`, '删除确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await alarmApi.deleteRule(row.ruleId)
+    ElMessage.success('规则已删除')
+    rules.value = await alarmApi.rules()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 function extText(r: AlarmRecord): string {
   const obj = r.ext
   if (!obj || Object.keys(obj).length === 0) return '-'
@@ -336,16 +493,111 @@ onMounted(() => {
     </section>
 
     <!-- 规则抽屉 -->
-    <el-drawer v-model="rulesDrawer" title="告警规则（启用中）" size="480px">
+    <el-drawer v-model="rulesDrawer" title="告警规则（启用中）" size="640px">
+      <div class="rules-head">
+        <span class="rules-tip">规则为静态配置，命中后产生告警记录（数据源：es_alarm.iot_alarm_rule）</span>
+        <el-button size="small" type="primary" @click="openRuleCreate">+ 新增规则</el-button>
+      </div>
       <el-table :data="rules" v-loading="rulesLoading" size="small">
-        <el-table-column prop="ruleCode" label="规则码" width="130" />
+        <el-table-column prop="ruleCode" label="规则码" width="140" />
         <el-table-column prop="ruleName" label="名称" show-overflow-tooltip />
-        <el-table-column label="级别" width="80">
+        <el-table-column label="类型" width="70" align="center">
+          <template #default="{ row }">{{ row.triggerType === 2 ? '事件' : '属性' }}</template>
+        </el-table-column>
+        <el-table-column label="级别" width="70">
           <template #default="{ row }"><AlarmLevelTag :level="row.severity" /></template>
         </el-table-column>
-        <el-table-column prop="silenceSeconds" label="静默(s)" width="80" />
+        <el-table-column label="状态" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="110" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openRuleEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="removeRule(row)">删除</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-drawer>
+
+    <!-- 规则新增/编辑表单 -->
+    <el-dialog v-model="ruleDialog" :title="ruleEditId ? `编辑告警规则 · ${ruleForm.ruleName}` : '新增告警规则'" width="540px">
+      <el-form label-width="96px">
+        <el-form-item label="规则编码" required>
+          <el-input v-model="ruleForm.ruleCode" placeholder="如 ALM_TEMP_HIGH（租户内唯一）" :disabled="!!ruleEditId" />
+        </el-form-item>
+        <el-form-item label="规则名称" required>
+          <el-input v-model="ruleForm.ruleName" placeholder="如 电芯高温告警" />
+        </el-form-item>
+        <el-form-item label="触发类型" required>
+          <el-radio-group v-model="ruleForm.triggerType">
+            <el-radio :value="1">属性比较</el-radio>
+            <el-radio :value="2">事件</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <!-- 属性触发条件 -->
+        <template v-if="ruleForm.triggerType === 1">
+          <el-form-item label="属性 metric" required>
+            <el-input v-model="ruleForm.metric" placeholder="物模型属性标识，如 cellTemp" style="width: 220px" />
+          </el-form-item>
+          <el-form-item label="比较符" required>
+            <el-select v-model="ruleForm.op" style="width: 120px">
+              <el-option v-for="o in opOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-input v-model="ruleForm.value" placeholder="阈值" style="width: 140px; margin-left: 6px" />
+          </el-form-item>
+          <el-form-item label="持续秒">
+            <el-input-number v-model="ruleForm.windowSec" :min="0" :max="86400" />
+            <span class="field-hint">连续超阈需持续该时长（0=立即）</span>
+          </el-form-item>
+        </template>
+        <el-form-item v-else label="事件标识" required>
+          <el-input v-model="ruleForm.event" placeholder="物模型事件标识，如 bmsFault" style="width: 240px" />
+        </el-form-item>
+
+        <el-form-item label="告警级别">
+          <el-select v-model="ruleForm.severity" style="width: 140px">
+            <el-option label="提示" :value="1" />
+            <el-option label="一般" :value="2" />
+            <el-option label="严重" :value="3" />
+            <el-option label="危急" :value="4" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="静默秒">
+          <el-input-number v-model="ruleForm.silenceSeconds" :min="0" :max="86400" />
+          <span class="field-hint">触发后静默期内不重复告警</span>
+        </el-form-item>
+
+        <el-form-item label="恢复条件">
+          <el-switch v-model="ruleForm.recoveryEnabled" />
+          <span class="field-hint">属性回到正常区间即自动恢复</span>
+        </el-form-item>
+        <template v-if="ruleForm.recoveryEnabled">
+          <el-form-item label="恢复 metric">
+            <el-input v-model="ruleForm.recMetric" placeholder="如 cellTemp" style="width: 200px" />
+          </el-form-item>
+          <el-form-item label="恢复判定">
+            <el-select v-model="ruleForm.recOp" style="width: 110px">
+              <el-option v-for="o in opOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-input v-model="ruleForm.recValue" placeholder="恢复阈值" style="width: 130px; margin-left: 6px" />
+          </el-form-item>
+        </template>
+
+        <el-form-item label="启用">
+          <el-switch v-model="ruleForm.status" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="ruleForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleDialog = false">取消</el-button>
+        <el-button type="primary" :loading="ruleSaving" @click="saveRule">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -420,5 +672,20 @@ onMounted(() => {
 }
 .acked {
   color: var(--ex-ink-3);
+}
+.rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.rules-tip {
+  font-size: 12px;
+  color: var(--ex-ink-3);
+}
+.field-hint {
+  font-size: 12px;
+  color: var(--ex-ink-3);
+  margin-left: 6px;
 }
 </style>

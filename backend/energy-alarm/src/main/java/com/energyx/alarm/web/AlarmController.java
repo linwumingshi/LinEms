@@ -4,6 +4,7 @@ import com.energyx.alarm.model.AlarmRuleRow;
 import com.energyx.alarm.service.AlarmService;
 import com.energyx.alarm.web.dto.AlarmAckRequest;
 import com.energyx.alarm.web.dto.AlarmRecordView;
+import com.energyx.alarm.web.dto.AlarmRuleSaveReq;
 import com.energyx.alarm.web.dto.SceneAlarmRequest;
 import com.energyx.common.enums.AlarmLevel;
 import com.energyx.common.model.PageResult;
@@ -11,9 +12,11 @@ import com.energyx.common.model.Result;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -62,6 +65,26 @@ public class AlarmController {
 	@GetMapping("/rules")
 	public Result<List<AlarmRuleRow>> rules(@RequestParam(required = false) Long tenantId) {
 		return Result.ok(alarmService.listRules(tenantId));
+	}
+
+	/** 新增告警规则（写库即刷新规则缓存） */
+	@PostMapping("/rule")
+	public Result<Long> createRule(@Valid @RequestBody AlarmRuleSaveReq req) {
+		return Result.ok(alarmService.createRule(req));
+	}
+
+	/** 修改告警规则（rule_code 不可改） */
+	@PutMapping("/rule/{ruleId}")
+	public Result<Void> updateRule(@PathVariable Long ruleId, @Valid @RequestBody AlarmRuleSaveReq req) {
+		alarmService.updateRule(ruleId, req);
+		return Result.ok();
+	}
+
+	/** 删除告警规则（物理删除，已产生告警记录不受影响） */
+	@DeleteMapping("/rule/{ruleId}")
+	public Result<Void> deleteRule(@PathVariable Long ruleId) {
+		alarmService.deleteRule(ruleId);
+		return Result.ok();
 	}
 
 	/**
