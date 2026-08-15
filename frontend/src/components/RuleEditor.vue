@@ -3,8 +3,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { deviceApi } from '@/api/device'
 import { productApi } from '@/api/product'
+import { alarmApi } from '@/api/alarm'
 import { ruleApi } from '@/api/rule'
-import type { Device, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty, TsService } from '@/types/models'
+import type { AlarmRule, Device, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty, TsService } from '@/types/models'
 import { opOptions, triggerTypeOptions, conditionTypeOptions, actionTypeOptions } from '@/utils/ruleOptions'
 
 const props = withDefaults(defineProps<{
@@ -49,6 +50,16 @@ const ruleId = ref<number | null>(null)
 const productOptions = ref<Product[]>([])
 const deviceOptions = ref<Device[]>([])
 const ruleOptions = ref<RuleView[]>([])
+/** 告警规则列表（ALARM 动作的 ruleCode 下拉来源） */
+const alarmRules = ref<AlarmRule[]>([])
+
+async function loadAlarmRules(): Promise<void> {
+  try {
+    alarmRules.value = await alarmApi.rules()
+  } catch {
+    alarmRules.value = []
+  }
+}
 
 /** 物模型缓存：productKey → { 属性, 命令能力 } */
 interface ThingModelBundle {
@@ -391,6 +402,7 @@ async function loadRuleOptions(): Promise<void> {
 onMounted(() => {
   void loadProducts()
   void loadRuleOptions()
+  void loadAlarmRules()
 })
 </script>
 
@@ -567,7 +579,9 @@ onMounted(() => {
             <el-input :model-value="paramsText(a)" size="small" style="width: 220px" placeholder='参数 JSON，如 {"power":30}' @update:model-value="(v: string) => setParams(a, v)" />
           </div>
           <div v-else-if="a.type === 'ALARM'" class="item-body">
-            <el-input v-model="a.ruleCode" size="small" style="width: 180px" placeholder="告警编码，如 SCENE_TEMP_HIGH" />
+            <el-select v-model="a.ruleCode" placeholder="告警规则（可手填）" filterable allow-create size="small" style="width: 220px">
+              <el-option v-for="r in alarmRules" :key="r.ruleCode" :label="`${r.ruleCode} · ${r.ruleName}`" :value="r.ruleCode" />
+            </el-select>
             <el-select v-model="a.severity" size="small" style="width: 100px">
               <el-option label="提示" :value="1" />
               <el-option label="一般" :value="2" />
@@ -630,7 +644,9 @@ onMounted(() => {
               <el-input :model-value="paramsText(ra)" size="small" style="width: 200px" placeholder='参数 JSON' @update:model-value="(v: string) => setParams(ra, v)" />
             </div>
             <div v-else-if="ra.type === 'ALARM'" class="item-body">
-              <el-input v-model="ra.ruleCode" size="small" style="width: 180px" placeholder="告警编码" />
+              <el-select v-model="ra.ruleCode" placeholder="告警规则（可手填）" filterable allow-create size="small" style="width: 220px">
+                <el-option v-for="r in alarmRules" :key="r.ruleCode" :label="`${r.ruleCode} · ${r.ruleName}`" :value="r.ruleCode" />
+              </el-select>
               <el-select v-model="ra.severity" size="small" style="width: 100px">
                 <el-option label="提示" :value="1" />
                 <el-option label="一般" :value="2" />

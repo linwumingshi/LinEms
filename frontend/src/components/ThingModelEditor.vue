@@ -51,9 +51,15 @@ const jsonError = ref('')
 /** 整体校验错误（切换到 JSON 时显示） */
 const schemaError = ref('')
 
-// ============== props → schema（外部更新时同步） ==============
+// ============== props → schema（外部更新时同步；自身 emit 回写不重置编辑态） ==============
 watch(() => props.modelValue, (v) => {
-  schema.value = parseSchema(v ?? '')
+  const incoming = v ?? ''
+  // 自身 emit 回写导致的值变化：与当前 schema 序列化一致 → 仅刷新 jsonText，保留选中与编辑态
+  if (incoming === serializeSchema(schema.value)) {
+    return
+  }
+  // 外部加载（抽屉打开/切换产品）：全量重置
+  schema.value = parseSchema(incoming)
   jsonText.value = serializeSchema(schema.value)
   selectedIndex.value = -1
   schemaError.value = ''
@@ -94,18 +100,35 @@ function formatJson(): void {
 }
 
 // ============== 列表操作 ==============
+/** 生成不重复的默认标识符：prop_N / service_N / event_N（N 取现有最大序号 +1） */
+function nextIdentifier(prefix: string, arr: Array<{ identifier?: string }>): string {
+  let max = 0
+  const re = new RegExp(`^${prefix}_(\\d+)$`)
+  for (const x of arr) {
+    const m = x.identifier?.match(re)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `${prefix}_${max + 1}`
+}
+
 function addProperty(): void {
-  schema.value.properties.push(newProperty())
+  const p = newProperty()
+  p.identifier = nextIdentifier('prop', schema.value.properties)
+  schema.value.properties.push(p)
   selectedIndex.value = schema.value.properties.length - 1
   leftTab.value = 'properties'
 }
 function addService(): void {
-  schema.value.services.push(newService())
+  const s = newService()
+  s.identifier = nextIdentifier('service', schema.value.services)
+  schema.value.services.push(s)
   selectedIndex.value = schema.value.services.length - 1
   leftTab.value = 'services'
 }
 function addEvent(): void {
-  schema.value.events.push(newEvent())
+  const e = newEvent()
+  e.identifier = nextIdentifier('event', schema.value.events)
+  schema.value.events.push(e)
   selectedIndex.value = schema.value.events.length - 1
   leftTab.value = 'events'
 }
@@ -183,7 +206,9 @@ function specsPlaceholder(k: string): string {
               >
                 <span class="li-name">{{ p.name || '(未命名)' }}</span>
                 <span class="li-identifier">{{ p.identifier || '...' }}</span>
-                <el-button link type="danger" size="small" @click.stop="removeAt('properties', i)">删</el-button>
+                <el-button link type="danger" size="small" title="删除" @click.stop="removeAt('properties', i)">
+                  <svg class="tme-del" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h16v384c0 35.3 28.7 64 64 64h544c35.3 0 64-28.7 64-64V320h16c8.8 0 16-7.2 16-16v-32c0-8.8-7.2-16-16-16z" fill="currentColor"/></svg>
+                </el-button>
               </li>
               <li v-if="schema.properties.length === 0" class="tme-empty">暂无属性</li>
             </ul>
@@ -201,7 +226,9 @@ function specsPlaceholder(k: string): string {
               >
                 <span class="li-name">{{ s.name || '(未命名)' }}</span>
                 <span class="li-identifier">{{ s.identifier || '...' }}</span>
-                <el-button link type="danger" size="small" @click.stop="removeAt('services', i)">删</el-button>
+                <el-button link type="danger" size="small" title="删除" @click.stop="removeAt('services', i)">
+                  <svg class="tme-del" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h16v384c0 35.3 28.7 64 64 64h544c35.3 0 64-28.7 64-64V320h16c8.8 0 16-7.2 16-16v-32c0-8.8-7.2-16-16-16z" fill="currentColor"/></svg>
+                </el-button>
               </li>
               <li v-if="schema.services.length === 0" class="tme-empty">暂无服务</li>
             </ul>
@@ -219,7 +246,9 @@ function specsPlaceholder(k: string): string {
               >
                 <span class="li-name">{{ e.name || '(未命名)' }}</span>
                 <span class="li-identifier">{{ e.identifier || '...' }}</span>
-                <el-button link type="danger" size="small" @click.stop="removeAt('events', i)">删</el-button>
+                <el-button link type="danger" size="small" title="删除" @click.stop="removeAt('events', i)">
+                  <svg class="tme-del" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h16v384c0 35.3 28.7 64 64 64h544c35.3 0 64-28.7 64-64V320h16c8.8 0 16-7.2 16-16v-32c0-8.8-7.2-16-16-16z" fill="currentColor"/></svg>
+                </el-button>
               </li>
               <li v-if="schema.events.length === 0" class="tme-empty">暂无事件</li>
             </ul>
@@ -441,6 +470,11 @@ function specsPlaceholder(k: string): string {
 }
 .tme-empty:hover {
   background: transparent;
+}
+.tme-del {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
 }
 
 .tme-main {
