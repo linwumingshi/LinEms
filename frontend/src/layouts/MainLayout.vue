@@ -45,6 +45,7 @@ const menus: MenuItem[] = [
       { path: '/shadow', title: '影子' },
       { path: '/command', title: '指令中心' },
       { path: '/alarm', title: '告警中心' },
+      { path: '/rule', title: '场景联动', perms: ['rule:view'] },
     ],
   },
   {
