@@ -457,10 +457,28 @@ export interface TsProperty {
   enumValues?: Array<{ value: number; desc: string }>
 }
 
-/** 物模型 schema_json 顶层结构（本子项目只用 properties） */
+/** 物模型服务入参（TSL services.inputParams 条目） */
+export interface TsServiceParam {
+  identifier: string
+  name: string
+  dataType: string
+  required?: boolean
+  /** 文本/数值/枚举说明（runMode 等） */
+  specs?: Record<string, unknown>
+}
+
+/** 物模型服务/命令（TSL services 条目；callType=ASYNC/SYNC） */
+export interface TsService {
+  identifier: string
+  name: string
+  callType?: string
+  inputParams?: TsServiceParam[]
+}
+
+/** 物模型 schema_json 顶层结构 */
 export interface ThingModelSchema {
   properties: TsProperty[]
-  services: unknown[]
+  services: TsService[]
   events: unknown[]
 }
 

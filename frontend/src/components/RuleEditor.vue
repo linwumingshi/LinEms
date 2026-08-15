@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { deviceApi } from '@/api/device'
 import { productApi } from '@/api/product'
 import { ruleApi } from '@/api/rule'
-import type { Device, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty } from '@/types/models'
+import type { Device, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty, TsService } from '@/types/models'
 import { opOptions, triggerTypeOptions, conditionTypeOptions, actionTypeOptions } from '@/utils/ruleOptions'
 
 const props = withDefaults(defineProps<{
@@ -50,8 +50,12 @@ const productOptions = ref<Product[]>([])
 const deviceOptions = ref<Device[]>([])
 const ruleOptions = ref<RuleView[]>([])
 
-/** 物模型属性缓存：productKey → properties */
-const modelCache = new Map<string, TsProperty[]>()
+/** 物模型缓存：productKey → { 属性, 命令能力 } */
+interface ThingModelBundle {
+  properties: TsProperty[]
+  services: TsService[]
+}
+const modelCache = new Map<string, ThingModelBundle>()
 
 async function loadProducts(): Promise<void> {
   try {
@@ -72,22 +76,33 @@ async function loadDevices(productKey: string): Promise<Device[]> {
   }
 }
 
-async function loadThingModel(productKey: string): Promise<TsProperty[]> {
-  if (!productKey) return []
-  if (modelCache.has(productKey)) return modelCache.get(productKey)!
+/** 加载产品物模型（属性 + 命令能力），按 productKey 缓存；缺失 schema 字段时返回空数组保持降级可用 */
+async function loadThingModel(productKey: string): Promise<ThingModelBundle> {
+  if (!productKey) return { properties: [], services: [] }
+  const cached = modelCache.get(productKey)
+  if (cached) return cached
   try {
     const view = await productApi.thingModelByKey(productKey)
-    const schema = JSON.parse(view.schemaJson) as { properties?: TsProperty[] }
-    const propsList = schema.properties ?? []
-    modelCache.set(productKey, propsList)
-    return propsList
+    const schema = JSON.parse(view.schemaJson) as { properties?: TsProperty[]; services?: TsService[] }
+    const bundle: ThingModelBundle = {
+      properties: schema.properties ?? [],
+      services: schema.services ?? [],
+    }
+    modelCache.set(productKey, bundle)
+    return bundle
   } catch {
-    return []
+    modelCache.set(productKey, { properties: [], services: [] })
+    return { properties: [], services: [] }
   }
 }
 
 function modelPropsFor(productKey: string): TsProperty[] {
-  return modelCache.get(productKey) ?? []
+  return modelCache.get(productKey)?.properties ?? []
+}
+
+/** 取产品命令能力列表（用于 DEVICE_COMMAND 动作的命令名下拉） */
+function modelCommandsFor(productKey: string): TsService[] {
+  return modelCache.get(productKey)?.services ?? []
 }
 
 /** 选择产品后预载设备与物模型（异步，不阻塞保存） */
@@ -546,7 +561,9 @@ onMounted(() => {
             <el-select v-model="a.device!.deviceName" placeholder="设备" filterable size="small" style="width: 150px">
               <el-option v-for="d in deviceOptions.filter((x) => x.productKey === a.device!.productKey)" :key="d.deviceId" :label="d.deviceName" :value="d.deviceName" />
             </el-select>
-            <el-input v-model="a.command" size="small" style="width: 150px" placeholder="命令标识，如 setPower" />
+            <el-select v-model="a.command" placeholder="命令能力（可手填）" filterable allow-create size="small" style="width: 170px" :disabled="!a.device!.productKey">
+              <el-option v-for="s in modelCommandsFor(a.device!.productKey)" :key="s.identifier" :label="`${s.name} (${s.identifier})`" :value="s.identifier" />
+            </el-select>
             <el-input :model-value="paramsText(a)" size="small" style="width: 220px" placeholder='参数 JSON，如 {"power":30}' @update:model-value="(v: string) => setParams(a, v)" />
           </div>
           <div v-else-if="a.type === 'ALARM'" class="item-body">
@@ -607,7 +624,9 @@ onMounted(() => {
               <el-select v-model="ra.device!.deviceName" placeholder="设备" filterable size="small" style="width: 150px">
                 <el-option v-for="d in deviceOptions.filter((x) => x.productKey === ra.device!.productKey)" :key="d.deviceId" :label="d.deviceName" :value="d.deviceName" />
               </el-select>
-              <el-input v-model="ra.command" size="small" style="width: 150px" placeholder="命令标识" />
+              <el-select v-model="ra.command" placeholder="命令能力（可手填）" filterable allow-create size="small" style="width: 170px" :disabled="!ra.device!.productKey">
+                <el-option v-for="s in modelCommandsFor(ra.device!.productKey)" :key="s.identifier" :label="`${s.name} (${s.identifier})`" :value="s.identifier" />
+              </el-select>
               <el-input :model-value="paramsText(ra)" size="small" style="width: 200px" placeholder='参数 JSON' @update:model-value="(v: string) => setParams(ra, v)" />
             </div>
             <div v-else-if="ra.type === 'ALARM'" class="item-body">
