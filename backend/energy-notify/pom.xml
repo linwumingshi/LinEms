@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-notify：消息通知（Phase 11 扩展）
+  - 通知配置（iot_notify_config）：渠道 WEBHOOK/WECOM/DINGTALK/EMAIL（短信/语音预留扩展）
+  - 通知模板（iot_notify_template）：按消息类型组织，占位符 ${xxx} 渲染
+  - 渠道执行器：Webhook/企业微信群机器人/钉钉群机器人 = HTTP POST；邮件 = SMTP（javax.mail）
+  - 场景联动 NOTIFY 动作经 Feign 调本服务发送
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.energyx</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-notify</artifactId>
+  <name>energy-notify</name>
+  <description>消息通知：渠道配置/模板管理 + Webhook/企微/钉钉/邮件多渠道发送</description>
+
+  <properties>
+    <!-- 本地仓库仅有 micrometer 1.13.4 全系列，覆盖 Boot 3.5.4 BOM 管理的 1.15.2 保持离线可构建 -->
+    <micrometer.version>1.13.4</micrometer.version>
+    <prometheus-client.version>1.2.1</prometheus-client.version>
+    <!-- 仓库仅 com.sun.mail:jakarta.mail 1.6.7（javax.mail 包名实现），不引 Boot mail starter -->
+    <jakarta-mail.version>1.6.7</jakarta-mail.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.energyx</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+    </dependency>
+
+    <!-- SMTP 邮件发送（javax.mail 包名；离线仓库仅此版本。其 POM 传递依赖的
+         com.sun.activation:jakarta.activation 本地缺失 → 排除，改用 javax.activation 1.1 提供 javax.activation.*） -->
+    <dependency>
+      <groupId>com.sun.mail</groupId>
+      <artifactId>jakarta.mail</artifactId>
+      <version>${jakarta-mail.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.sun.activation</groupId>
+          <artifactId>jakarta.activation</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>javax.activation</groupId>
+      <artifactId>activation</artifactId>
+      <version>1.1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- 可观测性：actuator + Prometheus 指标端点 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.energyx.notify.NotifyApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

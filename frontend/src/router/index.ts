@@ -44,6 +44,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '场景联动', icon: 'Connection' },
       },
       {
+        path: 'notify/config',
+        name: 'NotifyConfig',
+        component: () => import('@/views/NotifyConfig.vue'),
+        meta: { title: '通知配置', icon: 'Message' },
+      },
+      {
+        path: 'notify/template',
+        name: 'NotifyTemplate',
+        component: () => import('@/views/NotifyTemplate.vue'),
+        meta: { title: '通知模板', icon: 'Document' },
+      },
+      {
         path: 'ems/strategy',
         name: 'EmsStrategy',
         component: () => import('@/views/EmsStrategy.vue'),

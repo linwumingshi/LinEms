@@ -77,6 +77,14 @@ const menus: MenuItem[] = [
       { path: '/system/perm', title: '菜单权限', perms: ['system:perm:list'] },
     ],
   },
+  {
+    group: '/notify',
+    title: '消息通知',
+    children: [
+      { path: '/notify/config', title: '通知配置', perms: ['notify:config:view'] },
+      { path: '/notify/template', title: '通知模板', perms: ['notify:template:view'] },
+    ],
+  },
 ]
 
 /** 按当前用户权限过滤后的可见菜单：先过滤各组子项，再剔除空组与无权限的普通项 */

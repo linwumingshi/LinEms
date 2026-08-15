@@ -856,3 +856,80 @@ export interface RuleLogView {
   traceId: string | null
   createTime: string
 }
+
+// ---------------- 消息通知（Phase 11 扩展） ----------------
+
+/** 通知配置（iot_notify_config；channel_config 为 JSON 字符串） */
+export interface NotifyConfig {
+  configId: string
+  tenantId: string
+  configCode: string
+  configName: string
+  /** WEBHOOK/WECOM/DINGTALK/EMAIL */
+  channel: string
+  /** 渠道配置 JSON：WEBHOOK={url,headers} WECOM={webhook} DINGTALK={webhook,secret} EMAIL={host,port,username,password,from,ssl,to} */
+  channelConfig: string
+  status: number
+  description: string | null
+  createBy: string
+  createTime: string
+  updateTime: string
+}
+
+/** 通知配置保存请求 */
+export interface NotifyConfigSaveReq {
+  configCode: string
+  configName: string
+  channel: string
+  channelConfig: string
+  status?: number
+  description?: string | null
+}
+
+/** 通知模板（iot_notify_template；content_template 支持 ${xxx} 占位符） */
+export interface NotifyTemplate {
+  templateId: string
+  tenantId: string
+  templateCode: string
+  templateName: string
+  /** ALARM/SCENE/DEVICE_EVENT/SYSTEM */
+  messageType: string
+  channel: string
+  titleTemplate: string | null
+  contentTemplate: string
+  variables: string | null
+  status: number
+  description: string | null
+  createBy: string
+  createTime: string
+  updateTime: string
+}
+
+/** 通知模板保存请求 */
+export interface NotifyTemplateSaveReq {
+  templateCode: string
+  templateName: string
+  messageType: string
+  channel: string
+  titleTemplate?: string | null
+  contentTemplate: string
+  variables?: string | null
+  status?: number
+  description?: string | null
+}
+
+/** 通知发送请求 */
+export interface NotifySendRequest {
+  configCode: string
+  templateCode?: string
+  content?: string
+  title?: string
+  context?: Record<string, unknown>
+}
+
+/** 渠道选项 */
+export interface NotifyChannelOption {
+  code: string
+  label: string
+  supported: string
+}

@@ -65,6 +65,10 @@ spring:
           uri: lb://energy-rule
           predicates:
             - Path=/api/rule/**
+        - id: energy-notify
+          uri: lb://energy-notify
+          predicates:
+            - Path=/api/notify/**
         - id: energy-ems
           uri: lb://energy-ems
           predicates:

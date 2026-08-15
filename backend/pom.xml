@@ -41,6 +41,7 @@
     <module>energy-alarm</module>
     <module>energy-ems</module>
     <module>energy-rule</module>
+    <module>energy-notify</module>
   </modules>
 
   <properties>
