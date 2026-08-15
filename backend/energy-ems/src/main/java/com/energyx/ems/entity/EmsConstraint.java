@@ -1,5 +1,7 @@
 package com.energyx.ems.entity;
 
+import com.energyx.common.entity.BaseEntity;
+import lombok.EqualsAndHashCode;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -13,13 +15,12 @@ import java.time.LocalDateTime;
 
 /** 安全约束（ems_constraint）。下发前安全包络校验，Phase1 §2.4。 */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("ems_constraint")
-public class EmsConstraint {
+public class EmsConstraint extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long constraintId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -42,11 +43,5 @@ public class EmsConstraint {
 
 	/** 约束状态（DISABLED/ENABLED） */
 	private ConstraintStatus status;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
-
-	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-	private LocalDateTime updateTime;
 
 }

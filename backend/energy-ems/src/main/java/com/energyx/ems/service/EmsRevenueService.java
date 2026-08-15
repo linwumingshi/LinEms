@@ -13,8 +13,8 @@ import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStationMeta;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
-import com.energyx.ems.mapper.PcsDeviceMapper;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.client.DeviceFeignClient;
+import com.energyx.ems.model.DeviceInfo;
 import com.energyx.ems.util.DemandSavingsEstimator;
 import com.energyx.ems.util.PlanGenerator;
 import com.energyx.ems.util.PlanPoint;
@@ -28,6 +28,7 @@ import com.energyx.ems.web.dto.RevenueDetailRow;
 import com.energyx.ems.web.dto.RevenueMetaReq;
 import com.energyx.ems.web.dto.RevenueSummary;
 import com.energyx.ems.web.dto.RevenueTrendPoint;
+import com.energyx.common.model.Result;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -71,7 +72,7 @@ public class EmsRevenueService {
 
 	private final EmsStationMetaService stationMetaService;
 
-	private final PcsDeviceMapper pcsDeviceMapper;
+	private final DeviceFeignClient deviceFeignClient;
 
 	private final TsdbClient tsdbClient;
 
@@ -82,12 +83,12 @@ public class EmsRevenueService {
 	private final EmsDemandRecordService recordService;
 
 	public EmsRevenueService(EmsPlanMapper planMapper, EmsElectricityPriceMapper priceMapper,
-			EmsStationMetaService stationMetaService, PcsDeviceMapper pcsDeviceMapper, TsdbClient tsdbClient,
+			EmsStationMetaService stationMetaService, DeviceFeignClient deviceFeignClient, TsdbClient tsdbClient,
 			TdenginePlanWriter writer, EmsDemandConfigService configService, EmsDemandRecordService recordService) {
 		this.planMapper = planMapper;
 		this.priceMapper = priceMapper;
 		this.stationMetaService = stationMetaService;
-		this.pcsDeviceMapper = pcsDeviceMapper;
+		this.deviceFeignClient = deviceFeignClient;
 		this.tsdbClient = tsdbClient;
 		this.writer = writer;
 		this.configService = configService;
@@ -220,7 +221,7 @@ public class EmsRevenueService {
 	private Map<LocalDate, RevenueDailyResult> dailyResults(Long stationId, LocalDate start, LocalDate end) {
 		Long tenant = requireTenant();
 		Map<LocalDate, RevenueDailyResult> out = new LinkedHashMap<>();
-		List<PcsDevice> devices = pcsDeviceMapper.selectByStation(tenant, stationId, productKey);
+		List<DeviceInfo> devices = resolvePcsDevices(tenant, stationId);
 		if (devices == null || devices.isEmpty()) {
 			return out;
 		}
@@ -389,6 +390,14 @@ public class EmsRevenueService {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少租户上下文");
 		}
 		return t;
+	}
+
+	/**
+	 * 按租户 + 电站解析 PCS 设备（Feign 调 device 服务，deviceType=PCS）。
+	 */
+	private List<DeviceInfo> resolvePcsDevices(Long tenantId, Long stationId) {
+		Result<List<DeviceInfo>> r = deviceFeignClient.listByStation(tenantId, stationId, productKey, "PCS");
+		return r != null && r.isSuccess() ? r.getData() : List.of();
 	}
 
 }

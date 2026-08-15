@@ -3,7 +3,7 @@ package com.energyx.ems.service;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.ems.entity.EmsDemandConfig;
-import com.energyx.ems.model.MeterDevice;
+import com.energyx.ems.model.DeviceInfo;
 import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ public class DemandAlarmProducer {
 	}
 
 	/** 发布需量超限事件（messageId 按站+槽位幂等；发布失败仅 log，不抛）。 */
-	public void publishDemandOverLimit(EmsDemandConfig config, MeterDevice meter, double demandKw, double limitKw,
+	public void publishDemandOverLimit(EmsDemandConfig config, DeviceInfo meter, double demandKw, double limitKw,
 			LocalDateTime windowStart) {
 		ThingEventMessage evt = new ThingEventMessage();
 		evt.setMessageId("demand-" + config.getStationId() + "-" + windowStart);

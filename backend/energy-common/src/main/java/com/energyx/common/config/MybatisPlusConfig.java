@@ -37,8 +37,8 @@ public class MybatisPlusConfig {
 
 	/** 无 tenant_id 列的表（租户插件忽略；新增表无该列必须补在此处） */
 	private static final Set<String> IGNORE_TABLES = Set.of(
-			// es_system：菜单/角色授权（无租户列）
-			"sys_permission", "sys_role_permission", "sys_user_role",
+			// es_system：菜单/角色授权（无租户列）+ 租户表（tenant_id 是主键，不能被当前租户过滤）
+			"sys_permission", "sys_role_permission", "sys_user_role", "sys_tenant",
 			// es_device：凭证/分组/标签（跟随设备所属租户）
 			"iot_device_certificate", "iot_device_group_relation", "iot_device_tag",
 			// es_station / es_shadow / es_command：关联表

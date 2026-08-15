@@ -1,5 +1,7 @@
 package com.energyx.ems.entity;
 
+import com.energyx.common.entity.BaseEntity;
+import lombok.EqualsAndHashCode;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -12,13 +14,12 @@ import java.time.LocalDateTime;
 
 /** 需量管理站点配置（ems_demand_config）。tenant+station 唯一（uk_demand_config_station）。 */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("ems_demand_config")
-public class EmsDemandConfig {
+public class EmsDemandConfig extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long demandConfigId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -27,11 +28,5 @@ public class EmsDemandConfig {
 
 	/** 需量费率 ¥/kW·月 */
 	private BigDecimal demandRate;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
-
-	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-	private LocalDateTime updateTime;
 
 }

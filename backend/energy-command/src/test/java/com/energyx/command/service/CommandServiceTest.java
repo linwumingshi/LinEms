@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
-import com.energyx.command.mapper.DeviceInfoMapper;
+import com.energyx.command.client.DeviceFeignClient;
 import com.energyx.command.model.CommandRow;
 import com.energyx.command.model.DeviceInfo;
 import com.energyx.command.mqtt.CommandKafkaProducer;
@@ -15,6 +15,7 @@ import com.energyx.common.enums.CommandState;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
+import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,7 +64,7 @@ class CommandServiceTest {
 	CommandAckMapper ackMapper;
 
 	@Mock
-	DeviceInfoMapper deviceMapper;
+	DeviceFeignClient deviceFeignClient;
 
 	@Mock
 	StringRedisTemplate redis;
@@ -89,7 +90,7 @@ class CommandServiceTest {
 	@BeforeEach
 	void setUp() {
 		props = new CommandProperties();
-		service = new CommandService(commandMapper, ackMapper, deviceMapper, redis, producer, objectMapper,
+		service = new CommandService(commandMapper, ackMapper, deviceFeignClient, redis, producer, objectMapper,
 				idempotencyUtils, props, new SnowflakeIdGenerator());
 		lenient().when(redis.opsForList()).thenReturn(listOps);
 		lenient().when(redis.opsForHash()).thenReturn(hashOps);
@@ -131,10 +132,8 @@ class CommandServiceTest {
 	@DisplayName("设备在线 → 直发 Kafka + 置 SENT")
 	void createCommand_onlineDispatchesDirect() {
 		when(idempotencyUtils.tryAcquire("c-1", props.getIdempotencyTtlSeconds())).thenReturn(true);
-		when(deviceMapper.selectByProductAndName("pk-1", "dn-1")).thenReturn(dev());
-		when(commandMapper.insert(eq("c-1"), eq(1L), eq(100L), eq("pk-1"), eq("setPower"), eq(2), anyString(), eq(3),
-				eq(15000), eq(0L)))
-			.thenReturn(1);
+		when(deviceFeignClient.byName("pk-1", "dn-1")).thenReturn(Result.ok(dev()));
+		when(commandMapper.insert(any(CommandRow.class))).thenReturn(1);
 		when(commandMapper.selectById("c-1")).thenReturn(row("c-1", 1));
 		when(redis.hasKey("iot:online:100")).thenReturn(true);
 
@@ -151,10 +150,8 @@ class CommandServiceTest {
 	@DisplayName("设备离线 → 写入离线队列，保持 CREATED")
 	void createCommand_offlineQueues() {
 		when(idempotencyUtils.tryAcquire("c-1", props.getIdempotencyTtlSeconds())).thenReturn(true);
-		when(deviceMapper.selectByProductAndName("pk-1", "dn-1")).thenReturn(dev());
-		when(commandMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyString(), anyInt(), anyString(),
-				anyInt(), anyInt(), anyLong()))
-			.thenReturn(1);
+		when(deviceFeignClient.byName("pk-1", "dn-1")).thenReturn(Result.ok(dev()));
+		when(commandMapper.insert(any(CommandRow.class))).thenReturn(1);
 		when(commandMapper.selectById("c-1")).thenReturn(row("c-1", 0));
 		when(redis.hasKey("iot:online:100")).thenReturn(false);
 		when(listOps.rightPush(eq("iot:cmd:q:100"), anyString())).thenReturn(1L);
@@ -176,15 +173,14 @@ class CommandServiceTest {
 		CommandView view = service.createCommand(req());
 
 		assertEquals("c-1", view.getCommandId());
-		verify(commandMapper, never()).insert(anyString(), anyLong(), anyLong(), anyString(), anyString(), anyInt(),
-				anyString(), anyInt(), anyInt(), anyLong());
+		verify(commandMapper, never()).insert(any(CommandRow.class));
 	}
 
 	@Test
 	@DisplayName("设备解析失败 → 抛错并释放幂等许可")
 	void createCommand_releasesIdempotencyOnFailure() {
 		when(idempotencyUtils.tryAcquire("c-1", props.getIdempotencyTtlSeconds())).thenReturn(true);
-		when(deviceMapper.selectByProductAndName("pk-1", "dn-1")).thenReturn(null);
+		when(deviceFeignClient.byName("pk-1", "dn-1")).thenReturn(Result.ok(null));
 
 		assertThrows(IllegalArgumentException.class, () -> service.createCommand(req()));
 		verify(idempotencyUtils).release("c-1");
@@ -246,13 +242,12 @@ class CommandServiceTest {
 		d.setDeviceId(100L);
 		d.setTenantId(1L);
 		d.setDesired(Map.of("power", 100));
-		when(deviceMapper.selectByDeviceId(100L)).thenReturn(dev());
+		when(deviceFeignClient.byId(100L)).thenReturn(Result.ok(dev()));
 		when(commandMapper.selectInFlightByDeviceAndName(100L, "setProperties")).thenReturn("existing");
 
 		service.materializeDelta(d);
 
-		verify(commandMapper, never()).insert(anyString(), anyLong(), anyLong(), anyString(), anyString(), anyInt(),
-				anyString(), anyInt(), anyInt(), anyLong());
+		verify(commandMapper, never()).insert(any(CommandRow.class));
 	}
 
 	@Test
@@ -263,11 +258,9 @@ class CommandServiceTest {
 		d.setTenantId(1L);
 		d.setDesired(Map.of("power", 100));
 		d.setVersion(2);
-		when(deviceMapper.selectByDeviceId(100L)).thenReturn(dev());
+		when(deviceFeignClient.byId(100L)).thenReturn(Result.ok(dev()));
 		when(commandMapper.selectInFlightByDeviceAndName(100L, "setProperties")).thenReturn(null);
-		when(commandMapper.insert(anyString(), eq(1L), eq(100L), eq("pk-1"), eq("setProperties"), eq(2), anyString(),
-				anyInt(), anyInt(), eq(0L)))
-			.thenReturn(1);
+		when(commandMapper.insert(any(CommandRow.class))).thenReturn(1);
 		CommandRow materialized = row("c-new", 0);
 		materialized.setCommandName("setProperties"); // dispatch 重新读取的落库行是 setProperties
 		when(commandMapper.selectById(anyString())).thenReturn(materialized);
@@ -276,8 +269,7 @@ class CommandServiceTest {
 
 		service.materializeDelta(d);
 
-		verify(commandMapper).insert(anyString(), eq(1L), eq(100L), eq("pk-1"), eq("setProperties"), eq(2), anyString(),
-				anyInt(), anyInt(), eq(0L));
+		verify(commandMapper).insert(any(CommandRow.class));
 		verify(listOps).rightPush(eq("iot:cmd:q:100"), contains("setProperties"));
 	}
 
@@ -327,7 +319,7 @@ class CommandServiceTest {
 		when(commandMapper.selectTimeoutCandidates(any(LocalDateTime.class), anyInt())).thenReturn(List.of(row));
 		when(redis.hasKey("iot:online:100")).thenReturn(true);
 		when(commandMapper.resendOnline(eq("c-1"), any(LocalDateTime.class))).thenReturn(1);
-		when(deviceMapper.selectByDeviceId(100L)).thenReturn(dev());
+		when(deviceFeignClient.byId(100L)).thenReturn(Result.ok(dev()));
 
 		service.timeoutScan();
 

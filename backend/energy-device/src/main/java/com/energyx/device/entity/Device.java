@@ -34,8 +34,6 @@ public class Device extends BaseEntity {
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long deviceId;
 
-	private Long tenantId;
-
 	private Long enterpriseId;
 
 	/** 所属电站 */

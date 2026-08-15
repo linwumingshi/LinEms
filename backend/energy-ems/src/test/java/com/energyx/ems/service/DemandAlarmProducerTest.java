@@ -2,7 +2,7 @@ package com.energyx.ems.service;
 
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.ems.entity.EmsDemandConfig;
-import com.energyx.ems.model.MeterDevice;
+import com.energyx.ems.model.DeviceInfo;
 import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,8 +29,8 @@ class DemandAlarmProducerTest {
 		return cfg;
 	}
 
-	private static MeterDevice meter() {
-		return new MeterDevice(1L, 7L, "snd_ess_meter", "m1", 3);
+	private static DeviceInfo meter() {
+		return new DeviceInfo(1L, 7L, "snd_ess_meter", "m1", 3);
 	}
 
 	@Test

@@ -3,16 +3,17 @@ package com.energyx.ems.scheduler;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.ems.entity.EmsDemandConfig;
 import com.energyx.ems.entity.EmsDemandRecord;
-import com.energyx.ems.mapper.MeterDeviceMapper;
-import com.energyx.ems.mapper.PcsDeviceMapper;
-import com.energyx.ems.model.MeterDevice;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.client.DeviceFeignClient;
+
+import com.energyx.ems.model.DeviceInfo;
+
 import com.energyx.ems.service.DemandAlarmProducer;
 import com.energyx.ems.service.DemandShaveClient;
 import com.energyx.ems.service.EmsDemandConfigService;
 import com.energyx.ems.service.EmsDemandRecordService;
 import com.energyx.ems.service.TsdbClient;
 import com.energyx.ems.util.DemandDetector;
+import com.energyx.common.model.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,9 +39,7 @@ public class DemandDetectScheduler {
 
 	private final EmsDemandRecordService recordService;
 
-	private final MeterDeviceMapper meterDeviceMapper;
-
-	private final PcsDeviceMapper pcsDeviceMapper;
+	private final DeviceFeignClient deviceFeignClient;
 
 	private final TsdbClient tsdbClient;
 
@@ -57,12 +56,12 @@ public class DemandDetectScheduler {
 	private String pcsProductKey;
 
 	public DemandDetectScheduler(EmsDemandConfigService configService, EmsDemandRecordService recordService,
-			MeterDeviceMapper meterDeviceMapper, PcsDeviceMapper pcsDeviceMapper, TsdbClient tsdbClient,
-			DemandShaveClient shaveClient, DemandAlarmProducer alarmProducer, DistributedLock distributedLock) {
+			DeviceFeignClient deviceFeignClient, TsdbClient tsdbClient, DemandShaveClient shaveClient,
+			DemandAlarmProducer alarmProducer, DistributedLock distributedLock) {
 		this.configService = configService;
 		this.recordService = recordService;
-		this.meterDeviceMapper = meterDeviceMapper;
-		this.pcsDeviceMapper = pcsDeviceMapper;
+		this.deviceFeignClient = deviceFeignClient;
+
 		this.tsdbClient = tsdbClient;
 		this.shaveClient = shaveClient;
 		this.alarmProducer = alarmProducer;
@@ -92,20 +91,18 @@ public class DemandDetectScheduler {
 			log.warn("[DemandDetect] 站点未配置需量限值，跳过 stationId={}", config.getStationId());
 			return;
 		}
-		List<MeterDevice> meters = meterDeviceMapper.selectByStation(config.getTenantId(), config.getStationId(),
-				meterProductKey);
+		List<DeviceInfo> meters = resolveDevices(config.getTenantId(), config.getStationId(), meterProductKey, "METER");
 		if (meters == null || meters.isEmpty()) {
 			log.warn("[DemandDetect] 站点无电表，跳过 stationId={}", config.getStationId());
 			return;
 		}
-		MeterDevice meter = meters.get(0);
+		DeviceInfo meter = meters.get(0);
 		List<TsdbClient.TelemetryRow> rows = tsdbClient.history(meter.deviceId(), meter.productKey(), today);
 		if (rows == null || rows.isEmpty()) {
 			log.warn("[DemandDetect] 电表无遥测，跳过 stationId={} deviceId={}", config.getStationId(), meter.deviceId());
 			return;
 		}
-		List<PcsDevice> pcs = pcsDeviceMapper.selectByStation(config.getTenantId(), config.getStationId(),
-				pcsProductKey);
+		List<DeviceInfo> pcs = resolveDevices(config.getTenantId(), config.getStationId(), pcsProductKey, "PCS");
 		LocalDateTime now = LocalDateTime.now();
 		LocalDateTime slotStart = DemandDetector.slotStart(now);
 		LocalDateTime slotEnd = DemandDetector.slotEnd(slotStart);
@@ -149,6 +146,14 @@ public class DemandDetectScheduler {
 
 	private static double round2(double v) {
 		return Math.round(v * 100.0) / 100.0;
+	}
+
+	/**
+	 * 按租户 + 电站 + 类型解析设备（Feign 调 device 服务；deviceType：METER 进线电表 / PCS 下发目标）。
+	 */
+	private List<DeviceInfo> resolveDevices(Long tenantId, Long stationId, String productKey, String deviceType) {
+		Result<List<DeviceInfo>> r = deviceFeignClient.listByStation(tenantId, stationId, productKey, deviceType);
+		return r != null && r.isSuccess() ? r.getData() : List.of();
 	}
 
 }

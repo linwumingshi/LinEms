@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.enums.AlarmLevel;
 import com.energyx.common.enums.AlarmRuleStatus;
-import com.energyx.common.model.BaseEntity;
+import com.energyx.common.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -20,6 +20,9 @@ public class AlarmRuleRow extends BaseEntity {
 	/** 规则ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long ruleId;
+
+	/** 创建人（用户 ID，系统动作填 0；表含 create_by 列） */
+	private Long createBy;
 
 	private String ruleCode;
 

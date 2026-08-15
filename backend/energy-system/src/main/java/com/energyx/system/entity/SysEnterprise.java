@@ -22,8 +22,6 @@ public class SysEnterprise extends BaseEntity {
 	@TableId(type = IdType.AUTO)
 	private Long enterpriseId;
 
-	private Long tenantId;
-
 	/** 父企业 ID（0=顶级） */
 	private Long parentId;
 

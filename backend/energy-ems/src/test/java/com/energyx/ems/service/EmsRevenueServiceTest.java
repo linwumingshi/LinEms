@@ -12,12 +12,13 @@ import com.energyx.ems.entity.EmsPlan;
 import com.energyx.ems.entity.EmsStationMeta;
 import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
-import com.energyx.ems.mapper.PcsDeviceMapper;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.client.DeviceFeignClient;
+import com.energyx.ems.model.DeviceInfo;
 import com.energyx.ems.util.TdenginePlanWriter;
 import com.energyx.ems.web.dto.RevenueDetailRow;
 import com.energyx.ems.web.dto.RevenueSummary;
 import com.energyx.ems.web.dto.RevenueTrendPoint;
+import com.energyx.common.model.Result;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class EmsRevenueServiceTest {
 
 	private EmsStationMetaService stationMetaService;
 
-	private PcsDeviceMapper pcsDeviceMapper;
+	private DeviceFeignClient deviceFeignClient;
 
 	private TsdbClient tsdbClient;
 
@@ -61,12 +62,12 @@ class EmsRevenueServiceTest {
 		planMapper = mock(EmsPlanMapper.class);
 		priceMapper = mock(EmsElectricityPriceMapper.class);
 		stationMetaService = mock(EmsStationMetaService.class);
-		pcsDeviceMapper = mock(PcsDeviceMapper.class);
+		deviceFeignClient = mock(DeviceFeignClient.class);
 		tsdbClient = mock(TsdbClient.class);
 		writer = mock(TdenginePlanWriter.class);
 		configService = mock(EmsDemandConfigService.class);
 		recordService = mock(EmsDemandRecordService.class);
-		svc = new EmsRevenueService(planMapper, priceMapper, stationMetaService, pcsDeviceMapper, tsdbClient, writer,
+		svc = new EmsRevenueService(planMapper, priceMapper, stationMetaService, deviceFeignClient, tsdbClient, writer,
 				configService, recordService);
 		ReflectionTestUtils.setField(svc, "productKey", "snd_ess_pcs");
 	}
@@ -78,7 +79,7 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void summary_noDevicesReturnsZeros() {
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of());
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS"))).thenReturn(Result.ok(List.of()));
 
 		RevenueSummary s = svc.summary(10L, RevenuePeriodType.DAY, DAY);
 
@@ -90,8 +91,9 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void summary_aggregatesTelemetryWithRunMode() {
-		PcsDevice pcs = new PcsDevice(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of(pcs));
+		DeviceInfo pcs = new DeviceInfo(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS")))
+			.thenReturn(Result.ok(List.of(pcs)));
 		when(planMapper.selectList(any())).thenReturn(List.of());
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -110,8 +112,9 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void summary_paybackFromInvestment() {
-		PcsDevice pcs = new PcsDevice(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of(pcs));
+		DeviceInfo pcs = new DeviceInfo(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS")))
+			.thenReturn(Result.ok(List.of(pcs)));
 		when(planMapper.selectList(any())).thenReturn(List.of());
 		EmsElectricityPrice tier = new EmsElectricityPrice();
 		tier.setPriceId(1L);
@@ -149,8 +152,8 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void summary_wiresDemandSavingsFromConfigAndRecords() {
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of()); // dailyResults
-																									// 空
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS"))).thenReturn(Result.ok(List.of())); // dailyResults
+		// 空
 		EmsDemandConfig cfg = new EmsDemandConfig();
 		cfg.setDemandLimitKw(new BigDecimal("100.00"));
 		cfg.setDemandRate(new BigDecimal("40.0000"));
@@ -169,8 +172,9 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void detail_returnsSlots() throws Exception {
-		PcsDevice pcs = new PcsDevice(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of(pcs));
+		DeviceInfo pcs = new DeviceInfo(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS")))
+			.thenReturn(Result.ok(List.of(pcs)));
 		EmsPlan plan = new EmsPlan();
 		plan.setPlanId(1L);
 		plan.setStationId(10L);
@@ -203,8 +207,9 @@ class EmsRevenueServiceTest {
 
 	@Test
 	void trend_monthReturnsDailyPoints() {
-		PcsDevice pcs = new PcsDevice(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
-		when(pcsDeviceMapper.selectByStation(anyLong(), anyLong(), any())).thenReturn(List.of(pcs));
+		DeviceInfo pcs = new DeviceInfo(9L, 7L, "snd_ess_pcs", "pcs-1", 2);
+		when(deviceFeignClient.listByStation(anyLong(), anyLong(), any(), eq("PCS")))
+			.thenReturn(Result.ok(List.of(pcs)));
 		when(planMapper.selectList(any())).thenReturn(List.of());
 		when(priceMapper.selectList(any())).thenReturn(List.of());
 		long start = DAY.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();

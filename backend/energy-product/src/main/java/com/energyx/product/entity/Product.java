@@ -24,8 +24,6 @@ public class Product extends BaseEntity {
 	@TableId(type = IdType.AUTO)
 	private Long productId;
 
-	private Long tenantId;
-
 	private Long categoryId;
 
 	/** 产品标识（全局路由锚点） */

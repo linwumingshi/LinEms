@@ -217,6 +217,28 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 	}
 
 	@Override
+	public Device findByProductKeyAndName(String productKey, String deviceName) {
+		if (productKey == null || productKey.isBlank() || deviceName == null || deviceName.isBlank()) {
+			return null;
+		}
+		// 租户插件自动追加 tenant_id 条件；deleted=0 由 BaseEntity @TableLogic 自动拼接
+		return getOne(new LambdaQueryWrapper<Device>().eq(Device::getProductKey, productKey)
+			.eq(Device::getDeviceName, deviceName)
+			.last("LIMIT 1"));
+	}
+
+	@Override
+	public List<Device> listByStation(Long tenantId, Long stationId, String productKey, String deviceType) {
+		// 可下发状态：2 已激活(离线) / 3 在线；租户条件由租户插件自动追加
+		return list(new LambdaQueryWrapper<Device>().eq(Device::getTenantId, tenantId)
+			.eq(Device::getStationId, stationId)
+			.eq(productKey != null && !productKey.isBlank(), Device::getProductKey, productKey)
+			.eq(deviceType != null && !deviceType.isBlank(), Device::getDeviceType, deviceType)
+			.in(Device::getStatus, 2, 3)
+			.orderByAsc(Device::getDeviceId));
+	}
+
+	@Override
 	public List<Device> tree(Long rootId) {
 		List<Device> all;
 		if (rootId != null && rootId > 0) {

@@ -35,6 +35,15 @@ public interface DeviceService {
 
 	Device detail(Long deviceId);
 
+	/** 按 productKey + deviceName 查设备（跨服务调用方解析用）；不存在返回 null */
+	Device findByProductKeyAndName(String productKey, String deviceName);
+
+	/**
+	 * 按电站 + 类型查设备列表（跨服务调用方解析用）：tenantId/stationId 必填， productKey/deviceType
+	 * 可空过滤；仅返回可下发状态（已激活/在线）。
+	 */
+	List<Device> listByStation(Long tenantId, Long stationId, String productKey, String deviceType);
+
 	/** 资产树；rootId 非空时返回该节点子树，否则返回当前租户全量树 */
 	List<Device> tree(Long rootId);
 

@@ -23,8 +23,6 @@ public class SysUser extends BaseEntity {
 	@TableId(type = IdType.AUTO)
 	private Long userId;
 
-	private Long tenantId;
-
 	private Long enterpriseId;
 
 	private String username;

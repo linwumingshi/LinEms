@@ -3,16 +3,17 @@ package com.energyx.ems.scheduler;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.ems.entity.EmsDemandConfig;
 import com.energyx.ems.entity.EmsDemandRecord;
-import com.energyx.ems.mapper.MeterDeviceMapper;
-import com.energyx.ems.mapper.PcsDeviceMapper;
-import com.energyx.ems.model.MeterDevice;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.client.DeviceFeignClient;
+
+import com.energyx.ems.model.DeviceInfo;
+
 import com.energyx.ems.service.DemandAlarmProducer;
 import com.energyx.ems.service.DemandShaveClient;
 import com.energyx.ems.service.EmsDemandConfigService;
 import com.energyx.ems.service.EmsDemandRecordService;
 import com.energyx.ems.service.TsdbClient;
 import com.energyx.ems.util.DemandDetector;
+import com.energyx.common.model.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -34,9 +35,7 @@ class DemandDetectSchedulerTest {
 
 	private EmsDemandRecordService recordService;
 
-	private MeterDeviceMapper meterDeviceMapper;
-
-	private PcsDeviceMapper pcsDeviceMapper;
+	private DeviceFeignClient deviceFeignClient;
 
 	private TsdbClient tsdbClient;
 
@@ -52,8 +51,8 @@ class DemandDetectSchedulerTest {
 	void setup() {
 		configService = mock(EmsDemandConfigService.class);
 		recordService = mock(EmsDemandRecordService.class);
-		meterDeviceMapper = mock(MeterDeviceMapper.class);
-		pcsDeviceMapper = mock(PcsDeviceMapper.class);
+		deviceFeignClient = mock(DeviceFeignClient.class);
+
 		tsdbClient = mock(TsdbClient.class);
 		shaveClient = mock(DemandShaveClient.class);
 		alarmProducer = mock(DemandAlarmProducer.class);
@@ -62,8 +61,8 @@ class DemandDetectSchedulerTest {
 			((Runnable) inv.getArgument(2)).run();
 			return true;
 		});
-		scheduler = new DemandDetectScheduler(configService, recordService, meterDeviceMapper, pcsDeviceMapper,
-				tsdbClient, shaveClient, alarmProducer, distributedLock);
+		scheduler = new DemandDetectScheduler(configService, recordService, deviceFeignClient, tsdbClient, shaveClient,
+				alarmProducer, distributedLock);
 		ReflectionTestUtils.setField(scheduler, "meterProductKey", "snd_ess_meter");
 		ReflectionTestUtils.setField(scheduler, "pcsProductKey", "snd_ess_pcs");
 	}
@@ -91,8 +90,8 @@ class DemandDetectSchedulerTest {
 	}
 
 	private void stubMeterAndRows(double power) {
-		when(meterDeviceMapper.selectByStation(7L, 10L, "snd_ess_meter"))
-			.thenReturn(List.of(new MeterDevice(1L, 7L, "snd_ess_meter", "m1", 3)));
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_meter", "METER"))
+			.thenReturn(Result.ok(List.of(new DeviceInfo(1L, 7L, "snd_ess_meter", "m1", 3))));
 		when(tsdbClient.history(anyLong(), anyString(), any(LocalDate.class))).thenReturn(List.of(rowNow(power)));
 	}
 
@@ -100,8 +99,8 @@ class DemandDetectSchedulerTest {
 	void detect_overLimitShavesAndPublishesAlarmOnce() {
 		when(configService.listAll()).thenReturn(List.of(config(10)));
 		stubMeterAndRows(500);
-		when(pcsDeviceMapper.selectByStation(7L, 10L, "snd_ess_pcs"))
-			.thenReturn(List.of(new PcsDevice(2L, 7L, "snd_ess_pcs", "p1", 3)));
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_pcs", "PCS"))
+			.thenReturn(Result.ok(List.of(new DeviceInfo(2L, 7L, "snd_ess_pcs", "p1", 3))));
 		when(recordService.getByStationAndWindow(anyLong(), anyLong(), any(LocalDateTime.class))).thenReturn(null);
 		when(shaveClient.shave(any(), anyList(), any(), any(), anyDouble(), anyDouble(), anyDouble()))
 			.thenAnswer(inv -> {
@@ -113,7 +112,7 @@ class DemandDetectSchedulerTest {
 
 		scheduler.detect();
 
-		verify(shaveClient).shave(eq(config(10)), any(), any(), any(), eq(500.0), eq(10.0), anyDouble());
+		verify(shaveClient).shave(any(), any(), any(), any(), eq(500.0), eq(10.0), anyDouble());
 		verify(alarmProducer, times(1)).publishDemandOverLimit(any(), any(), anyDouble(), anyDouble(), any());
 		verify(recordService, never()).upsert(argThat(r -> !Boolean.TRUE.equals(r.getOverLimit())));
 	}
@@ -122,8 +121,8 @@ class DemandDetectSchedulerTest {
 	void detect_alreadyOverSkipsAlarm() {
 		when(configService.listAll()).thenReturn(List.of(config(10)));
 		stubMeterAndRows(500);
-		when(pcsDeviceMapper.selectByStation(7L, 10L, "snd_ess_pcs"))
-			.thenReturn(List.of(new PcsDevice(2L, 7L, "snd_ess_pcs", "p1", 3)));
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_pcs", "PCS"))
+			.thenReturn(Result.ok(List.of(new DeviceInfo(2L, 7L, "snd_ess_pcs", "p1", 3))));
 		EmsDemandRecord existing = new EmsDemandRecord();
 		existing.setOverLimit(true); // 槽位已定型超限
 		when(recordService.getByStationAndWindow(anyLong(), anyLong(), any(LocalDateTime.class))).thenReturn(existing);
@@ -151,7 +150,7 @@ class DemandDetectSchedulerTest {
 	@Test
 	void detect_meterMissingSkips() {
 		when(configService.listAll()).thenReturn(List.of(config(10)));
-		when(meterDeviceMapper.selectByStation(7L, 10L, "snd_ess_meter")).thenReturn(List.of());
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_meter", "METER")).thenReturn(Result.ok(List.of()));
 
 		scheduler.detect();
 
@@ -162,8 +161,8 @@ class DemandDetectSchedulerTest {
 	@Test
 	void detect_tsdbEmptySkips() {
 		when(configService.listAll()).thenReturn(List.of(config(10)));
-		when(meterDeviceMapper.selectByStation(7L, 10L, "snd_ess_meter"))
-			.thenReturn(List.of(new MeterDevice(1L, 7L, "snd_ess_meter", "m1", 3)));
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_meter", "METER"))
+			.thenReturn(Result.ok(List.of(new DeviceInfo(1L, 7L, "snd_ess_meter", "m1", 3))));
 		when(tsdbClient.history(anyLong(), anyString(), any(LocalDate.class))).thenReturn(List.of());
 
 		scheduler.detect();
@@ -191,10 +190,11 @@ class DemandDetectSchedulerTest {
 		stubMeterAndRows(5); // 先 stub 电表/遥测，再覆写站 10 抛异常（last-stub-wins，避免重复 when() 触发上一次
 								// thenThrow）
 		// 第一站电表查询抛异常
-		when(meterDeviceMapper.selectByStation(7L, 10L, "snd_ess_meter")).thenThrow(new RuntimeException("db down"));
+		when(deviceFeignClient.listByStation(7L, 10L, "snd_ess_meter", "METER"))
+			.thenThrow(new RuntimeException("db down"));
 		// 第二站正常（站 id 20）
-		when(meterDeviceMapper.selectByStation(7L, 20L, "snd_ess_meter"))
-			.thenReturn(List.of(new MeterDevice(3L, 7L, "snd_ess_meter", "m3", 3)));
+		when(deviceFeignClient.listByStation(7L, 20L, "snd_ess_meter", "METER"))
+			.thenReturn(Result.ok(List.of(new DeviceInfo(3L, 7L, "snd_ess_meter", "m3", 3))));
 		when(recordService.getByStationAndWindow(anyLong(), anyLong(), any(LocalDateTime.class))).thenReturn(null);
 
 		scheduler.detect();

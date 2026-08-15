@@ -2,7 +2,7 @@ package com.energyx.ems.service;
 
 import com.energyx.ems.entity.EmsDemandConfig;
 import com.energyx.ems.entity.EmsDemandRecord;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.model.DeviceInfo;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -27,8 +27,8 @@ class DemandShaveClientTest {
 		return cfg;
 	}
 
-	private static PcsDevice pcs(long id, String name) {
-		return new PcsDevice(id, 7L, "snd_ess_pcs", name, 3);
+	private static DeviceInfo pcs(long id, String name) {
+		return new DeviceInfo(id, 7L, "snd_ess_pcs", name, 3);
 	}
 
 	private static LocalDateTime win() {

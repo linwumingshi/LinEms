@@ -1,5 +1,7 @@
 package com.energyx.ems.entity;
 
+import com.energyx.common.entity.BaseEntity;
+import lombok.EqualsAndHashCode;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -12,17 +14,16 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 策略定义（ems_strategy）。表无 deleted 列、PK 为 strategy_id， 故不 extends BaseEntity；审计字段由
- * AuditMetaObjectHandler 填充。
+ * 策略定义（ems_strategy）。继承 {@link BaseEntity}：表含 tenant_id/create_by/create_time/
+ * update_time/deleted 列（deleted 已由迁移脚本补充），审计字段与逻辑删除统一由基类承载。
  */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("ems_strategy")
-public class EmsStrategy {
+public class EmsStrategy extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long strategyId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -41,13 +42,5 @@ public class EmsStrategy {
 	private StrategyStatus status;
 
 	private Integer version;
-
-	private Long createBy;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
-
-	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-	private LocalDateTime updateTime;
 
 }

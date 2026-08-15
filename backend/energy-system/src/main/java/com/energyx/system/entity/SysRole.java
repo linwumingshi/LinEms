@@ -3,25 +3,23 @@ package com.energyx.system.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.entity.BaseEntity;
 import com.energyx.common.enums.DataScope;
 import com.energyx.common.enums.RoleStatus;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 /**
- * 角色。对应表 sys_role（无软删字段，独立审计列）。
+ * 角色。对应表 sys_role（含 tenant_id/create_time/update_time/deleted 列，审计与逻辑删除 由
+ * {@link BaseEntity} 承载）。
  */
 @Getter
 @Setter
 @TableName("sys_role")
-public class SysRole {
+public class SysRole extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long roleId;
-
-	private Long tenantId;
 
 	/** 角色编码，如 SUPER_ADMIN / OPERATOR */
 	private String roleCode;
@@ -33,9 +31,5 @@ public class SysRole {
 
 	/** 角色状态（DISABLED/ENABLED，对应 DB 0禁用 1启用） */
 	private RoleStatus status;
-
-	private LocalDateTime createTime;
-
-	private LocalDateTime updateTime;
 
 }

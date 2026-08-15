@@ -1,7 +1,7 @@
 package com.energyx.command.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.energyx.command.model.CommandRow;
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -11,31 +11,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * iot_command 数据访问（state 条件更新天然幂等：重复 ACK/重放因 WHERE state 不满足而空操作）。
+ * iot_command 数据访问。
+ *
+ * <p>
+ * 基础 CRUD（selectById/insert/delete）由 MyBatis-Plus BaseMapper 提供； 状态机推进保留手写 条件更新（WHERE
+ * state 幂等：重复 ACK/重放因 state 不满足而空操作，BaseMapper 无法表达原子 状态迁移）。
+ * </p>
  */
 @Mapper
-public interface CommandMapper {
-
-	@Select("""
-			SELECT command_id, tenant_id, device_id, product_key, command_name, command_type,
-			       params, state, retry_count, max_retry, timeout_ms,
-			       sent_time, received_time, executing_time, finish_time,
-			       result, error_code, error_msg, create_by, create_time
-			FROM iot_command WHERE command_id = #{commandId}
-			""")
-	CommandRow selectById(@Param("commandId") String commandId);
-
-	/** 创建指令，初始 state=0（CREATED） */
-	@Insert("""
-			INSERT INTO iot_command (command_id, tenant_id, device_id, product_key, command_name,
-			                         command_type, params, state, max_retry, timeout_ms, create_by)
-			VALUES (#{commandId}, #{tenantId}, #{deviceId}, #{productKey}, #{commandName},
-			        #{commandType}, #{params}, 0, #{maxRetry}, #{timeoutMs}, #{createBy})
-			""")
-	int insert(@Param("commandId") String commandId, @Param("tenantId") long tenantId, @Param("deviceId") long deviceId,
-			@Param("productKey") String productKey, @Param("commandName") String commandName,
-			@Param("commandType") int commandType, @Param("params") String params, @Param("maxRetry") int maxRetry,
-			@Param("timeoutMs") int timeoutMs, @Param("createBy") long createBy);
+public interface CommandMapper extends BaseMapper<CommandRow> {
 
 	/** 下发（在线直发 / 离线队列补发）：CREATED → SENT */
 	@Update("""

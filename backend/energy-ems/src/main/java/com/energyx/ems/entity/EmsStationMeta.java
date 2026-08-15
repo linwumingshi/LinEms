@@ -1,5 +1,7 @@
 package com.energyx.ems.entity;
 
+import com.energyx.common.entity.BaseEntity;
+import lombok.EqualsAndHashCode;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -13,13 +15,12 @@ import java.time.LocalDateTime;
 
 /** 收益核算电站投资元数据（ems_station_meta）。station_id 唯一（uk_station_meta_station）。 */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("ems_station_meta")
-public class EmsStationMeta {
+public class EmsStationMeta extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long stationMetaId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -28,11 +29,5 @@ public class EmsStationMeta {
 
 	/** 投运日期 */
 	private LocalDate installDate;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
-
-	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-	private LocalDateTime updateTime;
 
 }

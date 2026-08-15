@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.enums.PlanPointState;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -14,10 +15,11 @@ import java.time.LocalTime;
 @TableName("ems_execution_record")
 public class EmsExecutionRecord {
 
+	/** 租户 ID */
+	private Long tenantId;
+
 	@TableId(type = IdType.AUTO)
 	private Long execId;
-
-	private Long tenantId;
 
 	private Long planId;
 

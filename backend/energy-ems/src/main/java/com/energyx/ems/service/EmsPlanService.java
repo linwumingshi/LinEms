@@ -24,14 +24,15 @@ import com.energyx.ems.mapper.EmsElectricityPriceMapper;
 import com.energyx.ems.mapper.EmsExecutionRecordMapper;
 import com.energyx.ems.mapper.EmsPlanMapper;
 import com.energyx.ems.mapper.EmsStrategyMapper;
-import com.energyx.ems.mapper.PcsDeviceMapper;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.client.DeviceFeignClient;
+import com.energyx.ems.model.DeviceInfo;
 import com.energyx.ems.mqtt.EmsKafkaProducer;
 import com.energyx.ems.util.PlanGenerator;
 import com.energyx.ems.util.PlanInput;
 import com.energyx.ems.util.PlanPoint;
 import com.energyx.ems.util.PriceTier;
 import com.energyx.ems.util.TdenginePlanWriter;
+import com.energyx.common.model.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import com.xxl.job.core.handler.annotation.XxlJob;
@@ -77,7 +78,7 @@ public class EmsPlanService {
 
 	private final EmsKafkaProducer kafkaProducer;
 
-	private final PcsDeviceMapper pcsDeviceMapper;
+	private final DeviceFeignClient deviceFeignClient;
 
 	private final ShadowClient shadowClient;
 
@@ -94,7 +95,7 @@ public class EmsPlanService {
 	public EmsPlanService(EmsStrategyMapper strategyMapper, EmsElectricityPriceMapper priceMapper,
 			EmsConstraintMapper constraintMapper, EmsPlanMapper planMapper, EmsExecutionRecordMapper execMapper,
 			SafetyEnvelopeValidator validator, TdenginePlanWriter writer, CommandClient commandClient,
-			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer, PcsDeviceMapper pcsDeviceMapper,
+			DistributedLock distributedLock, EmsKafkaProducer kafkaProducer, DeviceFeignClient deviceFeignClient,
 			ShadowClient shadowClient) {
 		this.strategyMapper = strategyMapper;
 		this.priceMapper = priceMapper;
@@ -106,7 +107,7 @@ public class EmsPlanService {
 		this.commandClient = commandClient;
 		this.distributedLock = distributedLock;
 		this.kafkaProducer = kafkaProducer;
-		this.pcsDeviceMapper = pcsDeviceMapper;
+		this.deviceFeignClient = deviceFeignClient;
 		this.shadowClient = shadowClient;
 	}
 
@@ -245,7 +246,7 @@ public class EmsPlanService {
 		if (plan.getStatus() != PlanStatus.PENDING) {
 			throw new BusinessException(ErrorCode.CONFLICT, "计划状态非待执行: " + plan.getStatus().getCode());
 		}
-		List<PcsDevice> devices = resolveDispatchDevices(plan);
+		List<DeviceInfo> devices = resolveDispatchDevices(plan);
 		if (devices == null || devices.isEmpty()) {
 			// 消除旧"未配置下发设备 energyx.ems.device-name"裸报错：电站级上下文 + 修复指引（P0-2）
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "电站 " + plan.getStationId()
@@ -271,7 +272,7 @@ public class EmsPlanService {
 	 * @return 本次新下发点数（点 × 设备）
 	 */
 	public int dispatchDuePoints(EmsPlan plan) {
-		List<PcsDevice> devices = resolveDispatchDevices(plan);
+		List<DeviceInfo> devices = resolveDispatchDevices(plan);
 		if (devices == null || devices.isEmpty()) {
 			log.warn("计划 {} 电站 {} 无可下发 PCS 设备，跳过本轮下发", plan.getPlanId(), plan.getStationId());
 			return 0;
@@ -285,7 +286,7 @@ public class EmsPlanService {
 	 * @param devices 已解析的电站 PCS 下发目标（非空）
 	 * @return 本次新下发点数（点 × 设备）
 	 */
-	private int dispatchDuePoints(EmsPlan plan, List<PcsDevice> devices) {
+	private int dispatchDuePoints(EmsPlan plan, List<DeviceInfo> devices) {
 		List<PlanPoint> points = readPoints(plan.getStationId(), plan.getPlanDate());
 		LocalTime now = LocalTime.now();
 		int sent = 0;
@@ -305,7 +306,7 @@ public class EmsPlanService {
 			params.put("power", p.powerKw());
 			params.put("socTarget", p.socTarget());
 			params.put("time", p.time().toString()); // 携带计划点时刻，供设备侧定时执行语义
-			for (PcsDevice dev : devices) {
+			for (DeviceInfo dev : devices) {
 				if (execMapper.selectByPlanTimeAndDevice(plan.getPlanId(), p.time(), dev.deviceId()) != null) {
 					continue; // 该点该设备已下发，跳过
 				}
@@ -342,8 +343,19 @@ public class EmsPlanService {
 	 * 解析计划下发目标：从设备表查电站所属 PCS（productKey + device_type=PCS，status 激活/在线）。 空结果不抛错，由调用方决定
 	 * 语义：受理时抛电站级可操作错误，调度/状态推进时跳过并告警（P0-2）。
 	 */
-	private List<PcsDevice> resolveDispatchDevices(EmsPlan plan) {
-		return pcsDeviceMapper.selectByStation(plan.getTenantId(), plan.getStationId(), productKey);
+	private List<DeviceInfo> resolveDispatchDevices(EmsPlan plan) {
+		// Feign 调 device 服务按电站解析 PCS；服务不可用时降级空列表，由调用方决定语义
+		Result<List<DeviceInfo>> r = deviceFeignClient.listByStation(plan.getTenantId(), plan.getStationId(),
+				productKey, "PCS");
+		return r != null && r.isSuccess() ? r.getData() : List.of();
+	}
+
+	/**
+	 * 按租户 + 电站解析 PCS 下发设备（Feign 调 device 服务，deviceType=PCS）。
+	 */
+	private List<DeviceInfo> resolvePcsDevices(Long tenantId, Long stationId, String productKey) {
+		Result<List<DeviceInfo>> r = deviceFeignClient.listByStation(tenantId, stationId, productKey, "PCS");
+		return r != null && r.isSuccess() ? r.getData() : List.of();
 	}
 
 	/**
@@ -356,7 +368,7 @@ public class EmsPlanService {
 		if (plan == null || plan.getStatus() != PlanStatus.RUNNING) {
 			return; // 非执行中无需推进
 		}
-		List<PcsDevice> devices = pcsDeviceMapper.selectByStation(plan.getTenantId(), plan.getStationId(), productKey);
+		List<DeviceInfo> devices = resolveDispatchDevices(plan);
 		if (devices == null || devices.isEmpty()) {
 			// 下发目标异常消失（受理后设备被删/禁用），不收敛避免误判完成
 			log.warn("计划 {} 电站 {} 无 PCS 下发设备，状态不推进", planId, plan.getStationId());
@@ -379,7 +391,7 @@ public class EmsPlanService {
 		if (!allDispatched && planDateOver) {
 			// 已过下发窗口但有点未下发：补记超时记录，收敛不悬挂
 			for (PlanPoint p : actionable) {
-				for (PcsDevice d : devices) {
+				for (DeviceInfo d : devices) {
 					if (dispatched.contains(p.time() + ":" + d.deviceId())) {
 						continue;
 					}
@@ -547,11 +559,11 @@ public class EmsPlanService {
 	private double resolveInitialSoc(Long tenantId, Long stationId, EmsConstraint c) {
 		double fallback = c.getSocMax().doubleValue() / 2;
 		try {
-			List<PcsDevice> devices = pcsDeviceMapper.selectByStation(tenantId, stationId, productKey);
+			List<DeviceInfo> devices = resolvePcsDevices(tenantId, stationId, productKey);
 			if (devices == null || devices.isEmpty()) {
 				return fallback;
 			}
-			for (PcsDevice dev : devices) {
+			for (DeviceInfo dev : devices) {
 				Optional<Double> soc = shadowClient.reportedSoc(dev.deviceId());
 				if (soc != null && soc.isPresent()) {
 					double min = c.getSocMin().doubleValue();

@@ -26,8 +26,6 @@ public class Station extends BaseEntity {
 	@TableId(type = IdType.AUTO)
 	private Long stationId;
 
-	private Long tenantId;
-
 	/** 所属企业（必填） */
 	private Long enterpriseId;
 

@@ -2,10 +2,10 @@ package com.energyx.command.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.energyx.command.client.DeviceFeignClient;
 import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
-import com.energyx.command.mapper.DeviceInfoMapper;
 import com.energyx.command.model.CommandRow;
 import com.energyx.command.model.DeviceInfo;
 import com.energyx.command.mqtt.CommandKafkaProducer;
@@ -17,6 +17,7 @@ import com.energyx.common.enums.CommandState;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
+import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import lombok.extern.slf4j.Slf4j;
@@ -59,7 +60,7 @@ public class CommandService {
 
 	private final CommandAckMapper ackMapper;
 
-	private final DeviceInfoMapper deviceMapper;
+	private final DeviceFeignClient deviceFeignClient;
 
 	private final StringRedisTemplate redis;
 
@@ -73,12 +74,12 @@ public class CommandService {
 
 	private final SnowflakeIdGenerator idGenerator;
 
-	public CommandService(CommandMapper commandMapper, CommandAckMapper ackMapper, DeviceInfoMapper deviceMapper,
+	public CommandService(CommandMapper commandMapper, CommandAckMapper ackMapper, DeviceFeignClient deviceFeignClient,
 			StringRedisTemplate redis, CommandKafkaProducer producer, ObjectMapper objectMapper,
 			IdempotencyUtils idempotencyUtils, CommandProperties props, SnowflakeIdGenerator idGenerator) {
 		this.commandMapper = commandMapper;
 		this.ackMapper = ackMapper;
-		this.deviceMapper = deviceMapper;
+		this.deviceFeignClient = deviceFeignClient;
 		this.redis = redis;
 		this.producer = producer;
 		this.objectMapper = objectMapper;
@@ -102,16 +103,26 @@ public class CommandService {
 			throw new IllegalArgumentException("重复的 commandId: " + commandId);
 		}
 		try {
-			DeviceInfo dev = deviceMapper.selectByProductAndName(req.getProductKey(), req.getDeviceName());
+			DeviceInfo dev = resolveDeviceByProductAndName(req.getProductKey(), req.getDeviceName());
 			if (dev == null) {
 				throw new IllegalArgumentException("设备不存在: " + req.getProductKey() + "/" + req.getDeviceName());
 			}
 			int maxRetry = req.getMaxRetry() == null ? props.getDefaultMaxRetry() : req.getMaxRetry();
 			int timeoutMs = req.getTimeoutMs() == null ? props.getDefaultTimeoutMs() : req.getTimeoutMs();
 			int commandType = req.getCommandType() == null ? 2 : req.getCommandType();
-			commandMapper.insert(commandId, dev.tenantId(), dev.deviceId(), dev.productKey(), req.getCommand(),
-					commandType, toJson(req.getParams()), maxRetry, timeoutMs,
-					req.getCreateBy() == null ? 0L : req.getCreateBy());
+			// 实体落库：主键 INPUT 显式指定，租户/审计/逻辑删除由租户插件与 MetaObjectHandler 自动填充
+			CommandRow row = new CommandRow();
+			row.setCommandId(commandId);
+			row.setDeviceId(dev.deviceId());
+			row.setProductKey(dev.productKey());
+			row.setCommandName(req.getCommand());
+			row.setCommandType(commandType);
+			row.setParams(toJson(req.getParams()));
+			row.setState(CommandState.CREATED);
+			row.setMaxRetry(maxRetry);
+			row.setTimeoutMs(timeoutMs);
+			row.setCreateBy(req.getCreateBy() == null ? 0L : req.getCreateBy());
+			commandMapper.insert(row);
 			dispatch(commandId, dev);
 			return toView(commandMapper.selectById(commandId));
 		}
@@ -185,7 +196,7 @@ public class CommandService {
 		if (delta.getDeviceId() == null || delta.getDesired() == null || delta.getDesired().isEmpty()) {
 			return;
 		}
-		DeviceInfo dev = deviceMapper.selectByDeviceId(delta.getDeviceId());
+		DeviceInfo dev = resolveDeviceById(delta.getDeviceId());
 		if (dev == null) {
 			log.warn("[Command] delta 设备不存在 deviceId={}", delta.getDeviceId());
 			return;
@@ -196,8 +207,19 @@ public class CommandService {
 			return;
 		}
 		String commandId = idGenerator.nextIdStr();
-		commandMapper.insert(commandId, dev.tenantId(), dev.deviceId(), dev.productKey(), DELTA_COMMAND_NAME, 2,
-				toJson(delta.getDesired()), props.getDefaultMaxRetry(), props.getDefaultTimeoutMs(), 0L);
+		// 实体落库（delta 物化指令，系统动作 createBy=0）
+		CommandRow row = new CommandRow();
+		row.setCommandId(commandId);
+		row.setDeviceId(dev.deviceId());
+		row.setProductKey(dev.productKey());
+		row.setCommandName(DELTA_COMMAND_NAME);
+		row.setCommandType(2);
+		row.setParams(toJson(delta.getDesired()));
+		row.setState(CommandState.CREATED);
+		row.setMaxRetry(props.getDefaultMaxRetry());
+		row.setTimeoutMs(props.getDefaultTimeoutMs());
+		row.setCreateBy(0L);
+		commandMapper.insert(row);
 		dispatch(commandId, dev);
 		log.info("[Command] delta 物化为 setProperties 指令 commandId={} deviceId={} keys={}", commandId, dev.deviceId(),
 				delta.getDesired().size());
@@ -272,7 +294,7 @@ public class CommandService {
 			if (updated == 0) {
 				return;
 			}
-			DeviceInfo dev = deviceMapper.selectByDeviceId(row.getDeviceId());
+			DeviceInfo dev = resolveDeviceById(row.getDeviceId());
 			if (dev != null) {
 				producer.send(KafkaTopicConstant.IOT_COMMAND_DOWN, String.valueOf(row.getDeviceId()),
 						toJson(buildDown(row, dev)));
@@ -286,7 +308,7 @@ public class CommandService {
 			if (updated == 0) {
 				return;
 			}
-			DeviceInfo dev = deviceMapper.selectByDeviceId(row.getDeviceId());
+			DeviceInfo dev = resolveDeviceById(row.getDeviceId());
 			if (dev != null) {
 				enqueueOffline(row, dev);
 			}
@@ -431,6 +453,30 @@ public class CommandService {
 		catch (Exception e) {
 			throw new IllegalStateException("指令 JSON 序列化失败: " + value, e);
 		}
+	}
+
+	/**
+	 * 按设备 ID 解析设备身份（Feign 调 device 服务；服务不可用降级返回 null 视为设备不存在）。
+	 */
+	private DeviceInfo resolveDeviceById(long deviceId) {
+		Result<DeviceInfo> result = deviceFeignClient.byId(deviceId);
+		if (result == null || !result.isSuccess()) {
+			log.warn("[Command] 设备解析失败 deviceId={} result={}", deviceId, result);
+			return null;
+		}
+		return result.getData();
+	}
+
+	/**
+	 * 按 productKey + deviceName 解析设备身份（Feign 调 device 服务）。
+	 */
+	private DeviceInfo resolveDeviceByProductAndName(String productKey, String deviceName) {
+		Result<DeviceInfo> result = deviceFeignClient.byName(productKey, deviceName);
+		if (result == null || !result.isSuccess()) {
+			log.warn("[Command] 设备解析失败 productKey={} deviceName={} result={}", productKey, deviceName, result);
+			return null;
+		}
+		return result.getData();
 	}
 
 }

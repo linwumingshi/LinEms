@@ -5,6 +5,7 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
  * MQTT 接入适配服务（Phase 5）启动类。
@@ -19,6 +20,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication(scanBasePackages = "com.energyx")
 @MapperScan("com.energyx.access.mapper")
 @EnableConfigurationProperties(AccessProperties.class)
+@EnableFeignClients(basePackages = "com.energyx.access.client")
 public class AccessApplication {
 
 	public static void main(String[] args) {

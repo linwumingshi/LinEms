@@ -1,5 +1,7 @@
 package com.energyx.ems.entity;
 
+import com.energyx.common.entity.BaseEntity;
+import lombok.EqualsAndHashCode;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -14,13 +16,12 @@ import java.time.LocalDateTime;
 
 /** 策略计划头（ems_plan）。充放电点序列入 TDengine，本表存计划元数据。 */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("ems_plan")
-public class EmsPlan {
+public class EmsPlan extends BaseEntity {
 
 	@TableId(type = IdType.AUTO)
 	private Long planId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -38,11 +39,5 @@ public class EmsPlan {
 
 	/** 计划状态（PENDING/RUNNING/COMPLETED/CANCELED/FAILED） */
 	private PlanStatus status;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
-
-	@TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-	private LocalDateTime updateTime;
 
 }

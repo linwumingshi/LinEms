@@ -65,6 +65,19 @@ public class DeviceController {
 		return Result.ok(deviceService.tree(rootId));
 	}
 
+	/** 按 productKey + deviceName 查设备（跨服务调用方解析用，精确路径优先于 /{deviceId}） */
+	@GetMapping("/by-name")
+	public Result<Device> byName(@RequestParam String productKey, @RequestParam String deviceName) {
+		return Result.ok(deviceService.findByProductKeyAndName(productKey, deviceName));
+	}
+
+	/** 按电站 + 类型查设备列表（跨服务调用方解析下发目标用） */
+	@GetMapping("/list-by-station")
+	public Result<List<Device>> listByStation(@RequestParam Long tenantId, @RequestParam Long stationId,
+			@RequestParam(required = false) String productKey, @RequestParam(required = false) String deviceType) {
+		return Result.ok(deviceService.listByStation(tenantId, stationId, productKey, deviceType));
+	}
+
 	@GetMapping("/{deviceId}")
 	public Result<Device> detail(@PathVariable Long deviceId) {
 		return Result.ok(deviceService.detail(deviceId));

@@ -2,7 +2,7 @@ package com.energyx.ems.service;
 
 import com.energyx.ems.entity.EmsDemandConfig;
 import com.energyx.ems.entity.EmsDemandRecord;
-import com.energyx.ems.model.PcsDevice;
+import com.energyx.ems.model.DeviceInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -41,7 +41,7 @@ public class DemandShaveClient {
 	 * @param devices 站内活跃 PCS（调度器已解析，避免二次查询）
 	 * @param shaveKw 削峰功率（DemandDetector 已按可用功率钳制）
 	 */
-	public EmsDemandRecord shave(EmsDemandConfig config, List<PcsDevice> devices, LocalDateTime windowStart,
+	public EmsDemandRecord shave(EmsDemandConfig config, List<DeviceInfo> devices, LocalDateTime windowStart,
 			LocalDateTime windowEnd, double demandKw, double limitKw, double shaveKw) {
 		if (devices == null || devices.isEmpty()) {
 			return recordService
@@ -49,7 +49,7 @@ public class DemandShaveClient {
 		}
 		double share = round2(shaveKw / devices.size());
 		boolean anyFailed = false;
-		for (PcsDevice dev : devices) {
+		for (DeviceInfo dev : devices) {
 			try {
 				dispatchShave(dev, share, windowStart);
 			}
@@ -63,7 +63,7 @@ public class DemandShaveClient {
 			.upsert(newRecord(config, windowStart, windowEnd, demandKw, limitKw, true, shaveKw, action));
 	}
 
-	private void dispatchShave(PcsDevice dev, double share, LocalDateTime windowStart) {
+	private void dispatchShave(DeviceInfo dev, double share, LocalDateTime windowStart) {
 		Map<String, Object> params = new HashMap<>();
 		params.put("action", "DISCHARGE");
 		params.put("power", share);
@@ -73,7 +73,7 @@ public class DemandShaveClient {
 	}
 
 	/** 放停下限：影子实时 SOC 兜底，无则回退 30（防深放）。 */
-	private double socTargetOf(PcsDevice dev) {
+	private double socTargetOf(DeviceInfo dev) {
 		return shadowClient.reportedSoc(dev.deviceId()).orElse(30.0);
 	}
 

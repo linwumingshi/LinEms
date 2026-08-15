@@ -15,10 +15,14 @@ import java.time.LocalDateTime;
 @TableName("ems_demand_record")
 public class EmsDemandRecord {
 
+	/** 租户 ID */
+	private Long tenantId;
+
+	/** 创建时间（DB DEFAULT CURRENT_TIMESTAMP） */
+	private LocalDateTime createTime;
+
 	@TableId(type = IdType.AUTO)
 	private Long demandRecordId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -42,8 +46,5 @@ public class EmsDemandRecord {
 
 	/** NONE/SHED/SHED_FAILED/ALARM_ONLY */
 	private String action;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
 
 }

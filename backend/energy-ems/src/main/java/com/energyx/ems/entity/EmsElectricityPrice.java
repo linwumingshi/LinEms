@@ -19,10 +19,14 @@ import java.time.LocalTime;
 @TableName("ems_electricity_price")
 public class EmsElectricityPrice {
 
+	/** 租户 ID */
+	private Long tenantId;
+
+	/** 创建时间（DB DEFAULT CURRENT_TIMESTAMP） */
+	private LocalDateTime createTime;
+
 	@TableId(type = IdType.AUTO)
 	private Long priceId;
-
-	private Long tenantId;
 
 	private Long stationId;
 
@@ -43,8 +47,5 @@ public class EmsElectricityPrice {
 
 	/** 电价档案状态（DISABLED/ENABLED） */
 	private ElectricityPriceStatus status;
-
-	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	private LocalDateTime createTime;
 
 }
