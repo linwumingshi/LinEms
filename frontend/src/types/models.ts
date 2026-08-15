@@ -784,8 +784,14 @@ export interface RuleAction {
   url?: string | null
   /** NOTIFY 请求头（模板变量可渲染） */
   headers?: Record<string, string> | null
-  /** NOTIFY 消息模板（${property.xxx} 渲染） */
+  /** NOTIFY 消息模板（${property.xxx} 渲染；兼容旧版直发 webhook） */
   template?: string | null
+  /** NOTIFY 通知配置编码（消息通知模块 energy-notify，优先于 url 直发） */
+  notifyConfigCode?: string | null
+  /** NOTIFY 通知模板编码（与配置渠道一致） */
+  notifyTemplateCode?: string | null
+  /** NOTIFY 直接内容（非空时跳过模板渲染） */
+  notifyContent?: string | null
   /** RULE 嵌套目标规则 ID */
   ruleId?: number | null
 }

@@ -4,8 +4,9 @@ import { ElMessage } from 'element-plus'
 import { deviceApi } from '@/api/device'
 import { productApi } from '@/api/product'
 import { alarmApi } from '@/api/alarm'
+import { notifyApi } from '@/api/notify'
 import { ruleApi } from '@/api/rule'
-import type { AlarmRule, Device, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty, TsService } from '@/types/models'
+import type { AlarmRule, Device, NotifyConfig, NotifyTemplate, Product, RuleAction, RuleCondition, RuleConfig, RuleOp, RuleRecovery, RuleTrigger, RuleView, TsProperty, TsService } from '@/types/models'
 import { opOptions, triggerTypeOptions, conditionTypeOptions, actionTypeOptions } from '@/utils/ruleOptions'
 
 const props = withDefaults(defineProps<{
@@ -52,6 +53,10 @@ const deviceOptions = ref<Device[]>([])
 const ruleOptions = ref<RuleView[]>([])
 /** 告警规则列表（ALARM 动作的 ruleCode 下拉来源） */
 const alarmRules = ref<AlarmRule[]>([])
+/** 通知配置列表（NOTIFY 动作下拉） */
+const notifyConfigs = ref<NotifyConfig[]>([])
+/** 通知模板列表（按配置渠道过滤） */
+const notifyTemplates = ref<NotifyTemplate[]>([])
 
 async function loadAlarmRules(): Promise<void> {
   try {
@@ -59,6 +64,23 @@ async function loadAlarmRules(): Promise<void> {
   } catch {
     alarmRules.value = []
   }
+}
+
+async function loadNotifyOptions(): Promise<void> {
+  try {
+    notifyConfigs.value = await notifyApi.configs()
+    notifyTemplates.value = await notifyApi.templates()
+  } catch {
+    notifyConfigs.value = []
+    notifyTemplates.value = []
+  }
+}
+
+/** NOTIFY 动作：选中配置后，模板按配置渠道过滤 */
+function notifyTemplatesFor(configCode: string | null | undefined): NotifyTemplate[] {
+  const cfg = notifyConfigs.value.find((c) => c.configCode === configCode)
+  if (!cfg) return []
+  return notifyTemplates.value.filter((t) => t.channel === cfg.channel && t.status === 1)
 }
 
 /** 物模型缓存：productKey → { 属性, 命令能力 } */
@@ -377,6 +399,9 @@ function normalizeAction(a: RuleAction): RuleAction {
   if (a.url) copy.url = a.url
   if (a.headers && Object.keys(a.headers).length > 0) copy.headers = a.headers
   if (a.template) copy.template = a.template
+  if (a.notifyConfigCode) copy.notifyConfigCode = a.notifyConfigCode
+  if (a.notifyTemplateCode) copy.notifyTemplateCode = a.notifyTemplateCode
+  if (a.notifyContent) copy.notifyContent = a.notifyContent
   if (a.ruleId) copy.ruleId = a.ruleId
   return copy
 }
@@ -403,6 +428,7 @@ onMounted(() => {
   void loadProducts()
   void loadRuleOptions()
   void loadAlarmRules()
+  void loadNotifyOptions()
 })
 </script>
 
@@ -591,8 +617,17 @@ onMounted(() => {
             <el-input v-model="a.message" size="small" style="width: 220px" placeholder="告警内容（可空）" />
           </div>
           <div v-else-if="a.type === 'NOTIFY'" class="item-body">
-            <el-input v-model="a.url" size="small" style="width: 260px" placeholder="webhook 地址 https://..." />
-            <el-input v-model="a.template" size="small" style="width: 300px" placeholder='模板，如 温度 ${property.cellTemp}℃ 超限' />
+            <el-select v-model="a.notifyConfigCode" placeholder="通知配置（可留空=旧版直发）" clearable filterable size="small" style="width: 200px">
+              <el-option v-for="c in notifyConfigs.filter((x) => x.status === 1)" :key="c.configCode" :label="`${c.configName}（${c.channel}）`" :value="c.configCode" />
+            </el-select>
+            <el-select v-model="a.notifyTemplateCode" placeholder="通知模板（按配置渠道）" clearable filterable size="small" style="width: 190px" :disabled="!a.notifyConfigCode">
+              <el-option v-for="t in notifyTemplatesFor(a.notifyConfigCode)" :key="t.templateCode" :label="`${t.templateName}（${t.templateCode}）`" :value="t.templateCode" />
+            </el-select>
+            <el-input v-model="a.notifyContent" size="small" style="width: 200px" placeholder="直接内容（可空，${xxx} 渲染）" />
+            <template v-if="!a.notifyConfigCode">
+              <el-input v-model="a.url" size="small" style="width: 220px" placeholder="旧版直发 webhook https://..." />
+              <el-input v-model="a.template" size="small" style="width: 240px" placeholder='消息模板，如 温度 ${property.cellTemp}℃ 超限' />
+            </template>
           </div>
           <div v-else-if="a.type === 'RULE'" class="item-body">
             <el-select v-model="a.ruleId" placeholder="目标规则（嵌套执行，防环+深度≤5）" filterable size="small" style="width: 320px">
@@ -655,8 +690,13 @@ onMounted(() => {
               </el-select>
             </div>
             <div v-else-if="ra.type === 'NOTIFY'" class="item-body">
-              <el-input v-model="ra.url" size="small" style="width: 260px" placeholder="webhook 地址" />
-              <el-input v-model="ra.template" size="small" style="width: 280px" placeholder="消息模板" />
+              <el-select v-model="ra.notifyConfigCode" placeholder="通知配置" clearable filterable size="small" style="width: 200px">
+                <el-option v-for="c in notifyConfigs.filter((x) => x.status === 1)" :key="c.configCode" :label="`${c.configName}（${c.channel}）`" :value="c.configCode" />
+              </el-select>
+              <el-select v-model="ra.notifyTemplateCode" placeholder="通知模板" clearable filterable size="small" style="width: 190px" :disabled="!ra.notifyConfigCode">
+                <el-option v-for="t in notifyTemplatesFor(ra.notifyConfigCode)" :key="t.templateCode" :label="`${t.templateName}（${t.templateCode}）`" :value="t.templateCode" />
+              </el-select>
+              <el-input v-model="ra.notifyContent" size="small" style="width: 180px" placeholder="直接内容（可空）" />
             </div>
             <div v-else-if="ra.type === 'RULE'" class="item-body">
               <el-select v-model="ra.ruleId" placeholder="目标规则" filterable size="small" style="width: 320px">

@@ -13,8 +13,9 @@ import java.util.Map;
  * <li>DEVICE_COMMAND：设备控制命令 —— device + command（物模型服务标识）+ params +
  * timeoutMs/maxRetry（可选）；</li>
  * <li>ALARM：触发告警 —— ruleCode + severity + message（调告警中心 POST /alarm/trigger）；</li>
- * <li>NOTIFY：外部通知 —— channel=WEBHOOK + url + headers + template（模板变量 ${property.xxx}
- * 渲染）；</li>
+ * <li>NOTIFY：外部通知 —— 优先 notifyConfigCode + notifyTemplateCode + notifyContent（调消息通知模块
+ * energy-notify POST /send）；兼容旧版 channel=WEBHOOK + url + headers + template 直发（模板变量
+ * ${property.xxx} 渲染）；</li>
  * <li>RULE：嵌套规则 —— ruleId（跳转目标规则，跳过其 Trigger 直接评估 Condition）。</li>
  * </ul>
  * </p>
@@ -60,6 +61,15 @@ public class RuleAction {
 
 	/** 消息模板（NOTIFY 可选，支持 ${property.xxx} / ${device.xxx} / ${ts}） */
 	private String template;
+
+	/** 通知配置编码（NOTIFY 可选；非空时走消息通知模块，优先于 url 直发） */
+	private String notifyConfigCode;
+
+	/** 通知模板编码（NOTIFY 可选，与配置渠道一致） */
+	private String notifyTemplateCode;
+
+	/** 直接内容（NOTIFY 可选，非空时跳过模板渲染） */
+	private String notifyContent;
 
 	/** 嵌套目标规则 ID（RULE 必填） */
 	private Long ruleId;

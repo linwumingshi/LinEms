@@ -31,7 +31,7 @@ class ActionExecutorTest {
 	@Test
 	@DisplayName("NotifyAction：模板渲染 ${property.xxx} / ${deviceId} / ${ts}")
 	void notifyRender() {
-		NotifyAction notify = new NotifyAction(new RuleProperties());
+		NotifyAction notify = new NotifyAction(new RuleProperties(), null);
 		RuleAction action = new RuleAction();
 		action.setType("NOTIFY");
 		action.setUrl("http://example.com/webhook");
@@ -46,7 +46,7 @@ class ActionExecutorTest {
 	@Test
 	@DisplayName("NotifyAction：无模板返回空串不抛异常")
 	void notifyNoTemplate() {
-		NotifyAction notify = new NotifyAction(new RuleProperties());
+		NotifyAction notify = new NotifyAction(new RuleProperties(), null);
 		assertTrue(notify.render(null, ctx()).isEmpty());
 		assertTrue(notify.render("", ctx()).isEmpty());
 	}
@@ -54,7 +54,7 @@ class ActionExecutorTest {
 	@Test
 	@DisplayName("NotifyAction：缺 url 返回失败结果")
 	void notifyMissingUrl() {
-		NotifyAction notify = new NotifyAction(new RuleProperties());
+		NotifyAction notify = new NotifyAction(new RuleProperties(), null);
 		RuleAction action = new RuleAction();
 		action.setType("NOTIFY");
 		ActionResult result = notify.execute(action, ctx());
