@@ -164,7 +164,7 @@ function getSpecs(item: TsProperty | TsService | TsEvent | null): Record<string,
   return (item as TsProperty).specs ?? {}
 }
 function setSpecs(item: TsProperty | TsService | TsEvent | null, key: string, value: unknown): void {
-  if (!item || !('specs' in item)) return
+  if (!item) return
   ;(item as TsProperty).specs = specsSet((item as TsProperty).specs, key, value)
 }
 
