@@ -28,6 +28,9 @@ public interface ProductService {
 	/** 按 productKey 查当前生效物模型（设备仅有 productKey）；产品不存在或未发布返回 null */
 	ThingModelView getThingModelByProductKey(String productKey);
 
+	/** 按 productKey 查产品ID（供跨服务调用方映射 product_key → product_id）；不存在返回 null */
+	Long findIdByKey(String productKey);
+
 	/** 校验 JSON、发布物模型版本并置为当前生效，同步产品 model_version */
 	ThingModelView saveThingModel(Long productId, ThingModelSaveReq req);
 

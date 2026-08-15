@@ -1,7 +1,6 @@
 package com.energyx.notify.service;
 
 import com.energyx.common.exception.BusinessException;
-import com.energyx.common.util.SnowflakeIdGenerator;
 import com.energyx.notify.channel.ChannelExecutor;
 import com.energyx.notify.channel.NotifyChannel;
 import com.energyx.notify.channel.SendResult;
@@ -38,16 +37,13 @@ public class NotifyService {
 
 	private final TemplateRenderer renderer;
 
-	private final SnowflakeIdGenerator idGenerator;
-
 	private final Map<String, ChannelExecutor> executors;
 
 	public NotifyService(NotifyConfigMapper configMapper, NotifyTemplateMapper templateMapper,
-			TemplateRenderer renderer, SnowflakeIdGenerator idGenerator, Map<String, ChannelExecutor> executors) {
+			TemplateRenderer renderer, Map<String, ChannelExecutor> executors) {
 		this.configMapper = configMapper;
 		this.templateMapper = templateMapper;
 		this.renderer = renderer;
-		this.idGenerator = idGenerator;
 		this.executors = executors;
 	}
 
@@ -62,7 +58,6 @@ public class NotifyService {
 			throw new BusinessException(40000, "配置编码已存在: " + req.getConfigCode());
 		}
 		NotifyConfigRow row = new NotifyConfigRow();
-		row.setConfigId(idGenerator.nextId());
 		row.setTenantId(DEFAULT_TENANT);
 		row.setConfigCode(req.getConfigCode().trim());
 		row.setConfigName(req.getConfigName().trim());
@@ -84,7 +79,7 @@ public class NotifyService {
 		row.setChannelConfig(req.getChannelConfig());
 		row.setStatus(req.getStatus() != null ? req.getStatus() : 1);
 		row.setDescription(req.getDescription());
-		if (configMapper.update(row) == 0)
+		if (configMapper.updateById(row) == 0)
 			throw new BusinessException(40400, "通知配置不存在");
 	}
 
@@ -108,7 +103,6 @@ public class NotifyService {
 			throw new BusinessException(40000, "模板编码已存在: " + req.getTemplateCode());
 		}
 		NotifyTemplateRow row = new NotifyTemplateRow();
-		row.setTemplateId(idGenerator.nextId());
 		row.setTenantId(DEFAULT_TENANT);
 		row.setTemplateCode(req.getTemplateCode().trim());
 		row.setTemplateName(req.getTemplateName().trim());
@@ -136,7 +130,7 @@ public class NotifyService {
 		row.setVariables(req.getVariables());
 		row.setStatus(req.getStatus() != null ? req.getStatus() : 1);
 		row.setDescription(req.getDescription());
-		if (templateMapper.update(row) == 0)
+		if (templateMapper.updateById(row) == 0)
 			throw new BusinessException(40400, "通知模板不存在");
 	}
 

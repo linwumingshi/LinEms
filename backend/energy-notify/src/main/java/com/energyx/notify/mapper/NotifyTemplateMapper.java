@@ -1,20 +1,20 @@
 package com.energyx.notify.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.energyx.notify.model.NotifyTemplateRow;
 import org.apache.ibatis.annotations.Delete;
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
 /**
- * iot_notify_template 数据访问。
+ * iot_notify_template 数据访问（继承 BaseMapper 获得 insert/updateById/deleteById/selectById；
+ * 保留租户/渠道过滤查询注解）。
  */
 @Mapper
-public interface NotifyTemplateMapper {
+public interface NotifyTemplateMapper extends BaseMapper<NotifyTemplateRow> {
 
 	/** 全量列表（管理页展示） */
 	@Select("""
@@ -45,35 +45,7 @@ public interface NotifyTemplateMapper {
 			""")
 	NotifyTemplateRow selectByCode(@Param("tenantId") Long tenantId, @Param("templateCode") String templateCode);
 
-	/** 按主键查 */
-	@Select("""
-			SELECT template_id, tenant_id, template_code, template_name, message_type, channel,
-			       title_template, content_template, variables, status, description, create_by, create_time, update_time
-			FROM iot_notify_template
-			WHERE template_id = #{templateId}
-			""")
-	NotifyTemplateRow selectById(@Param("templateId") Long templateId);
-
-	/** 新增 */
-	@Insert("""
-			INSERT INTO iot_notify_template (template_id, tenant_id, template_code, template_name, message_type,
-			                                 channel, title_template, content_template, variables, status, description, create_by)
-			VALUES (#{templateId}, #{tenantId}, #{templateCode}, #{templateName}, #{messageType},
-			        #{channel}, #{titleTemplate}, #{contentTemplate}, #{variables}, #{status}, #{description}, #{createBy})
-			""")
-	int insert(NotifyTemplateRow row);
-
-	/** 更新（template_code 不可改） */
-	@Update("""
-			UPDATE iot_notify_template
-			SET template_name = #{templateName}, message_type = #{messageType}, channel = #{channel},
-			    title_template = #{titleTemplate}, content_template = #{contentTemplate},
-			    variables = #{variables}, status = #{status}, description = #{description}, update_time = NOW()
-			WHERE template_id = #{templateId} AND tenant_id = #{tenantId}
-			""")
-	int update(NotifyTemplateRow row);
-
-	/** 删除 */
+	/** 删除（租户隔离） */
 	@Delete("DELETE FROM iot_notify_template WHERE template_id = #{templateId} AND tenant_id = #{tenantId}")
 	int deleteById(@Param("templateId") Long templateId, @Param("tenantId") Long tenantId);
 

@@ -4,13 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.alarm.config.AlarmProperties;
 import com.energyx.alarm.mapper.AlarmRecordMapper;
 import com.energyx.alarm.mapper.AlarmRuleMapper;
-import com.energyx.alarm.mapper.ProductInfoMapper;
+import com.energyx.alarm.client.ProductFeignClient;
 import com.energyx.alarm.model.AlarmRecordRow;
 import com.energyx.alarm.model.AlarmRuleRow;
 import com.energyx.common.redis.DistributedLock;
 import com.energyx.alarm.web.dto.AlarmRecordView;
 import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.enums.AlarmLevel;
+import com.energyx.common.model.Result;
 import com.energyx.common.enums.AlarmRecordStatus;
 import com.energyx.common.enums.AlarmRuleStatus;
 import com.energyx.common.message.AlarmMessage;
@@ -65,7 +66,7 @@ class AlarmServiceTest {
 	AlarmRecordMapper recordMapper;
 
 	@Mock
-	ProductInfoMapper productMapper;
+	ProductFeignClient productFeignClient;
 
 	@Mock
 	StringRedisTemplate redis;
@@ -83,7 +84,7 @@ class AlarmServiceTest {
 	@BeforeEach
 	void setUp() {
 		props = new AlarmProperties();
-		service = new AlarmService(ruleMapper, recordMapper, productMapper, redis, props, publisher,
+		service = new AlarmService(ruleMapper, recordMapper, productFeignClient, redis, props, publisher,
 				new SnowflakeIdGenerator(), new ObjectMapper(), new DistributedLock(redis));
 		lenient().when(redis.opsForValue()).thenReturn(valueOps);
 		when(ruleMapper.selectEnabledRules()).thenReturn(List.of(tempRule(), eventRule(), productRule()));
@@ -274,7 +275,7 @@ class AlarmServiceTest {
 	@Test
 	@DisplayName("产品级规则：product_key 解析 product_id 后命中")
 	void productScopedRuleMatches() {
-		when(productMapper.selectProductIdByKey("pk-1")).thenReturn(10L);
+		when(productFeignClient.productIdByKey("pk-1")).thenReturn(Result.ok(10L));
 		when(redis.hasKey("alarm:silence:3:100")).thenReturn(false);
 		when(recordMapper.insert(anyString(), anyLong(), anyLong(), anyString(), anyLong(), anyString(), anyInt(),
 				anyInt(), anyString(), anyString(), any(LocalDateTime.class)))

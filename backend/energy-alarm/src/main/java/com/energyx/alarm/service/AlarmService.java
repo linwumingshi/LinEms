@@ -8,7 +8,7 @@ import com.energyx.alarm.engine.AlarmRuleEngine;
 import com.energyx.alarm.es.AlarmEsWriter;
 import com.energyx.alarm.mapper.AlarmRecordMapper;
 import com.energyx.alarm.mapper.AlarmRuleMapper;
-import com.energyx.alarm.mapper.ProductInfoMapper;
+import com.energyx.alarm.client.ProductFeignClient;
 import com.energyx.alarm.model.AlarmCondition;
 import com.energyx.alarm.model.AlarmRecordRow;
 import com.energyx.alarm.model.AlarmRuleRow;
@@ -88,7 +88,7 @@ public class AlarmService {
 
 	private final AlarmRecordMapper recordMapper;
 
-	private final ProductInfoMapper productMapper;
+	private final ProductFeignClient productFeignClient;
 
 	private final StringRedisTemplate redis;
 
@@ -108,12 +108,13 @@ public class AlarmService {
 	/** product_key → product_id 本地缓存（带 TTL） */
 	private final ConcurrentHashMap<String, ProductCacheEntry> productCache = new ConcurrentHashMap<>();
 
-	public AlarmService(AlarmRuleMapper ruleMapper, AlarmRecordMapper recordMapper, ProductInfoMapper productMapper,
-			StringRedisTemplate redis, AlarmProperties props, AlarmKafkaPublisher publisher,
-			SnowflakeIdGenerator idGenerator, ObjectMapper objectMapper, DistributedLock distributedLock) {
+	public AlarmService(AlarmRuleMapper ruleMapper, AlarmRecordMapper recordMapper,
+			ProductFeignClient productFeignClient, StringRedisTemplate redis, AlarmProperties props,
+			AlarmKafkaPublisher publisher, SnowflakeIdGenerator idGenerator, ObjectMapper objectMapper,
+			DistributedLock distributedLock) {
 		this.ruleMapper = ruleMapper;
 		this.recordMapper = recordMapper;
-		this.productMapper = productMapper;
+		this.productFeignClient = productFeignClient;
 		this.redis = redis;
 		this.props = props;
 		this.publisher = publisher;
@@ -460,7 +461,7 @@ public class AlarmService {
 	public void updateRule(Long ruleId, AlarmRuleSaveReq req) {
 		validateRuleReq(req);
 		AlarmRuleRow row = toRow(req, ruleId);
-		if (ruleMapper.update(row) == 0) {
+		if (ruleMapper.updateById(row) == 0) {
 			throw new BusinessException(40400, "告警规则不存在");
 		}
 		reloadRules();
@@ -468,7 +469,7 @@ public class AlarmService {
 
 	/** 删除告警规则（物理删除；已产生的告警记录不受影响） */
 	public void deleteRule(Long ruleId) {
-		if (ruleMapper.deleteById(ruleId, 1L) == 0) {
+		if (ruleMapper.deleteById(ruleId) == 0) {
 			throw new BusinessException(40400, "告警规则不存在");
 		}
 		reloadRules();
@@ -594,7 +595,10 @@ public class AlarmService {
 		}
 		Long productId = null;
 		try {
-			productId = productMapper.selectProductIdByKey(productKey);
+			var result = productFeignClient.productIdByKey(productKey);
+			if (result != null && result.isSuccess()) {
+				productId = result.getData();
+			}
 		}
 		catch (Exception e) {
 			log.warn("[Alarm] product_key 解析失败 productKey={}", productKey, e);

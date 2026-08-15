@@ -55,6 +55,12 @@ public class ProductController {
 		return Result.ok(PageResult.of(productService.page(query)));
 	}
 
+	/** 按 productKey 查产品ID（跨服务调用方：告警/规则按 key 映射 product_id；不存在返回 null） */
+	@GetMapping("/by-key")
+	public Result<Long> productIdByKey(@RequestParam String productKey) {
+		return Result.ok(productService.findIdByKey(productKey));
+	}
+
 	@GetMapping("/{productId}")
 	public Result<Product> detail(@PathVariable Long productId) {
 		return Result.ok(productService.detail(productId));

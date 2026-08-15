@@ -15,7 +15,7 @@ import java.util.Map;
  * 转执行失败记录。
  * </p>
  */
-@FeignClient(name = "energy-alarm", path = "/api/alarm")
+@FeignClient(name = "energy-alarm", path = "/api/alarm", fallbackFactory = AlarmFeignClientFallbackFactory.class)
 public interface AlarmFeignClient {
 
 	@PostMapping("/trigger")

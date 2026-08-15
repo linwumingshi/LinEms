@@ -1,8 +1,11 @@
 package com.energyx.notify.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.energyx.common.model.BaseEntity;
 import lombok.Data;
-
-import java.time.LocalDateTime;
+import lombok.EqualsAndHashCode;
 
 /**
  * 通知模板行（iot_notify_template）。
@@ -13,12 +16,13 @@ import java.time.LocalDateTime;
  * </p>
  */
 @Data
-public class NotifyTemplateRow {
+@EqualsAndHashCode(callSuper = true)
+@TableName("iot_notify_template")
+public class NotifyTemplateRow extends BaseEntity {
 
-	/** 模板ID（雪花） */
+	/** 模板ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
+	@TableId(type = IdType.ASSIGN_ID)
 	private Long templateId;
-
-	private Long tenantId;
 
 	/** 模板编码，租户内唯一 */
 	private String templateCode;
@@ -45,11 +49,5 @@ public class NotifyTemplateRow {
 	private Integer status;
 
 	private String description;
-
-	private Long createBy;
-
-	private LocalDateTime createTime;
-
-	private LocalDateTime updateTime;
 
 }

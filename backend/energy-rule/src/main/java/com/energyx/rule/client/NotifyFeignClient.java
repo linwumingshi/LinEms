@@ -15,7 +15,7 @@ import java.util.Map;
  * context （context 为占位符上下文）。业务失败返回 HTTP 200 + code!=0 由上层 {@code NotifyAction} 处理。
  * </p>
  */
-@FeignClient(name = "energy-notify", path = "/api/notify")
+@FeignClient(name = "energy-notify", path = "/api/notify", fallbackFactory = NotifyFeignClientFallbackFactory.class)
 public interface NotifyFeignClient {
 
 	@PostMapping("/send")

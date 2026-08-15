@@ -33,6 +33,16 @@
       <artifactId>energy-common</artifactId>
     </dependency>
 
+    <!-- 跨服务调用 energy-product（product_key → product_id 映射，替代跨库查询；含 fallback） -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+
     <!-- xxl-job 执行器核心（低频 cron 任务调度，Task 7） -->
     <dependency>
       <groupId>com.xuxueli</groupId>

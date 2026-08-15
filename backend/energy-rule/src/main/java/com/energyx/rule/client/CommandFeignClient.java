@@ -16,7 +16,7 @@ import java.util.Map;
  * CommandFeignClient 同模式（本地投影，不依赖 energy-command 模块）。
  * </p>
  */
-@FeignClient(name = "energy-command", path = "/api/command")
+@FeignClient(name = "energy-command", path = "/api/command", fallbackFactory = CommandFeignClientFallbackFactory.class)
 public interface CommandFeignClient {
 
 	@PostMapping

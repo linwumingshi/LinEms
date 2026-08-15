@@ -1,20 +1,25 @@
 package com.energyx.alarm.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import com.energyx.common.enums.AlarmLevel;
 import com.energyx.common.enums.AlarmRuleStatus;
+import com.energyx.common.model.BaseEntity;
 import lombok.Data;
-
-import java.time.LocalDateTime;
+import lombok.EqualsAndHashCode;
 
 /**
  * iot_alarm_rule 行投影（condition/recovery 以 JSON 字符串承载，解析在 service 层）。
  */
 @Data
-public class AlarmRuleRow {
+@EqualsAndHashCode(callSuper = true)
+@TableName("iot_alarm_rule")
+public class AlarmRuleRow extends BaseEntity {
 
+	/** 规则ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
+	@TableId(type = IdType.ASSIGN_ID)
 	private Long ruleId;
-
-	private Long tenantId;
 
 	private String ruleCode;
 
@@ -43,11 +48,5 @@ public class AlarmRuleRow {
 	private AlarmRuleStatus status;
 
 	private String description;
-
-	private Long createBy;
-
-	private LocalDateTime createTime;
-
-	private LocalDateTime updateTime;
 
 }

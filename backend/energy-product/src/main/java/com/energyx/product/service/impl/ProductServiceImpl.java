@@ -129,6 +129,16 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 	}
 
 	@Override
+	public Long findIdByKey(String productKey) {
+		if (productKey == null || productKey.isBlank()) {
+			return null;
+		}
+		Product product = getBaseMapper()
+			.selectOne(new LambdaQueryWrapper<Product>().eq(Product::getProductKey, productKey).last("LIMIT 1"));
+		return product == null ? null : product.getProductId();
+	}
+
+	@Override
 	public ThingModelView getThingModelByProductKey(String productKey) {
 		if (productKey == null || productKey.isBlank()) {
 			return null;
