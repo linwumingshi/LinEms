@@ -16,7 +16,7 @@ import com.energyx.ota.web.dto.OtaPackageSaveReq;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,7 +28,6 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.List;
 
 /**
  * OTA 升级包管理：文件存储（对象存储抽象）+ MD5/SHA256 校验 + RSA 签名 + 差分生成 + CRUD。
@@ -129,7 +128,7 @@ public class OtaPackageService {
 			final String committedObjectKey = objectKey;
 			final byte[] committedBytes = fileBytes;
 			final long committedSize = fileBytes.length;
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 				@Override
 				public void afterCommit() {
 					onPackageStoredAfterCommit(committedPackageId, committedObjectKey, committedBytes, committedSize);
@@ -237,7 +236,7 @@ public class OtaPackageService {
 		packageMapper.deleteById(packageId);
 		// 物理文件删除作为事务提交后的副作用（提交后发），避免事务内文件 IO 持有 DB 连接
 		final String committedFilePath = row.getFilePath();
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
 				onPackageDeletedAfterCommit(committedFilePath);

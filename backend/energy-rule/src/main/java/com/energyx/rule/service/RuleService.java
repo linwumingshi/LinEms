@@ -19,7 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
@@ -78,7 +78,7 @@ public class RuleService {
 		row.setCreateBy(req.getCreateBy() == null ? 0L : req.getCreateBy());
 		ruleMapper.insert(row);
 		final Long committedRuleId = row.getRuleId();
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
 				notifyChanged(committedRuleId);
@@ -119,7 +119,7 @@ public class RuleService {
 		if (updated == 0) {
 			throw new IllegalArgumentException("规则更新冲突，请刷新后重试");
 		}
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
 				notifyChanged(ruleId);
@@ -138,7 +138,7 @@ public class RuleService {
 		}
 		ruleMapper.updateEnabled(ruleId, 0);
 		ruleMapper.deleteById(ruleId);
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
 				notifyChanged(ruleId);

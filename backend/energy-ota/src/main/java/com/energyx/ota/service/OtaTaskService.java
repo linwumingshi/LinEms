@@ -24,7 +24,7 @@ import com.energyx.common.message.OtaDownMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
@@ -227,7 +227,7 @@ public class OtaTaskService {
 		taskMapper.updateById(task);
 		// 设备下发（含 Feign 查差分/设备名、MQ 发布）放到事务提交后，避免事务内远程调用持有 DB 连接
 		final Long committedTaskId = task.getTaskId();
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
 				onTaskStartedAfterCommit(committedTaskId);
