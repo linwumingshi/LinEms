@@ -1,5 +1,6 @@
 package com.energyx.ems.web.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -10,8 +11,8 @@ public class DemandConfigReq {
 
 	/**
 	 * 站点 ID；必填
-	 * @required
 	 */
+	@NotNull(message = "stationId 不能为空")
 	private Long stationId;
 
 	/** 需量限值（kW）；> 0 时启用检测，不传则仅配置费率 */

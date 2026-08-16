@@ -22,28 +22,24 @@ public class NotifyConfigSaveReq {
 
 	/**
 	 * 配置编码，租户内唯一，如 WEBHOOK_OPS
-	 * @required
 	 */
 	@NotBlank(message = "configCode 不能为空")
 	private String configCode;
 
 	/**
 	 * 配置名称
-	 * @required
 	 */
 	@NotBlank(message = "configName 不能为空")
 	private String configName;
 
 	/**
 	 * 渠道，取值见 {@link NotifyChannel}：WEBHOOK/WECOM/DINGTALK/EMAIL
-	 * @required
 	 */
 	@NotBlank(message = "channel 不能为空")
 	private String channel;
 
 	/**
 	 * 渠道配置 JSON 字符串，按渠道结构（见类注释）
-	 * @required
 	 */
 	@NotBlank(message = "channelConfig 不能为空")
 	private String channelConfig;

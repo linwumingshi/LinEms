@@ -21,7 +21,6 @@ public class NotifySendRequest {
 
 	/**
 	 * 通知配置编码（必填），用于定位渠道配置
-	 * @required
 	 */
 	@NotBlank(message = "configCode 不能为空")
 	private String configCode;

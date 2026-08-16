@@ -12,7 +12,6 @@ public class SceneAlarmRequest {
 
 	/**
 	 * 设备ID。
-	 * @required
 	 */
 	@NotNull(message = "deviceId 不能为空")
 	private Long deviceId;

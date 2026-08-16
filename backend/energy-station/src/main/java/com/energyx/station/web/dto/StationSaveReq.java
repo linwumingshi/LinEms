@@ -18,7 +18,6 @@ public class StationSaveReq {
 	/**
 	 * 电站编码（唯一业务编码，最大长度 64）。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "电站编码不能为空")
 	@Size(max = 64, message = "电站编码长度不能超过 64")
@@ -27,7 +26,6 @@ public class StationSaveReq {
 	/**
 	 * 电站名称（最大长度 128）。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "电站名称不能为空")
 	@Size(max = 128, message = "电站名称长度不能超过 128")
@@ -36,7 +34,6 @@ public class StationSaveReq {
 	/**
 	 * 所属企业 ID（iot_station.enterprise_id NOT NULL）。
 	 *
-	 * @required
 	 */
 	@NotNull(message = "所属企业不能为空")
 	private Long enterpriseId;

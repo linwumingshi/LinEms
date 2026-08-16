@@ -13,7 +13,6 @@ public class SysEnterpriseSaveReq {
 	/**
 	 * 单位编码，同租户内唯一，最大长度 64。变更时会重新做唯一性校验。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "单位编码不能为空")
 	@Size(max = 64, message = "单位编码长度不能超过 64")
@@ -22,7 +21,6 @@ public class SysEnterpriseSaveReq {
 	/**
 	 * 单位名称，最大长度 128。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "单位名称不能为空")
 	@Size(max = 128, message = "单位名称长度不能超过 128")

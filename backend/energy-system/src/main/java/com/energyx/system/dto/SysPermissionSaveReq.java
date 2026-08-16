@@ -27,7 +27,6 @@ public class SysPermissionSaveReq {
 	/**
 	 * 菜单/按钮显示名称，最大长度 64。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "菜单名称不能为空")
 	@Size(max = 64, message = "菜单名称长度不能超过 64")
@@ -36,7 +35,6 @@ public class SysPermissionSaveReq {
 	/**
 	 * 资源类型码，仅允许 1 菜单（含目录）/ 2 按钮 / 3 数据；其他取值会被拒绝。
 	 *
-	 * @required
 	 */
 	@NotNull(message = "菜单类型不能为空")
 	private Integer permType;

@@ -15,7 +15,6 @@ public class DeviceCreateReq {
 	/**
 	 * 设备名：禁止 _ 与 &（clientId = productKey_deviceName 契约，& 为认证 username 分隔符）。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "设备名不能为空")
 	@Size(max = 128, message = "设备名长度不能超过 128")
@@ -25,7 +24,6 @@ public class DeviceCreateReq {
 	 * 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER），见
 	 * {@link DeviceType}。
 	 *
-	 * @required
 	 */
 	@NotNull(message = "设备类型不能为空")
 	private DeviceType deviceType;
@@ -33,7 +31,6 @@ public class DeviceCreateReq {
 	/**
 	 * 产品标识（认证与路由锚点，如 snd_ess_pcs，长度上限 64）。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "产品标识不能为空")
 	@Size(max = 64, message = "产品标识长度不能超过 64")

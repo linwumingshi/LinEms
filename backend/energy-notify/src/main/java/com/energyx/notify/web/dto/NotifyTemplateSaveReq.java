@@ -22,28 +22,24 @@ public class NotifyTemplateSaveReq {
 
 	/**
 	 * 模板编码，租户内唯一
-	 * @required
 	 */
 	@NotBlank(message = "templateCode 不能为空")
 	private String templateCode;
 
 	/**
 	 * 模板名称
-	 * @required
 	 */
 	@NotBlank(message = "templateName 不能为空")
 	private String templateName;
 
 	/**
 	 * 消息类型：ALARM/SCENE/DEVICE_EVENT/SYSTEM
-	 * @required
 	 */
 	@NotBlank(message = "messageType 不能为空")
 	private String messageType;
 
 	/**
 	 * 绑定渠道，取值见 {@link NotifyChannel}（与配置渠道一致才可发送）
-	 * @required
 	 */
 	@NotBlank(message = "channel 不能为空")
 	private String channel;
@@ -53,7 +49,6 @@ public class NotifyTemplateSaveReq {
 
 	/**
 	 * 内容模板（必填，支持 ${xxx}）
-	 * @required
 	 */
 	@NotBlank(message = "contentTemplate 不能为空")
 	private String contentTemplate;

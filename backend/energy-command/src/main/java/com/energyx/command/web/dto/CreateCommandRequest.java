@@ -20,21 +20,18 @@ public class CreateCommandRequest {
 
 	/**
 	 * 产品标识（必填）
-	 * @required
 	 */
 	@NotBlank(message = "productKey 不能为空")
 	private String productKey;
 
 	/**
 	 * 设备名称（必填）
-	 * @required
 	 */
 	@NotBlank(message = "deviceName 不能为空")
 	private String deviceName;
 
 	/**
 	 * 物模型服务标识，如 setPower / startCharge（必填）
-	 * @required
 	 */
 	@NotBlank(message = "command 不能为空")
 	private String command;

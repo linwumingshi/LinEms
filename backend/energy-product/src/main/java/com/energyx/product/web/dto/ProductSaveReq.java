@@ -13,7 +13,6 @@ public class ProductSaveReq {
 
 	/**
 	 * 产品标识（全局路由锚点），最大长度 64。
-	 * @required
 	 */
 	@NotBlank(message = "产品标识不能为空")
 	@Size(max = 64, message = "产品标识长度不能超过 64")
@@ -21,7 +20,6 @@ public class ProductSaveReq {
 
 	/**
 	 * 产品名称，最大长度 128。
-	 * @required
 	 */
 	@NotBlank(message = "产品名称不能为空")
 	@Size(max = 128, message = "产品名称长度不能超过 128")
@@ -29,7 +27,6 @@ public class ProductSaveReq {
 
 	/**
 	 * 设备类型，最大长度 32，如 ENERGY_CABINET/PCS/BMS/EMS/EDGE_GW。
-	 * @required
 	 */
 	@NotBlank(message = "设备类型不能为空")
 	@Size(max = 32, message = "设备类型长度不能超过 32")

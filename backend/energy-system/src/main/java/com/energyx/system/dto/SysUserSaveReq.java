@@ -20,7 +20,6 @@ public class SysUserSaveReq {
 	/**
 	 * 登录用户名，同租户内唯一。最大长度 64，仅允许字母、数字、下划线、点、短横线。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "用户名不能为空")
 	@Size(max = 64, message = "用户名长度不能超过 64")
@@ -30,7 +29,6 @@ public class SysUserSaveReq {
 	/**
 	 * 用户真实姓名，最大长度 64。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "姓名不能为空")
 	@Size(max = 64, message = "姓名长度不能超过 64")

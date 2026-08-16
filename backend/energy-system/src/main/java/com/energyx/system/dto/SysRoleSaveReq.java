@@ -17,7 +17,6 @@ public class SysRoleSaveReq {
 	 * 角色编码，同租户内唯一，最大长度 64，需以字母开头且仅允许字母、数字、下划线，如 {@code SUPER_ADMIN}、
 	 * {@code OPERATOR}。该编码用于会话权限刷新定位，变更后会重新校验唯一性。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "角色编码不能为空")
 	@Size(max = 64, message = "角色编码长度不能超过 64")
@@ -27,7 +26,6 @@ public class SysRoleSaveReq {
 	/**
 	 * 角色名称（展示用），最大长度 64。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "角色名称不能为空")
 	@Size(max = 64, message = "角色名称长度不能超过 64")

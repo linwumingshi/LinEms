@@ -19,7 +19,6 @@ public class SaveRuleRequest {
 	/**
 	 * 规则编码（唯一，租户内），如 SCENE_TEMP_HIGH。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "ruleCode 不能为空")
 	private String ruleCode;
@@ -27,7 +26,6 @@ public class SaveRuleRequest {
 	/**
 	 * 规则名称。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "ruleName 不能为空")
 	private String ruleName;
@@ -40,7 +38,6 @@ public class SaveRuleRequest {
 	/**
 	 * TCA DSL 配置（JSON 反序列化对象），字段说明见 {@link RuleConfig}。
 	 *
-	 * @required
 	 */
 	@NotNull(message = "dsl 不能为空")
 	private RuleConfig dsl;

@@ -14,7 +14,6 @@ public class SysTenantSaveReq {
 	/**
 	 * 租户编码，全局唯一，最大长度 64。变更时会重新做唯一性校验。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "租户编码不能为空")
 	@Size(max = 64, message = "租户编码长度不能超过 64")
@@ -23,7 +22,6 @@ public class SysTenantSaveReq {
 	/**
 	 * 租户（集团）名称，最大长度 128。
 	 *
-	 * @required
 	 */
 	@NotBlank(message = "租户名称不能为空")
 	@Size(max = 128, message = "租户名称长度不能超过 128")

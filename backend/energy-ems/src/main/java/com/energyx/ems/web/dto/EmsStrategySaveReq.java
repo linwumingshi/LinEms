@@ -14,28 +14,24 @@ public class EmsStrategySaveReq {
 
 	/**
 	 * 站点 ID
-	 * @required
 	 */
 	@NotNull
 	private Long stationId;
 
 	/**
 	 * 策略名称
-	 * @required
 	 */
 	@NotBlank
 	private String strategyName;
 
 	/**
 	 * 策略类型，取值见 {@link StrategyType}（PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME）
-	 * @required
 	 */
 	@NotNull
 	private StrategyType strategyType;
 
 	/**
 	 * 策略配置 JSON（chargeWindows/dischargeWindows/socRange）
-	 * @required
 	 */
 	@NotBlank
 	private String config;

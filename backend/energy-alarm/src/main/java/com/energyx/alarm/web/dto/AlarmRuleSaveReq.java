@@ -23,14 +23,12 @@ public class AlarmRuleSaveReq {
 
 	/**
 	 * 规则编码，租户内唯一，如 ALM_TEMP_HIGH。
-	 * @required
 	 */
 	@NotBlank(message = "ruleCode 不能为空")
 	private String ruleCode;
 
 	/**
 	 * 规则名称。
-	 * @required
 	 */
 	@NotBlank(message = "ruleName 不能为空")
 	private String ruleName;
@@ -43,7 +41,6 @@ public class AlarmRuleSaveReq {
 
 	/**
 	 * 触发类型：1属性比较 2事件。
-	 * @required
 	 */
 	@NotNull(message = "triggerType 不能为空")
 	@Min(value = 1, message = "triggerType 仅支持 1属性比较/2事件")
@@ -52,7 +49,6 @@ public class AlarmRuleSaveReq {
 
 	/**
 	 * 触发条件 JSON（AlarmCondition 结构）。
-	 * @required
 	 */
 	@NotBlank(message = "condition 不能为空")
 	private String condition;

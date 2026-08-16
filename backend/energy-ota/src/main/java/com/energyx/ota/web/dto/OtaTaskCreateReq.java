@@ -1,5 +1,6 @@
 package com.energyx.ota.web.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -13,8 +14,8 @@ public class OtaTaskCreateReq {
 
 	/**
 	 * 升级包 ID（必填）
-	 * @required
 	 */
+	@NotNull(message = "packageId 不能为空")
 	private Long packageId;
 
 	/** 任务名称（缺省 OTA-{version}） */

@@ -1,5 +1,6 @@
 package com.energyx.ota.web.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 /**
@@ -10,14 +11,14 @@ public class OtaPackageSaveReq {
 
 	/**
 	 * 产品标识（必填）
-	 * @required
 	 */
+	@NotBlank(message = "productKey 不能为空")
 	private String productKey;
 
 	/**
 	 * 固件版本号（必填）
-	 * @required
 	 */
+	@NotBlank(message = "version 不能为空")
 	private String version;
 
 	/** 固件模块（默认 main） */
