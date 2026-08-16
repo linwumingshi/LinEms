@@ -77,10 +77,16 @@
         </el-form-item>
         <el-form-item label="灰度比例" v-if="createForm.taskType === 3">
           <el-slider v-model="createForm.grayRatio" :min="1" :max="100" show-input />
-          <div class="tip">按 1% → 10% → 50% → 100% 档位推进，成功率 &lt;95% 自动暂停</div>
+          <div class="tip">灰度起始比例：系统按 1% → 10% → 50% → 100% 自动递进，最终覆盖全部设备；当前档成功率 &lt;95% 自动暂停</div>
         </el-form-item>
         <el-form-item label="指定设备" v-if="createForm.taskType === 2">
-          <el-input v-model="deviceIdsText" type="textarea" :rows="2" placeholder="设备 ID 列表，逗号分隔" />
+          <el-button @click="openPicker" :disabled="!createForm.packageId">选择设备</el-button>
+          <div v-if="selectedDevices.length" class="pick-summary">
+            <el-tag v-for="d in selectedDevices.slice(0, 5)" :key="d.deviceId" size="small" class="pick-tag">{{ d.deviceName || d.deviceId }}</el-tag>
+            <span v-if="selectedDevices.length > 5" class="pick-more">+{{ selectedDevices.length - 5 }}</span>
+            <el-button link type="primary" size="small" @click="clearPicker">清空</el-button>
+          </div>
+          <div v-else class="tip">请先选择升级包，再点击「选择设备」从该产品下勾选目标设备</div>
         </el-form-item>
         <el-form-item label="下载策略">
           <el-radio-group v-model="createForm.downloadPolicy">
@@ -103,10 +109,44 @@
         <el-form-item label="升级超时(分)">
           <el-input-number v-model="createForm.upgradeTimeoutMin" :min="1" :max="360" />
         </el-form-item>
+        <el-form-item label="计划开始时间">
+          <el-date-picker v-model="scheduleDate" type="datetime" placeholder="留空=创建后立即开始" format="YYYY-MM-DD HH:mm" :clearable="true" style="width: 100%" />
+          <div class="tip">留空则创建后立即开始；设置后将在到达该开始时间时自动开始（对齐阿里云 IoT 定时升级，到点即触发）</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="submitCreate">创建并开始</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 设备选择弹窗（升级包驱动：按产品拉取设备，关键字 + 状态筛选，多选） -->
+    <el-dialog v-model="pickerVisible" title="选择目标设备" width="760px" append-to-body destroy-on-close>
+      <div class="picker-bar">
+        <el-input v-model="pickerKeyword" placeholder="设备名关键字" clearable style="width: 200px" @keyup.enter="fetchPicker" />
+        <el-select v-model="pickerStatus" placeholder="状态" clearable style="width: 150px" @change="fetchPicker">
+          <el-option v-for="o in DEVICE_STATUS_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
+        <el-button type="primary" @click="fetchPicker">查询</el-button>
+        <span class="picker-count">已选 {{ pickerSelected.length }} 台</span>
+      </div>
+      <el-table ref="pickerTable" :data="pickerRows" v-loading="pickerLoading" height="400" stripe
+        :row-key="(row: DeviceView) => row.deviceId" @selection-change="onPickerSelection">
+        <el-table-column type="selection" width="46" />
+        <el-table-column prop="deviceName" label="设备名" min-width="150" show-overflow-tooltip />
+        <el-table-column label="设备ID" min-width="160">
+          <template #default="{ row }"><span class="mono">{{ row.deviceId }}</span></template>
+        </el-table-column>
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }">
+            <el-tag size="small" :type="devStatusTag(row.status)">{{ DEVICE_STATUS_LABEL[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="firmwareVersion" label="当前版本" min-width="120" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button @click="pickerVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmPicker">确定（{{ pickerSelected.length }}）</el-button>
       </template>
     </el-dialog>
 
@@ -153,15 +193,26 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { otaApi } from '@/api/ota'
-import type { OtaPackage, OtaTask, OtaTaskCreateReq, OtaTaskDevice, OtaTaskStatistics } from '@/types/models'
+import type { DeviceView, OtaPackage, OtaTask, OtaTaskCreateReq, OtaTaskDevice, OtaTaskStatistics } from '@/types/models'
 
 /** 任务状态（后端 OtaTaskService 常量） */
 const TASK_STATUS: Record<number, string> = { 0: '待开始', 1: '执行中', 2: '已完成', 3: '已暂停', 4: '已取消' }
 /** 设备明细状态 */
 const DEV_STATUS: Record<number, string> = { 0: '待升级', 1: '下载中', 2: '升级中', 3: '成功', 4: '失败', 5: '超时', 6: '已取消' }
+
+/** 设备生命周期状态（对齐后端 DeviceStatus 枚举 code） */
+const DEVICE_STATUS_LABEL: Record<number, string> = { 0: '未注册', 1: '未激活', 2: '已激活离线', 3: '在线', 4: '禁用', 5: '封禁' }
+const DEVICE_STATUS_OPTIONS = [
+  { value: 0, label: '未注册' },
+  { value: 1, label: '未激活' },
+  { value: 2, label: '已激活离线' },
+  { value: 3, label: '在线' },
+  { value: 4, label: '禁用' },
+  { value: 5, label: '封禁' },
+]
 
 const loading = ref(false)
 const creating = ref(false)
@@ -174,7 +225,22 @@ const pkgOptions = ref<OtaPackage[]>([])
 const detailTask = ref<OtaTask | null>(null)
 const devRows = ref<OtaTaskDevice[]>([])
 const stat = reactive<Partial<OtaTaskStatistics>>({})
-const deviceIdsText = ref('')
+
+// 设备选择器相关
+const pickerVisible = ref(false)
+const pickerLoading = ref(false)
+const pickerRows = ref<DeviceView[]>([])
+const pickerSelected = ref<DeviceView[]>([])
+const pickerKeyword = ref('')
+const pickerStatus = ref<number | undefined>(undefined)
+const pickerTable = ref()
+const selectedDevices = ref<DeviceView[]>([])
+const scheduleDate = ref<Date | null>(null)
+
+/** 设备状态标签样式 */
+function devStatusTag(s: number): 'success' | 'primary' | 'warning' | 'info' | 'danger' {
+  return s === 3 ? 'success' : s === 2 ? 'warning' : s === 4 || s === 5 ? 'info' : 'danger'
+}
 
 const query = reactive({ taskName: '', status: undefined as number | undefined, pageNum: 1, pageSize: 10 })
 const createForm = reactive<OtaTaskCreateReq>({
@@ -223,28 +289,39 @@ async function loadPkgOptions() {
 function onPickPackage() {
   const pkg = pkgOptions.value.find((p) => p.packageId === createForm.packageId)
   if (pkg && !createForm.taskName) createForm.taskName = `OTA-${pkg.version}`
+  // 切换升级包后，已选设备可能不属于新产品，清空选择
+  if (createForm.taskType === 2) {
+    selectedDevices.value = []
+    pickerSelected.value = []
+  }
 }
 
 function openCreate() {
   Object.assign(createForm, {
     packageId: '', taskName: '', taskType: 1, downloadPolicy: 1, grayRatio: 10,
     autoPauseOnFail: 1, retryTimes: 2, retryIntervalMin: 5, downloadTimeoutMin: 60, upgradeTimeoutMin: 30,
+    deviceIds: undefined, scheduleTime: null,
   })
-  deviceIdsText.value = ''
+  selectedDevices.value = []
+  pickerSelected.value = []
+  pickerKeyword.value = ''
+  pickerStatus.value = undefined
+  scheduleDate.value = null
   createVisible.value = true
 }
 
 async function submitCreate() {
   if (!createForm.packageId) return ElMessage.warning('请选择升级包')
   if (createForm.taskType === 2) {
-    const ids = deviceIdsText.value.split(/[,，\s]+/).filter(Boolean)
-    if (!ids.length) return ElMessage.warning('请填写指定设备 ID')
-    createForm.deviceIds = ids
+    if (!selectedDevices.value.length) return ElMessage.warning('请选择指定设备')
+    createForm.deviceIds = selectedDevices.value.map((d) => d.deviceId)
   }
+  // 计划时间：本地 Date → ISO 本地时间字符串（后端 LocalDateTime 解析）
+  createForm.scheduleTime = scheduleDate.value ? toLocalDateTime(scheduleDate.value) : null
   creating.value = true
   try {
     await otaApi.createTask(createForm)
-    ElMessage.success('任务已创建并开始')
+    ElMessage.success(createForm.scheduleTime ? '任务已创建，将在计划时间自动开始' : '任务已创建并开始')
     createVisible.value = false
     load()
   }
@@ -254,6 +331,68 @@ async function submitCreate() {
   finally {
     creating.value = false
   }
+}
+
+/** Date → yyyy-MM-ddTHH:mm:ss（本地时区，无偏移） */
+function toLocalDateTime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+// ---------------- 设备选择器 ----------------
+
+/** 打开设备选择弹窗（升级包驱动） */
+async function openPicker() {
+  if (!createForm.packageId) return ElMessage.warning('请先选择升级包')
+  // 以当前已选设备作为初始勾选，便于二次打开保留
+  pickerSelected.value = [...selectedDevices.value]
+  pickerVisible.value = true
+  await fetchPicker()
+}
+
+/** 按产品 + 关键字 + 状态拉取设备列表 */
+async function fetchPicker() {
+  const pkg = pkgOptions.value.find((p) => p.packageId === createForm.packageId)
+  if (!pkg) return ElMessage.warning('请先选择升级包')
+  pickerLoading.value = true
+  try {
+    pickerRows.value = await otaApi.taskDevicesPicker({
+      productKey: pkg.productKey,
+      keyword: pickerKeyword.value || undefined,
+      status: pickerStatus.value,
+    })
+    // 回填已选中的勾选状态（按 deviceId 匹配）
+    await nextTick()
+    pickerRows.value.forEach((row) => {
+      if (pickerSelected.value.some((s) => s.deviceId === row.deviceId)) {
+        pickerTable.value?.toggleRowSelection(row, true)
+      }
+    })
+  }
+  catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+  finally {
+    pickerLoading.value = false
+  }
+}
+
+/** 表格勾选变化 → 维护选中集合 */
+function onPickerSelection(rows: DeviceView[]) {
+  pickerSelected.value = rows
+}
+
+/** 确认选择，写回表单 */
+function confirmPicker() {
+  selectedDevices.value = [...pickerSelected.value]
+  pickerVisible.value = false
+}
+
+/** 清空已选设备 */
+function clearPicker() {
+  selectedDevices.value = []
+  pickerSelected.value = []
+  pickerTable.value?.clearSelection()
 }
 
 async function openDetail(row: OtaTask) {
@@ -360,5 +499,33 @@ onMounted(() => {
 }
 .desc {
   margin-bottom: 12px;
+}
+.picker-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.picker-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.pick-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.pick-tag {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pick-more {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

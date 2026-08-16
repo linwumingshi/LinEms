@@ -7,6 +7,7 @@ import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.model.PageResult;
 import com.energyx.common.model.Result;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.tenant.TenantInfo;
 import com.energyx.ota.client.DeviceFeignClient;
 import com.energyx.ota.client.dto.DeviceQuery;
 import com.energyx.ota.client.dto.DeviceUpdateReq;
@@ -630,6 +631,50 @@ public class OtaTaskService {
 		return all;
 	}
 
+	/**
+	 * 创建任务设备选择器：按产品 + 关键字 + 状态拉取设备列表（供前端弹窗多选）。
+	 * <p>
+	 * 租户范围由上下文注入；结果按设备名升序，最多返回 2000 台避免超大产品卡顿。
+	 * </p>
+	 * @param productKey 产品标识（必填，取自所选升级包）
+	 * @param keyword 设备名关键字（可选）
+	 * @param status 设备生命周期状态（可选，见 DeviceStatus 枚举 code）
+	 * @return 设备投影列表（含 deviceId/deviceName/status/firmwareVersion 等）
+	 */
+	public List<DeviceView> listPickerDevices(String productKey, String keyword, Integer status) {
+		requireTenant();
+		if (productKey == null || productKey.isBlank()) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "productKey 不能为空");
+		}
+		List<DeviceView> all = new ArrayList<>();
+		int page = 1;
+		int pageSize = 500;
+		while (page * pageSize <= 2000) {
+			DeviceQuery q = new DeviceQuery();
+			q.setPageNum(page);
+			q.setPageSize(pageSize);
+			q.setProductKey(productKey);
+			q.setKeyword(keyword);
+			q.setStatus(status);
+			Result<PageResult<DeviceView>> r = deviceFeignClient.page(q);
+			if (r == null || !r.isSuccess() || r.getData() == null) {
+				break;
+			}
+			List<DeviceView> records = r.getData().getRecords();
+			if (records == null || records.isEmpty()) {
+				break;
+			}
+			all.addAll(records);
+			if (records.size() < pageSize) {
+				break;
+			}
+			page++;
+		}
+		all.sort(java.util.Comparator.comparing(DeviceView::getDeviceName,
+				java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+		return all;
+	}
+
 	/** 按产品分页拉全设备（Feign，最多 1000 台） */
 	private List<Long> listProductDevices(Long tenantId, String productKey) {
 		List<Long> ids = new ArrayList<>();
@@ -778,6 +823,38 @@ public class OtaTaskService {
 			}
 			catch (Exception e) {
 				log.warn("[OTA] 灰度推进失败 taskId={}", task.getTaskId(), e);
+			}
+		}
+	}
+
+	/**
+	 * 计划开始扫描（OtaScheduler 每分钟调用，无租户上下文）：
+	 * 对「待开始且已设计划时间且已到点」的任务，自动开始（用户选定的开始时间到点即触发，不受其他约束）。
+	 * <p>
+	 * 调度线程无租户上下文，故对每条任务先注入其租户身份再调用 {@link #start(Long)}， 保证事务内租户过滤与下发链路（Feign/消息）
+	 * 正确；完成后清理上下文。
+	 * </p>
+	 */
+	public void scanScheduledStart() {
+		List<OtaTaskRow> pending = taskMapper
+			.selectList(new LambdaQueryWrapper<OtaTaskRow>().eq(OtaTaskRow::getStatus, TASK_PENDING)
+				.isNotNull(OtaTaskRow::getScheduleTime));
+		LocalDateTime now = LocalDateTime.now();
+		for (OtaTaskRow task : pending) {
+			// 计划时间未到 → 跳过（到点后下一分钟扫描触发）
+			if (task.getScheduleTime().isAfter(now)) {
+				continue;
+			}
+			TenantContext.set(new TenantInfo(task.getTenantId(), null));
+			try {
+				start(task.getTaskId());
+				log.info("[OTA] 计划任务到点自动开始 taskId={}", task.getTaskId());
+			}
+			catch (Exception e) {
+				log.error("[OTA] 计划任务自动开始失败 taskId={}", task.getTaskId(), e);
+			}
+			finally {
+				TenantContext.clear();
 			}
 		}
 	}

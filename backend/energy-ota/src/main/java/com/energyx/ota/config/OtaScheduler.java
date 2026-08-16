@@ -26,6 +26,8 @@ public class OtaScheduler {
 
 	private static final String LOCK_GRAY_ADVANCE = "ota:lock:gray-advance";
 
+	private static final String LOCK_SCHEDULED_START = "ota:lock:scheduled-start";
+
 	private final OtaTaskService taskService;
 
 	private final OtaNotifyService notifyService;
@@ -73,6 +75,19 @@ public class OtaScheduler {
 			}
 			catch (Exception e) {
 				log.error("[OTA] 灰度推进扫描异常", e);
+			}
+		});
+	}
+
+	/** 计划开始扫描（每分钟第 15 秒；锁 50s 防重叠）：到点且在维护窗口内的计划任务自动开始 */
+	@Scheduled(cron = "15 * * * * ?")
+	public void scheduledStartScan() {
+		distributedLock.runIfAcquired(LOCK_SCHEDULED_START, 50, () -> {
+			try {
+				taskService.scanScheduledStart();
+			}
+			catch (Exception e) {
+				log.error("[OTA] 计划开始扫描异常", e);
 			}
 		});
 	}

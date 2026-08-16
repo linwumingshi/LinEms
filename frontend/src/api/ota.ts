@@ -1,5 +1,5 @@
 import http from './http'
-import type { OtaPackage, OtaPackageSaveReq, OtaTask, OtaTaskCreateReq, OtaTaskDevice, OtaTaskStatistics } from '@/types/models'
+import type { DeviceView, OtaPackage, OtaPackageSaveReq, OtaTask, OtaTaskCreateReq, OtaTaskDevice, OtaTaskStatistics } from '@/types/models'
 
 /** OTA 固件升级 API（网关路由 /api/ota/** → energy-ota） */
 export const otaApi = {
@@ -74,5 +74,9 @@ export const otaApi = {
   /** 任务统计 */
   taskStatistics(taskId: string): Promise<OtaTaskStatistics> {
     return http.get(`/api/ota/tasks/${taskId}/statistics`)
+  },
+  /** 创建任务设备选择器：按产品 + 关键字 + 状态拉取设备列表 */
+  taskDevicesPicker(params: { productKey: string; keyword?: string; status?: number }): Promise<DeviceView[]> {
+    return http.get('/api/ota/tasks/device-options', { params })
   },
 }

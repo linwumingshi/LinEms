@@ -963,6 +963,19 @@ export interface OtaPackage {
   updateTime: string
 }
 
+/** 设备投影（创建任务设备选择器用，对齐后端 DeviceView） */
+export interface DeviceView {
+  deviceId: string
+  tenantId: string
+  enterpriseId: string
+  stationId: string
+  productKey: string
+  deviceName: string
+  deviceType: string
+  status: number
+  firmwareVersion: string | null
+}
+
 /** 升级包上传请求 */
 export interface OtaPackageSaveReq {
   productKey: string

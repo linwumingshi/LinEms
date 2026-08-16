@@ -1,6 +1,7 @@
 package com.energyx.ota.web;
 
 import com.energyx.common.model.Result;
+import com.energyx.ota.client.dto.DeviceView;
 import com.energyx.ota.entity.OtaTaskDeviceRow;
 import com.energyx.ota.entity.OtaTaskRow;
 import com.energyx.ota.service.OtaTaskService;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,6 +56,19 @@ public class OtaTaskController {
 			taskService.start(taskId);
 		}
 		return Result.ok(taskId);
+	}
+
+	/**
+	 * 创建任务设备选择器：按产品（取自所选升级包）+ 关键字 + 状态拉取设备列表，供前端弹窗多选。
+	 * @param productKey 产品标识（来源：查询参数，必填）
+	 * @param keyword 设备名关键字（来源：查询参数，可选）
+	 * @param status 设备生命周期状态 code（来源：查询参数，可选，见 DeviceStatus 枚举）
+	 * @return {@link Result}&lt;{@link List}&lt;{@link DeviceView}&gt;&gt; 设备投影列表
+	 */
+	@GetMapping("/device-options")
+	public Result<List<DeviceView>> deviceOptions(@RequestParam String productKey,
+			@RequestParam(required = false) String keyword, @RequestParam(required = false) Integer status) {
+		return Result.ok(taskService.listPickerDevices(productKey, keyword, status));
 	}
 
 	/**
