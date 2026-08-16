@@ -939,3 +939,103 @@ export interface NotifyChannelOption {
   label: string
   supported: string
 }
+
+// ---------------- OTA 固件升级（Phase12） ----------------
+
+/** 升级包 */
+export interface OtaPackage {
+  packageId: string
+  productKey: string
+  version: string
+  module: string
+  packageType: number
+  baseVersion: string | null
+  fileName: string
+  fileSize: number
+  md5: string
+  sha256: string
+  signature: string | null
+  sourceVersions: string | null
+  description: string | null
+  status: number
+  createBy: string
+  createTime: string
+  updateTime: string
+}
+
+/** 升级包上传请求 */
+export interface OtaPackageSaveReq {
+  productKey: string
+  version: string
+  module?: string
+  packageType?: number
+  baseVersion?: string
+  sourceVersions?: string
+  description?: string
+}
+
+/** OTA 批次任务 */
+export interface OtaTask {
+  taskId: string
+  packageId: string
+  taskName: string
+  taskType: number
+  downloadPolicy: number
+  grayRatio: number | null
+  deviceCount: number
+  successCount: number
+  failCount: number
+  status: number
+  retryTimes: number
+  retryIntervalMin: number
+  downloadTimeoutMin: number
+  upgradeTimeoutMin: number
+  autoPauseOnFail: number
+  scheduleTime: string | null
+  createBy: string
+  createTime: string
+  updateTime: string
+}
+
+/** 创建任务请求 */
+export interface OtaTaskCreateReq {
+  packageId: string
+  taskName?: string
+  taskType?: number
+  deviceIds?: string[]
+  downloadPolicy?: number
+  grayRatio?: number
+  retryTimes?: number
+  retryIntervalMin?: number
+  downloadTimeoutMin?: number
+  upgradeTimeoutMin?: number
+  autoPauseOnFail?: number
+  scheduleTime?: string | null
+}
+
+/** 任务-设备明细 */
+export interface OtaTaskDevice {
+  taskId: string
+  deviceId: string
+  tenantId: string
+  state: number
+  progress: number
+  versionBefore: string | null
+  versionAfter: string | null
+  failCode: string | null
+  failMsg: string | null
+  retryCount: number
+  retryAt: string | null
+  startTime: string | null
+  finishTime: string | null
+}
+
+/** 任务统计 */
+export interface OtaTaskStatistics {
+  taskId: string
+  deviceCount: number
+  successCount: number
+  failCount: number
+  successRate: number
+  status: number
+}

@@ -72,6 +72,23 @@ public class OtaTaskController {
 		return Result.ok();
 	}
 
+	@PostMapping("/{taskId}/pause")
+	public Result<Void> pause(@PathVariable Long taskId) {
+		taskService.pause(taskId);
+		return Result.ok();
+	}
+
+	@PostMapping("/{taskId}/resume")
+	public Result<Void> resume(@PathVariable Long taskId) {
+		taskService.resume(taskId);
+		return Result.ok();
+	}
+
+	@PostMapping("/{taskId}/gray/advance")
+	public Result<String> advanceGray(@PathVariable Long taskId) {
+		return Result.ok(taskService.advanceGray(taskId));
+	}
+
 	@PostMapping("/{taskId}/cancel")
 	public Result<Void> cancel(@PathVariable Long taskId) {
 		taskService.cancel(taskId);

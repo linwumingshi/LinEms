@@ -44,6 +44,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '场景联动', icon: 'Connection' },
       },
       {
+        path: 'ota/package',
+        name: 'OtaPackage',
+        component: () => import('@/views/OtaPackage.vue'),
+        meta: { title: '升级包管理', icon: 'UploadFilled' },
+      },
+      {
+        path: 'ota/task',
+        name: 'OtaTask',
+        component: () => import('@/views/OtaTask.vue'),
+        meta: { title: '升级任务', icon: 'Promotion' },
+      },
+      {
         path: 'notify/config',
         name: 'NotifyConfig',
         component: () => import('@/views/NotifyConfig.vue'),

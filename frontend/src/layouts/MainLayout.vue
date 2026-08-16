@@ -46,6 +46,8 @@ const menus: MenuItem[] = [
       { path: '/command', title: '指令中心' },
       { path: '/alarm', title: '告警中心' },
       { path: '/rule', title: '场景联动', perms: ['rule:view'] },
+      { path: '/ota/package', title: '升级包管理', perms: ['ota:package:view'] },
+      { path: '/ota/task', title: '升级任务', perms: ['ota:task:view'] },
     ],
   },
   {
