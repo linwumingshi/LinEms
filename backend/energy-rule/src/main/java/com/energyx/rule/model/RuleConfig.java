@@ -21,22 +21,34 @@ import java.util.List;
 @Data
 public class RuleConfig {
 
-	/** DSL 版本（当前 1，升级不破坏旧规则） */
+	/**
+	 * DSL 版本（当前 1，升级不破坏旧规则）。
+	 */
 	private Integer dslVersion = 1;
 
-	/** 规则名称（冗余自 iot_scene_rule.rule_name） */
+	/**
+	 * 规则名称（冗余自 iot_scene_rule.rule_name）。
+	 */
 	private String name;
 
-	/** 触发器列表（OR，至少 1 个） */
+	/**
+	 * 触发器列表（OR，至少 1 个），元素字段说明见 {@link RuleTrigger}。
+	 */
 	private List<RuleTrigger> triggers;
 
-	/** 执行条件列表（AND，可为空数组） */
+	/**
+	 * 执行条件列表（AND，可为空数组，空数组视为恒真），元素字段说明见 {@link RuleCondition}。
+	 */
 	private List<RuleCondition> conditions;
 
-	/** 执行动作列表（至少 1 个） */
+	/**
+	 * 执行动作列表（至少 1 个），元素字段说明见 {@link RuleAction}。
+	 */
 	private List<RuleAction> actions;
 
-	/** 恢复配置（可选） */
+	/**
+	 * 恢复配置（可选），字段说明见 {@link RuleRecovery}。
+	 */
 	private RuleRecovery recovery;
 
 }

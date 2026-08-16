@@ -20,24 +20,29 @@ import java.time.LocalDateTime;
 @TableName("ems_plan")
 public class EmsPlan extends BaseEntity {
 
+	/** 计划 ID（主键，自增） */
 	@TableId(type = IdType.AUTO)
 	private Long planId;
 
+	/** 站点 ID */
 	private Long stationId;
 
+	/** 引用策略 ID */
 	private Long strategyId;
 
+	/** 计划日期 */
 	private LocalDate planDate;
 
-	/** 1充电 2放电 3混合 */
+	/** 计划类型；1=充电，2=放电，3=混合 */
 	private Integer planType;
 
+	/** 计划总电量（kWh） */
 	private BigDecimal totalEnergy;
 
 	/** 计划参数快照 JSON */
 	private String planParam;
 
-	/** 计划状态（PENDING/RUNNING/COMPLETED/CANCELED/FAILED） */
+	/** 计划状态，取值见 {@link PlanStatus}（PENDING/RUNNING/COMPLETED/CANCELED/FAILED） */
 	private PlanStatus status;
 
 }

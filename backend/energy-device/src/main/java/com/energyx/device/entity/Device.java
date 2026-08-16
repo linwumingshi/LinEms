@@ -34,6 +34,7 @@ public class Device extends BaseEntity {
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long deviceId;
 
+	/** 所属企业 ID（企业维度归属） */
 	private Long enterpriseId;
 
 	/** 所属电站 */
@@ -42,20 +43,25 @@ public class Device extends BaseEntity {
 	/** 产品标识（认证与路由锚点），如 snd_ess_pcs */
 	private String productKey;
 
+	/** 设备名（不可含 _ 与 &；clientId = productKey_deviceName 契约，& 为认证 username 分隔符） */
 	private String deviceName;
 
-	/** 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
+	/**
+	 * 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER），见
+	 * {@link com.energyx.common.enums.DeviceType}
+	 */
 	private DeviceType deviceType;
 
 	/** 父设备 ID（0=根） */
 	private Long parentId;
 
-	/** 物化路径，如 /柜ID/簇ID/，供子树查询 */
+	/** 物化路径，如 /柜ID/簇ID/，供子树前缀查询 */
 	private String path;
 
-	/** 设备树层级 */
+	/** 设备树层级（根=1，逐级递增） */
 	private Integer level;
 
+	/** 同级排序号 */
 	private Integer sort;
 
 	/**
@@ -64,6 +70,7 @@ public class Device extends BaseEntity {
 	 */
 	private DeviceStatus status;
 
+	/** 固件版本号 */
 	private String firmwareVersion;
 
 	/** 接入协议，默认 MQTT */
@@ -72,15 +79,19 @@ public class Device extends BaseEntity {
 	/** 当前连接的 Broker 节点（热数据，权威源在 Redis） */
 	private String brokerNode;
 
+	/** 最近一次上线时间 */
 	private LocalDateTime lastOnlineTime;
 
+	/** 最近一次离线时间 */
 	private LocalDateTime lastOfflineTime;
 
 	/** 累计在线秒数 */
 	private Long onlineSeconds;
 
+	/** 设备 MAC 地址 */
 	private String mac;
 
+	/** 设备 IP 地址 */
 	private String ip;
 
 	/** 子节点（仅树形接口填充，非表字段） */

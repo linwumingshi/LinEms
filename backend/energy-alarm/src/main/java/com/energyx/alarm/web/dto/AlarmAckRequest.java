@@ -9,7 +9,10 @@ import lombok.Data;
 @Data
 public class AlarmAckRequest {
 
-	/** 确认人（工号/账号） */
+	/**
+	 * 确认人（工号/账号）。
+	 * @required
+	 */
 	@NotBlank(message = "ackedBy 不能为空")
 	private String ackedBy;
 

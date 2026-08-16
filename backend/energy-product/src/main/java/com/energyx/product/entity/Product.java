@@ -21,20 +21,23 @@ import lombok.Setter;
 @TableName("iot_product")
 public class Product extends BaseEntity {
 
+	/** 产品ID，自增主键 */
 	@TableId(type = IdType.AUTO)
 	private Long productId;
 
+	/** 产品类目ID，可空 */
 	private Long categoryId;
 
 	/** 产品标识（全局路由锚点） */
 	private String productKey;
 
+	/** 产品名称 */
 	private String productName;
 
-	/** ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW */
+	/** 设备类型：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW */
 	private String deviceType;
 
-	/** SECRET：设备密钥 CERT：证书 */
+	/** 设备认证方式：SECRET 设备密钥 / CERT 证书 */
 	private String authType;
 
 	/** 接入协议，默认 MQTT */
@@ -43,9 +46,13 @@ public class Product extends BaseEntity {
 	/** 当前生效物模型版本 */
 	private String modelVersion;
 
+	/** 产品描述 */
 	private String description;
 
-	/** 产品状态（DISABLED/ENABLED，对应 DB 0禁用 1启用） */
+	/**
+	 * 产品状态，见 {@link com.energyx.common.enums.ProductStatus}（DISABLED/ENABLED，对应 DB 0 禁用 1
+	 * 启用）
+	 */
 	private ProductStatus status;
 
 }

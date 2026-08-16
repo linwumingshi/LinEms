@@ -6,12 +6,16 @@ import lombok.Data;
 @Data
 public class RevenueTrendPoint {
 
+	/** 横坐标标签；月视图为 MM-dd，年视图为 yyyy-MM */
 	private String label;
 
+	/** 充电电量（kWh） */
 	private double chargeEnergy;
 
+	/** 放电电量（kWh） */
 	private double dischargeEnergy;
 
+	/** 收益（元） */
 	private double revenue;
 
 }

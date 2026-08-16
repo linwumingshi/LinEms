@@ -14,16 +14,24 @@ import java.util.List;
 @Data
 public class RuleRecovery {
 
-	/** 属性标识（必填，与 Trigger.property 对应） */
+	/**
+	 * 属性标识（必填，与 Trigger.property 对应）。
+	 */
 	private String property;
 
-	/** 恢复条件比较符 GT/GTE/LT/LTE/EQ/NEQ（必填），如温度回落 LTE 45 */
+	/**
+	 * 恢复条件比较符 GT/GTE/LT/LTE/EQ/NEQ（必填），如温度回落 LTE 45。
+	 */
 	private String op;
 
-	/** 恢复阈值（必填） */
+	/**
+	 * 恢复阈值（必填，数值或字符串）。
+	 */
 	private Object value;
 
-	/** 恢复动作列表（必填，复用 RuleAction 定义） */
+	/**
+	 * 恢复动作列表（必填，复用 {@link RuleAction} 定义）。
+	 */
 	private List<RuleAction> actions;
 
 }

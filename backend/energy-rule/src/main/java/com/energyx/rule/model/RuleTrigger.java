@@ -20,34 +20,54 @@ import lombok.Data;
 @Data
 public class RuleTrigger {
 
-	/** 触发类型：PROPERTY/TIMER/LIFECYCLE/ALARM/MANUAL */
+	/**
+	 * 触发类型：PROPERTY/TIMER/LIFECYCLE/ALARM/MANUAL。
+	 */
 	private String type;
 
-	/** 设备引用（PROPERTY/LIFECYCLE 使用；LIFECYCLE 可空=全设备） */
+	/**
+	 * 设备引用（PROPERTY/LIFECYCLE 使用；LIFECYCLE 可空=全设备），字段说明见 {@link RuleDevice}。
+	 */
 	private RuleDevice device;
 
-	/** 属性标识（PROPERTY 必填），如 cellTemp / soc */
+	/**
+	 * 属性标识（PROPERTY 必填），如 cellTemp / soc。
+	 */
 	private String property;
 
-	/** 比较操作符 GT/GTE/LT/LTE/EQ/NEQ（PROPERTY 必填） */
+	/**
+	 * 比较操作符 GT/GTE/LT/LTE/EQ/NEQ（PROPERTY 必填）。
+	 */
 	private String op;
 
-	/** 阈值（PROPERTY 必填，数值或字符串） */
+	/**
+	 * 阈值（PROPERTY 必填，数值或字符串）。
+	 */
 	private Object value;
 
-	/** cron 表达式（TIMER 必填，6 位） */
+	/**
+	 * cron 表达式（TIMER 必填，6 位：秒 分 时 日 月 周）。
+	 */
 	private String cron;
 
-	/** 生命周期事件：ONLINE/OFFLINE（LIFECYCLE 必填） */
+	/**
+	 * 生命周期事件：ONLINE/OFFLINE（LIFECYCLE 必填）。
+	 */
 	private String event;
 
-	/** 告警码（ALARM 可选） */
+	/**
+	 * 告警码（ALARM 可选）。
+	 */
 	private String alarmCode;
 
-	/** 告警级别（ALARM 可选，1提示 2一般 3严重 4危急） */
+	/**
+	 * 告警级别（ALARM 可选，1=提示 2=一般 3=严重 4=危急）。
+	 */
 	private Integer level;
 
-	/** 告警状态：ACTIVE/RECOVER（ALARM 必填） */
+	/**
+	 * 告警状态：ACTIVE/RECOVER（ALARM 必填）。
+	 */
 	private String state;
 
 }

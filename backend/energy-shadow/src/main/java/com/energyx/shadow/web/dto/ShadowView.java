@@ -11,10 +11,13 @@ import java.util.Map;
 @Data
 public class ShadowView {
 
+	/** 设备 ID */
 	private Long deviceId;
 
+	/** 设备上报属性快照，键为属性标识、值为上报值 */
 	private Map<String, Object> reported = new LinkedHashMap<>();
 
+	/** 平台期望属性快照，键为属性标识、值为期望值 */
 	private Map<String, Object> desired = new LinkedHashMap<>();
 
 	/** 乐观锁版本；行不存在时为 null */

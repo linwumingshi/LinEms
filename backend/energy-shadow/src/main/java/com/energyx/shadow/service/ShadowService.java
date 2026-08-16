@@ -69,8 +69,12 @@ public class ShadowService {
 		}
 	}
 
-	/** desired 设置结果 */
-	public record DesiredResult(Map<String, Object> desired, Map<String, Object> delta) {
+	/** desired 设置结果：含最终写入的期望值集合，以及相对当前 reported 的差异集合（已发布 iot-shadow-delta） */
+	public record DesiredResult(
+			/** 最终写入的期望值集合，键为属性标识、值为期望值 */
+			Map<String, Object> desired,
+			/** 相对当前 reported 的差异集合（供设备同步）；无差异时为空快照 */
+			Map<String, Object> delta) {
 	}
 
 	/**

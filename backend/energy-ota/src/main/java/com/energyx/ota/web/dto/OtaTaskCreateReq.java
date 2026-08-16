@@ -11,7 +11,10 @@ import java.util.List;
 @Data
 public class OtaTaskCreateReq {
 
-	/** 升级包 ID（必填） */
+	/**
+	 * 升级包 ID（必填）
+	 * @required
+	 */
 	private Long packageId;
 
 	/** 任务名称（缺省 OTA-{version}） */

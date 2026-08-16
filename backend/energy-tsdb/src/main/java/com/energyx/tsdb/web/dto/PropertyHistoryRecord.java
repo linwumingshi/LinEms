@@ -11,10 +11,10 @@ import java.util.Map;
 @Data
 public class PropertyHistoryRecord {
 
-	/** epoch 毫秒 */
+	/** 时间戳（epoch 毫秒） */
 	private long ts;
 
-	/** 所选属性快照；某属性该行为 NULL（设备未上报）时省略该键 */
+	/** 该时刻所选属性快照，键为属性标识、值为属性值；某属性该行为 NULL（设备未上报）时省略该键 */
 	private Map<String, Object> values = new LinkedHashMap<>();
 
 }

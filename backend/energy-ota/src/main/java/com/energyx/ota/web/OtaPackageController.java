@@ -34,8 +34,13 @@ import java.util.Map;
  *
  * <ul>
  * <li>POST /api/ota/packages 上传升级包（multipart，自动 RSA 签名）；</li>
- * <li>POST /api/ota/packages/{id}/diff?basePackageId= 平台生成差分包（S5-1）；</li>
- * <li>GET /api/ota/packages/{id}/verify-signature 验签（S5-2）；</li>
+ * <li>POST /api/ota/packages/{packageId}/diff 平台生成差分包（S5-1）；</li>
+ * <li>GET /api/ota/packages/{packageId}/verify-signature 验签（文件 SHA256 + RSA 签名）；</li>
+ * <li>GET /api/ota/packages/{packageId}/url 生成签名下载 URL；</li>
+ * <li>GET /api/ota/packages 升级包分页查询；</li>
+ * <li>GET /api/ota/packages/{packageId} 升级包详情；</li>
+ * <li>PUT /api/ota/packages/{packageId}/status 更新升级包状态（启用/停用）；</li>
+ * <li>DELETE /api/ota/packages/{packageId} 删除升级包；</li>
  * <li>GET /api/ota/files/** 升级包文件下载——签名 URL 校验（S5-4）+ HTTP Range 分片/断点续传（206 Partial
  * Content）。</li>
  * </ul>
@@ -63,12 +68,25 @@ public class OtaPackageController {
 		this.otaJwtAuth = otaJwtAuth;
 	}
 
+	/**
+	 * 上传升级包（multipart/form-data，包含固件文件与元数据），服务端自动计算文件摘要（MD5/SHA256）并生成 RSA 签名。
+	 * @param file 固件文件（表单字段 file，二进制流）
+	 * @param req 升级包元数据，字段说明见 {@link OtaPackageSaveReq}
+	 * @return {@link Result}<Long> 新创建的升级包 ID（packageId）
+	 */
 	@PostMapping(value = "/packages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public Result<Long> upload(@RequestPart("file") MultipartFile file, OtaPackageSaveReq req) {
 		return Result.ok(packageService.upload(file, req));
 	}
 
-	/** 平台生成差分包（basePackageId 源全量包 → 本包目标全量包） */
+	/**
+	 * 平台基于两个全量包生成差分包（basePackageId 为源全量包，packageId 为目标全量包）。
+	 * <p>
+	 * 当差分无收益时退化为全量下发，此时 diffPackageId 返回空字符串并提示“差分无收益，已退化为全量下发”。
+	 * @param packageId 目标全量包 ID（路径变量）
+	 * @param basePackageId 源全量包 ID（查询参数，差分基准）
+	 * @return {@link Result}<Object> 结果 Map：diffPackageId（差分包 ID，无收益时为空串）、message（生成说明）
+	 */
 	@PostMapping("/packages/{packageId}/diff")
 	public Result<Object> generateDiff(@PathVariable Long packageId, @RequestParam Long basePackageId) {
 		Long diffId = packageService.generateDiff(packageId, basePackageId);
@@ -78,13 +96,22 @@ public class OtaPackageController {
 		return Result.ok(Map.of("diffPackageId", diffId, "message", "差分包已生成"));
 	}
 
-	/** 验签：文件 SHA256 + 签名是否匹配公钥 */
+	/**
+	 * 校验升级包文件完整性：比对文件 SHA256 与平台 RSA 签名是否可用公钥验签通过。
+	 * @param packageId 升级包 ID（路径变量）
+	 * @return {@link Result}<Boolean> true=摘要与签名均匹配，false=不匹配或校验失败
+	 */
 	@GetMapping("/packages/{packageId}/verify-signature")
 	public Result<Boolean> verifySignature(@PathVariable Long packageId) {
 		return Result.ok(packageService.verifySignature(packageId));
 	}
 
-	/** 生成签名下载 URL（管理端/下发信封预生成） */
+	/**
+	 * 为指定升级包预生成带时效的 HMAC-SHA256 签名下载 URL（供管理端或下发信封使用）。
+	 * @param packageId 升级包 ID（路径变量）
+	 * @return {@link Result}<Map<String, Object>> 含 url（签名
+	 * URL）、expires（有效期秒）、signMethod（HMAC-SHA256）、 sha256（文件摘要）、signature（RSA 签名，缺省为空串）
+	 */
 	@GetMapping("/packages/{packageId}/url")
 	public Result<Map<String, Object>> signedUrl(@PathVariable Long packageId) {
 		OtaPackageRow row = packageService.get(packageId);
@@ -93,6 +120,17 @@ public class OtaPackageController {
 				row.getSignature() == null ? "" : row.getSignature()));
 	}
 
+	/**
+	 * 升级包分页查询，支持按产品、版本、包类型、状态筛选。
+	 * @param productKey 产品标识（查询参数，可选）
+	 * @param version 固件版本号（查询参数，可选）
+	 * @param packageType 包类型 1全量 2差分（查询参数，可选）
+	 * @param status 状态 1正常 2已停用（查询参数，可选）
+	 * @param pageNum 页码（查询参数，默认 1）
+	 * @param pageSize 每页条数（查询参数，默认 10）
+	 * @return {@link Result}<Object> 分页数据，data 为
+	 * {@link com.energyx.common.model.PageResult}<{@link OtaPackageRow}>（含 total/records）
+	 */
 	@GetMapping("/packages")
 	public Result<Object> page(@RequestParam(required = false) String productKey,
 			@RequestParam(required = false) String version, @RequestParam(required = false) Integer packageType,
@@ -101,17 +139,33 @@ public class OtaPackageController {
 		return Result.ok(packageService.page(productKey, version, packageType, status, pageNum, pageSize));
 	}
 
+	/**
+	 * 查询单个升级包详情。
+	 * @param packageId 升级包 ID（路径变量）
+	 * @return {@link Result}<{@link OtaPackageRow}> 升级包实体
+	 */
 	@GetMapping("/packages/{packageId}")
 	public Result<OtaPackageRow> get(@PathVariable Long packageId) {
 		return Result.ok(packageService.get(packageId));
 	}
 
+	/**
+	 * 更新升级包状态（启用/停用）。
+	 * @param packageId 升级包 ID（路径变量）
+	 * @param status 状态值 1正常 2已停用（查询参数）
+	 * @return {@link Result}<Void> 操作结果
+	 */
 	@PutMapping("/packages/{packageId}/status")
 	public Result<Void> updateStatus(@PathVariable Long packageId, @RequestParam int status) {
 		packageService.updateStatus(packageId, status);
 		return Result.ok();
 	}
 
+	/**
+	 * 删除升级包（软删除，置 deleted 标记）。
+	 * @param packageId 升级包 ID（路径变量）
+	 * @return {@link Result}<Void> 操作结果
+	 */
 	@DeleteMapping("/packages/{packageId}")
 	public Result<Void> delete(@PathVariable Long packageId) {
 		packageService.delete(packageId);

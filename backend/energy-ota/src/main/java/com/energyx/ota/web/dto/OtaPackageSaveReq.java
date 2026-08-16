@@ -8,10 +8,16 @@ import lombok.Data;
 @Data
 public class OtaPackageSaveReq {
 
-	/** 产品标识（必填） */
+	/**
+	 * 产品标识（必填）
+	 * @required
+	 */
 	private String productKey;
 
-	/** 固件版本号（必填） */
+	/**
+	 * 固件版本号（必填）
+	 * @required
+	 */
 	private String version;
 
 	/** 固件模块（默认 main） */

@@ -15,7 +15,9 @@ import java.util.Map;
 @Data
 public class ManualTriggerRequest {
 
-	/** 手动触发载荷（可空） */
+	/**
+	 * 手动触发载荷（任意 JSON，可空），注入 {@code RuleContext.payload}。
+	 */
 	private Map<String, Object> payload = new LinkedHashMap<>();
 
 }

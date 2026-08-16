@@ -20,7 +20,7 @@ import lombok.EqualsAndHashCode;
 @TableName("iot_notify_template")
 public class NotifyTemplateRow extends BaseEntity {
 
-	/** 模板ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
+	/** 模板 ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long templateId;
 
@@ -36,21 +36,22 @@ public class NotifyTemplateRow extends BaseEntity {
 	/** 消息类型：ALARM/SCENE/DEVICE_EVENT/SYSTEM */
 	private String messageType;
 
-	/** 绑定渠道：WEBHOOK/WECOM/DINGTALK/EMAIL（与配置渠道一致才可发送） */
+	/** 绑定渠道，取值见 {@link NotifyChannel}（与配置渠道一致才可发送） */
 	private String channel;
 
-	/** 标题模板（邮件主题等），支持 ${xxx} */
+	/** 标题模板（邮件主题等），支持 ${xxx} 占位符 */
 	private String titleTemplate;
 
-	/** 内容模板，支持 ${xxx} */
+	/** 内容模板，支持 ${xxx} 占位符 */
 	private String contentTemplate;
 
-	/** 占位符说明 JSON */
+	/** 占位符说明 JSON，如 [{"key":"deviceName","desc":"设备名称"}]，供前端表单提示 */
 	private String variables;
 
-	/** 0停用 1启用 */
+	/** 状态：0停用 1启用 */
 	private Integer status;
 
+	/** 描述（可空） */
 	private String description;
 
 }

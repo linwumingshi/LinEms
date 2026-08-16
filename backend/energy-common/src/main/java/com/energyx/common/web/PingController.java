@@ -20,6 +20,10 @@ public class PingController {
 	@Value("${spring.application.name:unknown}")
 	private String appName;
 
+	/**
+	 * 存活探针：返回服务名、版本与当前时间，供网关/负载均衡做连通性与健康检查。
+	 * @return 成功 {@link Result}，data 含 service / version / time 字段
+	 */
 	@GetMapping
 	public Result<Map<String, Object>> ping() {
 		Map<String, Object> data = new LinkedHashMap<>();

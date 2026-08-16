@@ -17,28 +17,44 @@ import lombok.Data;
 @Data
 public class RuleCondition {
 
-	/** 条件类型：DEVICE_STATUS/TIME_RANGE/PROPERTY */
+	/**
+	 * 条件类型：DEVICE_STATUS/TIME_RANGE/PROPERTY。
+	 */
 	private String type;
 
-	/** 设备引用（DEVICE_STATUS/PROPERTY 使用） */
+	/**
+	 * 设备引用（DEVICE_STATUS/PROPERTY 使用），字段说明见 {@link RuleDevice}。
+	 */
 	private RuleDevice device;
 
-	/** 在线状态：ONLINE/OFFLINE（DEVICE_STATUS 必填） */
+	/**
+	 * 在线状态：ONLINE/OFFLINE（DEVICE_STATUS 必填）。
+	 */
 	private String status;
 
-	/** 时间范围起点 HH:mm（TIME_RANGE 必填） */
+	/**
+	 * 时间范围起点 HH:mm（TIME_RANGE 必填，支持跨零点）。
+	 */
 	private String start;
 
-	/** 时间范围终点 HH:mm（TIME_RANGE 必填） */
+	/**
+	 * 时间范围终点 HH:mm（TIME_RANGE 必填，支持跨零点）。
+	 */
 	private String end;
 
-	/** 属性标识（PROPERTY 必填） */
+	/**
+	 * 属性标识（PROPERTY 必填）。
+	 */
 	private String property;
 
-	/** 比较操作符 GT/GTE/LT/LTE/EQ/NEQ（PROPERTY 必填） */
+	/**
+	 * 比较操作符 GT/GTE/LT/LTE/EQ/NEQ（PROPERTY 必填）。
+	 */
 	private String op;
 
-	/** 阈值（PROPERTY 必填） */
+	/**
+	 * 阈值（PROPERTY 必填，数值或字符串）。
+	 */
 	private Object value;
 
 }

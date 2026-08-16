@@ -8,12 +8,16 @@ import java.math.BigDecimal;
 @Data
 public class DemandConfigReq {
 
+	/**
+	 * 站点 ID；必填
+	 * @required
+	 */
 	private Long stationId;
 
-	/** 需量限值 kW（>0 启用检测） */
+	/** 需量限值（kW）；> 0 时启用检测，不传则仅配置费率 */
 	private BigDecimal demandLimitKw;
 
-	/** 需量费率 ¥/kW·月 */
+	/** 需量费率（¥/kW·月） */
 	private BigDecimal demandRate;
 
 }

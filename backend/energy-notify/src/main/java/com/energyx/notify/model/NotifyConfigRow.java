@@ -21,7 +21,7 @@ import lombok.EqualsAndHashCode;
 @TableName("iot_notify_config")
 public class NotifyConfigRow extends BaseEntity {
 
-	/** 配置ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
+	/** 配置 ID（雪花，MyBatis-Plus ASSIGN_ID 自动生成） */
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long configId;
 
@@ -34,15 +34,16 @@ public class NotifyConfigRow extends BaseEntity {
 	/** 配置名称 */
 	private String configName;
 
-	/** 渠道：WEBHOOK/WECOM/DINGTALK/EMAIL */
+	/** 渠道，取值见 {@link NotifyChannel}：WEBHOOK/WECOM/DINGTALK/EMAIL/SMS/VOICE */
 	private String channel;
 
-	/** 渠道配置 JSON */
+	/** 渠道配置 JSON 字符串，结构见类注释（按渠道不同） */
 	private String channelConfig;
 
-	/** 0停用 1启用 */
+	/** 状态：0停用 1启用 */
 	private Integer status;
 
+	/** 描述（可空） */
 	private String description;
 
 }

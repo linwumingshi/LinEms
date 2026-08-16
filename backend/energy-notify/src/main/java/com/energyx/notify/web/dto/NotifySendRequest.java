@@ -16,10 +16,13 @@ import java.util.Map;
 @Data
 public class NotifySendRequest {
 
-	/** 租户（缺省 1，单租户环境） */
+	/** 租户 ID（缺省 1，单租户环境） */
 	private Long tenantId;
 
-	/** 通知配置编码（必填） */
+	/**
+	 * 通知配置编码（必填），用于定位渠道配置
+	 * @required
+	 */
 	@NotBlank(message = "configCode 不能为空")
 	private String configCode;
 
@@ -32,7 +35,7 @@ public class NotifySendRequest {
 	/** 标题（邮件主题/企微标题等，可空） */
 	private String title;
 
-	/** 占位符上下文 */
+	/** 占位符上下文，键为占位符名、值为替换值，如 {"deviceName":"sim-dev-000001","value":"60"} */
 	private Map<String, Object> context;
 
 }

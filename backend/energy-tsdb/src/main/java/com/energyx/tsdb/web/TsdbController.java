@@ -33,6 +33,20 @@ public class TsdbController {
 		this.queryService = queryService;
 	}
 
+	/**
+	 * 查询设备属性的历史时序数据（TDengine 超级表）。按设备、产品、属性标识集合与时间窗分页返回， 时间范围默认最近一天，排序方向默认倒序。
+	 * @param deviceId 设备 ID（来源：查询参数，必填）
+	 * @param productKey 产品标识（来源：查询参数，必填，须为合法标识符）
+	 * @param identifiers 属性标识列表，逗号分隔（来源：查询参数，必填，1~10 个）
+	 * @param startTime 起始时间，epoch 毫秒（来源：查询参数，可选，默认一天前）
+	 * @param endTime 结束时间，epoch 毫秒（来源：查询参数，可选，默认当前时间）
+	 * @param order 排序方向：asc|desc（来源：查询参数，可选，默认 desc）
+	 * @param page 页码，从 1 开始（来源：查询参数，可选，默认 1）
+	 * @param size 每页大小（来源：查询参数，可选，默认 20，范围 1~1000）
+	 * @return {@link Result}<{@link PropertyHistoryView}> 属性历史分页视图
+	 * @throws Exception 参数非法（productKey/identifiers/分页/时间窗/order）或底层查询失败时抛出， 映射为业务异常
+	 * {@link com.energyx.common.exception.ErrorCode#PARAM_INVALID}
+	 */
 	@GetMapping("/property/history")
 	public Result<PropertyHistoryView> propertyHistory(@RequestParam("deviceId") String deviceId,
 			@RequestParam("productKey") String productKey, @RequestParam("identifiers") String identifiers,

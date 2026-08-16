@@ -1,0 +1,17 @@
+{
+  "projectName": "EnergyStorageIotPlatform",
+  "docFileName": "api",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "allInOne": true,
+  "outPath": "docs/api",
+  "html": true,
+  "createDebugPage": false,
+  "requestExample": true,
+  "responseExample": true,
+  "packageFilters": "com.energyx.*",
+  "recursionLimit": 50,
+  "srcPaths": [
+    "src/main/java"
+  ]
+}

@@ -18,15 +18,17 @@ import java.time.LocalDateTime;
 @TableName("ems_demand_config")
 public class EmsDemandConfig extends BaseEntity {
 
+	/** 需量配置 ID（主键，自增） */
 	@TableId(type = IdType.AUTO)
 	private Long demandConfigId;
 
+	/** 站点 ID（tenant+station 唯一） */
 	private Long stationId;
 
-	/** 需量限值 kW（>0 启用检测） */
+	/** 需量限值（kW）；> 0 时启用检测 */
 	private BigDecimal demandLimitKw;
 
-	/** 需量费率 ¥/kW·月 */
+	/** 需量费率（¥/kW·月） */
 	private BigDecimal demandRate;
 
 }

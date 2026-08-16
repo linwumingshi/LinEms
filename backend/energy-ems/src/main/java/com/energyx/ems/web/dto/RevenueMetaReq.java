@@ -9,9 +9,10 @@ import java.time.LocalDate;
 @Data
 public class RevenueMetaReq {
 
+	/** 站点 ID */
 	private Long stationId;
 
-	/** 投资额 元 */
+	/** 投资额（元） */
 	private BigDecimal investmentAmount;
 
 	/** 投运日期 */

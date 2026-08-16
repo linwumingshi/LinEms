@@ -25,6 +25,17 @@ public class BrokerStatsController {
 		this.properties = properties;
 	}
 
+	/**
+	 * 获取 Broker 运维快照（管理端口 8082，供控制台/监控拉取）。
+	 * <p>
+	 * 返回字段由 {@link BrokerStats#snapshot()} 计数器（connections、subscriptions、messagesIn、
+	 * messagesOut、messagesRoutedCrossNode、authFailures、acceptedConnections、rejectedConnections、
+	 * routeFailures、backpressureParked、backpressureDropped、inflightOverflow、executorRejected、
+	 * rateLimited、authOverloadRejected、packetSizeExceeded）与节点信息（nodeId、mqttPort、
+	 * maxConnections、uptimeMillis）合并而成。
+	 * @return {@link Result}<{@link Map}<{@link String}, {@link Object}>> Broker
+	 * 运行指标与节点信息
+	 */
 	@GetMapping("/stats")
 	public Result<Map<String, Object>> stats() {
 		Map<String, Object> data = new LinkedHashMap<>(stats.snapshot());

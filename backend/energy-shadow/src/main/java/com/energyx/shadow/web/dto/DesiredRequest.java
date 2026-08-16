@@ -11,6 +11,10 @@ import java.util.Map;
 @Data
 public class DesiredRequest {
 
+	/**
+	 * 期望属性集合，键为属性标识、值为期望值（必填，不可为空）
+	 * @required
+	 */
 	@NotEmpty(message = "desired 不能为空")
 	private Map<String, Object> desired;
 

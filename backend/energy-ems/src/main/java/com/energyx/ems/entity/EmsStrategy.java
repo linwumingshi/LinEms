@@ -22,25 +22,29 @@ import java.time.LocalDateTime;
 @TableName("ems_strategy")
 public class EmsStrategy extends BaseEntity {
 
+	/** 策略 ID（主键，自增） */
 	@TableId(type = IdType.AUTO)
 	private Long strategyId;
 
+	/** 站点 ID */
 	private Long stationId;
 
+	/** 策略名称 */
 	private String strategyName;
 
-	/** 策略类型（PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME） */
+	/** 策略类型，取值见 {@link StrategyType}（PEAK_VALLEY/DEMAND/DR/SOC_CTRL/TIME） */
 	private StrategyType strategyType;
 
 	/** 策略配置 JSON（chargeWindows/dischargeWindows/socRange） */
 	private String config;
 
-	/** 多策略冲突仲裁优先级 */
+	/** 多策略冲突仲裁优先级；数值越大优先级越高，默认 0 */
 	private Integer priority;
 
-	/** 策略状态（DRAFT/ENABLED/DISABLED） */
+	/** 策略状态，取值见 {@link StrategyStatus}（DRAFT/ENABLED/DISABLED） */
 	private StrategyStatus status;
 
+	/** 乐观锁版本号（由 MyBatis-Plus 维护） */
 	private Integer version;
 
 }

@@ -12,10 +12,14 @@ import lombok.Data;
 @Data
 public class RuleDevice {
 
-	/** 产品标识（必填） */
+	/**
+	 * 产品标识（必填）。
+	 */
 	private String productKey;
 
-	/** 设备名（可选：Trigger 可空=产品级，Condition/Action 必填） */
+	/**
+	 * 设备名（可选：Trigger 可空=产品级，Condition/Action 必填）。
+	 */
 	private String deviceName;
 
 }

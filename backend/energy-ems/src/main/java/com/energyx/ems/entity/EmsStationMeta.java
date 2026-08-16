@@ -19,12 +19,14 @@ import java.time.LocalDateTime;
 @TableName("ems_station_meta")
 public class EmsStationMeta extends BaseEntity {
 
+	/** 投资元数据 ID（主键，自增） */
 	@TableId(type = IdType.AUTO)
 	private Long stationMetaId;
 
+	/** 站点 ID（uk_station_meta_station 唯一） */
 	private Long stationId;
 
-	/** 投资额 元 */
+	/** 投资额（元） */
 	private BigDecimal investmentAmount;
 
 	/** 投运日期 */

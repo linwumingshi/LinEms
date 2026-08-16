@@ -18,22 +18,26 @@ public class EmsExecutionRecord {
 	/** 租户 ID */
 	private Long tenantId;
 
+	/** 执行记录 ID（主键，自增） */
 	@TableId(type = IdType.AUTO)
 	private Long execId;
 
+	/** 关联计划 ID */
 	private Long planId;
 
+	/** 下发指令 ID（用于与设备回执关联） */
 	private String commandId;
 
 	/** 计划点时刻（5min 粒度），调度器按点到点下发的锚点，配合 (plan_id, plan_time) 唯一键防重复 */
 	private LocalTime planTime;
 
+	/** 关联设备 ID */
 	private Long deviceId;
 
-	/** CHARGE/DISCHARGE/STANDBY */
+	/** 动作方向；CHARGE=充电，DISCHARGE=放电，STANDBY=待机 */
 	private String action;
 
-	/** 点执行状态（PENDING/DISPATCHED/SUCCESS/FAILED/TIMEOUT） */
+	/** 点执行状态，取值见 {@link PlanPointState}（PENDING/DISPATCHED/SUCCESS/FAILED/TIMEOUT） */
 	private PlanPointState state;
 
 	/** 下发参数 JSON */
@@ -42,6 +46,7 @@ public class EmsExecutionRecord {
 	/** 执行回执 JSON */
 	private String result;
 
+	/** 执行时间（DB DEFAULT CURRENT_TIMESTAMP） */
 	private LocalDateTime executeTime;
 
 }

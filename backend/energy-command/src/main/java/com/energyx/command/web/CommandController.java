@@ -32,6 +32,11 @@ public class CommandController {
 		this.commandService = commandService;
 	}
 
+	/**
+	 * 创建指令。根据设备在线状态选择在线直发或离线入队；commandId 作为幂等键， 重复提交命中既有指令时直接返回已存在结果。
+	 * @param request 请求体，字段说明见 {@link CreateCommandRequest}
+	 * @return {@link Result}<{@link CommandView}> 创建后的指令视图；参数非法时返回 code=400 的失败结果
+	 */
 	@PostMapping
 	public Result<CommandView> create(@Valid @RequestBody CreateCommandRequest request) {
 		try {
@@ -42,6 +47,11 @@ public class CommandController {
 		}
 	}
 
+	/**
+	 * 查询指令状态。按 commandId 返回指令最新快照（含状态、执行结果、时间线等）。
+	 * @param commandId 指令 ID（路径变量）
+	 * @return {@link Result}<{@link CommandView}> 指令视图；指令不存在时返回 code=404 的失败结果
+	 */
 	@GetMapping("/{commandId}")
 	public Result<CommandView> detail(@PathVariable String commandId) {
 		CommandView view = commandService.getCommand(commandId);
