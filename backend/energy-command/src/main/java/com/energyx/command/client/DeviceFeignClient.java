@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Device 实体兼容，反序列化为本地投影 {@link DeviceInfo}。
  * </p>
  */
-@FeignClient(name = "energy-device", path = "/api/device", fallbackFactory = DeviceFeignClientFallbackFactory.class)
+@FeignClient(name = "energy-device", path = "/device", fallbackFactory = DeviceFeignClientFallbackFactory.class)
 public interface DeviceFeignClient {
 
 	/** 按设备 ID 查设备；不存在返回 data=null */

@@ -15,7 +15,7 @@ import java.util.List;
  * 按电站解析进线电表（deviceType=METER）与 PCS 下发目标（deviceType=PCS）， 仅返回可下发状态（已激活/在线）设备。
  * </p>
  */
-@FeignClient(name = "energy-device", path = "/api/device", fallbackFactory = DeviceFeignClientFallbackFactory.class)
+@FeignClient(name = "energy-device", path = "/device", fallbackFactory = DeviceFeignClientFallbackFactory.class)
 public interface DeviceFeignClient {
 
 	/** 按电站 + 类型查设备列表；productKey/deviceType 可空过滤 */

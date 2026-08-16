@@ -22,4 +22,7 @@ public class OtaProperties {
 	/** 设备 OTA 报文下行 Kafka topic 前缀（ota.down.{nodeId}） */
 	private String downlinkPrefix;
 
+	/** 本实例节点标识（下行信封 sourceNode） */
+	private String nodeId = "ota-1";
+
 }

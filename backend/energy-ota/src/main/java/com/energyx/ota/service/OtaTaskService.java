@@ -1,0 +1,513 @@
+package com.energyx.ota.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.energyx.common.exception.BusinessException;
+import com.energyx.common.exception.ErrorCode;
+import com.energyx.common.model.PageResult;
+import com.energyx.common.model.Result;
+import com.energyx.common.tenant.TenantContext;
+import com.energyx.ota.client.DeviceFeignClient;
+import com.energyx.ota.client.dto.DeviceQuery;
+import com.energyx.ota.client.dto.DeviceUpdateReq;
+import com.energyx.ota.client.dto.DeviceView;
+import com.energyx.ota.config.OtaProperties;
+import com.energyx.ota.entity.OtaPackageRow;
+import com.energyx.ota.entity.OtaTaskDeviceRow;
+import com.energyx.ota.entity.OtaTaskRow;
+import com.energyx.ota.mapper.OtaPackageMapper;
+import com.energyx.ota.mapper.OtaTaskDeviceMapper;
+import com.energyx.ota.mapper.OtaTaskMapper;
+import com.energyx.ota.mqtt.OtaDownPublisher;
+import com.energyx.ota.web.dto.OtaTaskCreateReq;
+import com.energyx.common.message.OtaDownMessage;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * OTA 批次升级任务：创建（设备快照）/下发推进/进度与结果处理/成功判定/版本回写/统计。
+ *
+ * <p>
+ * 状态约定：任务 status 0待开始 1执行中 2已完成 3已暂停 4已取消； 明细 state 0待升级 1下载中 2升级中 3成功 4失败 5超时 6已取消。
+ * 成功判据（同阿里云）：设备上报新版本 == 目标版本（inform 或 result 携带）。
+ * </p>
+ */
+@Slf4j
+@Service
+public class OtaTaskService {
+
+	/** 任务状态 */
+	public static final int TASK_PENDING = 0;
+
+	public static final int TASK_RUNNING = 1;
+
+	public static final int TASK_DONE = 2;
+
+	public static final int TASK_PAUSED = 3;
+
+	public static final int TASK_CANCELED = 4;
+
+	/** 明细状态 */
+	public static final int DEV_PENDING = 0;
+
+	public static final int DEV_DOWNLOADING = 1;
+
+	public static final int DEV_UPGRADING = 2;
+
+	public static final int DEV_SUCCESS = 3;
+
+	public static final int DEV_FAILED = 4;
+
+	public static final int DEV_TIMEOUT = 5;
+
+	public static final int DEV_CANCELED = 6;
+
+	private final OtaTaskMapper taskMapper;
+
+	private final OtaTaskDeviceMapper deviceMapper;
+
+	private final OtaPackageMapper packageMapper;
+
+	private final OtaDownPublisher downPublisher;
+
+	private final OtaVersionCache versionCache;
+
+	private final DeviceFeignClient deviceFeignClient;
+
+	private final OtaProperties props;
+
+	public OtaTaskService(OtaTaskMapper taskMapper, OtaTaskDeviceMapper deviceMapper, OtaPackageMapper packageMapper,
+			OtaDownPublisher downPublisher, OtaVersionCache versionCache, DeviceFeignClient deviceFeignClient,
+			OtaProperties props) {
+		this.taskMapper = taskMapper;
+		this.deviceMapper = deviceMapper;
+		this.packageMapper = packageMapper;
+		this.downPublisher = downPublisher;
+		this.versionCache = versionCache;
+		this.deviceFeignClient = deviceFeignClient;
+		this.props = props;
+	}
+
+	// ---------------- 任务 CRUD ----------------
+
+	/**
+	 * 创建批次任务：校验升级包 → 解析目标设备（全部/指定/灰度比例）→ 快照明细（PENDING）→ 入库。 返回任务 ID；任务默认待开始，scheduleTime
+	 * 为空则立即开始。
+	 */
+	@Transactional
+	public Long create(OtaTaskCreateReq req) {
+		Long tenantId = requireTenant();
+		OtaPackageRow pkg = packageMapper.selectById(req.getPackageId());
+		if (pkg == null || !pkg.getTenantId().equals(tenantId)) {
+			throw new BusinessException(ErrorCode.NOT_FOUND, "升级包不存在");
+		}
+		if (pkg.getStatus() != 1) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "升级包已停用");
+		}
+		List<Long> deviceIds = resolveDevices(tenantId, req);
+		if (deviceIds.isEmpty()) {
+			throw new BusinessException(ErrorCode.PARAM_INVALID, "未匹配到目标设备");
+		}
+		OtaTaskRow task = new OtaTaskRow();
+		task.setTenantId(tenantId);
+		task.setPackageId(pkg.getPackageId());
+		task.setTaskName(req.getTaskName() == null || req.getTaskName().isBlank() ? "OTA-" + pkg.getVersion()
+				: req.getTaskName());
+		task.setTaskType(req.getTaskType() == null ? 1 : req.getTaskType());
+		task.setDownloadPolicy(req.getDownloadPolicy() == null ? 1 : req.getDownloadPolicy());
+		task.setGrayRatio(req.getTaskType() != null && req.getTaskType() == 3 ? req.getGrayRatio() : null);
+		task.setDeviceCount(deviceIds.size());
+		task.setSuccessCount(0);
+		task.setFailCount(0);
+		task.setStatus(TASK_PENDING);
+		task.setRetryTimes(req.getRetryTimes() == null ? 2 : req.getRetryTimes());
+		task.setRetryIntervalMin(req.getRetryIntervalMin() == null ? 5 : req.getRetryIntervalMin());
+		task.setDownloadTimeoutMin(req.getDownloadTimeoutMin() == null ? 60 : req.getDownloadTimeoutMin());
+		task.setUpgradeTimeoutMin(req.getUpgradeTimeoutMin() == null ? 30 : req.getUpgradeTimeoutMin());
+		task.setAutoPauseOnFail(req.getAutoPauseOnFail() == null ? 1 : req.getAutoPauseOnFail());
+		task.setScheduleTime(req.getScheduleTime());
+		task.setCreateBy(req.getCreateBy() == null ? 0L : req.getCreateBy());
+		taskMapper.insert(task);
+
+		// 快照目标设备（PENDING），version_before 取版本缓存
+		for (Long deviceId : deviceIds) {
+			OtaTaskDeviceRow row = new OtaTaskDeviceRow();
+			row.setTaskId(task.getTaskId());
+			row.setDeviceId(deviceId);
+			row.setTenantId(tenantId);
+			row.setState(DEV_PENDING);
+			row.setProgress(0);
+			row.setVersionBefore(versionCache.getVersion(deviceId));
+			row.setRetryCount(0);
+			deviceMapper.insert(row);
+		}
+		log.info("[OTA] 任务创建 taskId={} name={} package={} devices={}", task.getTaskId(), task.getTaskName(),
+				pkg.getVersion(), deviceIds.size());
+		return task.getTaskId();
+	}
+
+	/** 任务分页 */
+	public PageResult<OtaTaskRow> page(String taskName, Integer status, long pageNum, long pageSize) {
+		Long tenantId = requireTenant();
+		Page<OtaTaskRow> p = taskMapper.selectPage(new Page<>(pageNum, pageSize),
+				new LambdaQueryWrapper<OtaTaskRow>().eq(OtaTaskRow::getTenantId, tenantId)
+					.like(StringUtils.hasText(taskName), OtaTaskRow::getTaskName, taskName)
+					.eq(status != null, OtaTaskRow::getStatus, status)
+					.orderByDesc(OtaTaskRow::getCreateTime));
+		return PageResult.of(p);
+	}
+
+	/** 任务详情（含成功/失败/进行中统计） */
+	public OtaTaskRow get(Long taskId) {
+		OtaTaskRow task = taskMapper.selectById(taskId);
+		if (task == null || !task.getTenantId().equals(requireTenant())) {
+			throw new BusinessException(ErrorCode.NOT_FOUND, "任务不存在");
+		}
+		return task;
+	}
+
+	/** 取消任务（待开始/执行中可取消，未终态明细置已取消） */
+	@Transactional
+	public void cancel(Long taskId) {
+		OtaTaskRow task = get(taskId);
+		if (task.getStatus() != TASK_PENDING && task.getStatus() != TASK_RUNNING) {
+			throw new BusinessException(ErrorCode.CONFLICT, "任务当前状态不可取消");
+		}
+		task.setStatus(TASK_CANCELED);
+		taskMapper.updateById(task);
+		OtaTaskDeviceRow upd = new OtaTaskDeviceRow();
+		upd.setState(DEV_CANCELED);
+		deviceMapper.update(upd, new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+			.in(OtaTaskDeviceRow::getState, DEV_PENDING, DEV_DOWNLOADING, DEV_UPGRADING));
+	}
+
+	/** 设备明细分页 */
+	public PageResult<OtaTaskDeviceRow> devices(Long taskId, Integer state, long pageNum, long pageSize) {
+		get(taskId);
+		Page<OtaTaskDeviceRow> p = deviceMapper.selectPage(new Page<>(pageNum, pageSize),
+				new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+					.eq(state != null, OtaTaskDeviceRow::getState, state)
+					.orderByAsc(OtaTaskDeviceRow::getDeviceId));
+		return PageResult.of(p);
+	}
+
+	// ---------------- 任务推进 ----------------
+
+	/** 立即开始任务（status 0→1），对全部 PENDING 设备下发升级通知 */
+	public void start(Long taskId) {
+		OtaTaskRow task = get(taskId);
+		if (task.getStatus() != TASK_PENDING) {
+			throw new BusinessException(ErrorCode.CONFLICT, "任务非待开始状态");
+		}
+		task.setStatus(TASK_RUNNING);
+		taskMapper.updateById(task);
+		dispatchPending(task);
+	}
+
+	/** 调度器/手动触发：对任务内全部 PENDING 设备下发（在线直推，离线保持 PENDING 等补推） */
+	public void dispatchPending(OtaTaskRow task) {
+		List<OtaTaskDeviceRow> pendings = deviceMapper
+			.selectList(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, task.getTaskId())
+				.eq(OtaTaskDeviceRow::getState, DEV_PENDING));
+		for (OtaTaskDeviceRow row : pendings) {
+			dispatch(task, row);
+		}
+	}
+
+	/** 单设备下发：构造升级通知信封 → 定向/广播；在线置下载中，离线保持待升级（lifecycle/pull 补推） */
+	public boolean dispatch(OtaTaskRow task, OtaTaskDeviceRow row) {
+		OtaPackageRow pkg = packageMapper.selectById(task.getPackageId());
+		if (pkg == null) {
+			return false;
+		}
+		OtaDownMessage msg = new OtaDownMessage();
+		msg.setTaskId(task.getTaskId());
+		msg.setDeviceId(row.getDeviceId());
+		msg.setTenantId(task.getTenantId());
+		msg.setProductKey(pkg.getProductKey());
+		msg.setPackageId(pkg.getPackageId());
+		msg.setVersion(pkg.getVersion());
+		msg.setPackageType(pkg.getPackageType());
+		msg.setBaseVersion(pkg.getBaseVersion());
+		msg.setModule(pkg.getModule());
+		msg.setUrl(downloadUrl(pkg));
+		msg.setSize(pkg.getFileSize());
+		msg.setSha256(pkg.getSha256());
+		msg.setTargetSha256(pkg.getSha256());
+		msg.setSignMethod("SHA256");
+		msg.setSegmentSize(1024 * 1024);
+		msg.getExtData().put("ota_notice", pkg.getDescription());
+		// 下发需要设备名（构造下行 topic）——快照时未存设备名，经 Feign 查询补充
+		String deviceName = resolveDeviceName(pkg.getProductKey(), row.getDeviceId());
+		msg.setDeviceName(deviceName);
+		boolean online = downPublisher.publish(msg);
+		if (online) {
+			OtaTaskDeviceRow upd = new OtaTaskDeviceRow();
+			upd.setState(DEV_DOWNLOADING);
+			upd.setStartTime(LocalDateTime.now());
+			deviceMapper.update(upd,
+					new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, task.getTaskId())
+						.eq(OtaTaskDeviceRow::getDeviceId, row.getDeviceId()));
+		}
+		return online;
+	}
+
+	// ---------------- 设备报文处理（OtaUplinkHandler 回调） ----------------
+
+	/** 进度上报：PENDING/下载中 → 下载中/升级中，更新进度 */
+	public void onProgress(Long taskId, Long deviceId, int progress, String state) {
+		OtaTaskDeviceRow row = findDevice(taskId, deviceId);
+		if (row == null || row.getState() == DEV_SUCCESS || row.getState() == DEV_FAILED
+				|| row.getState() == DEV_TIMEOUT) {
+			return;
+		}
+		int newState = "UPGRADING".equalsIgnoreCase(state) ? DEV_UPGRADING : DEV_DOWNLOADING;
+		OtaTaskDeviceRow upd = new OtaTaskDeviceRow();
+		upd.setState(newState);
+		upd.setProgress(Math.max(0, Math.min(100, progress)));
+		deviceMapper.update(upd, new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+			.eq(OtaTaskDeviceRow::getDeviceId, deviceId));
+	}
+
+	/** 结果上报：success=true → 校验版本 → 成功 + 版本回写；false → 失败（重试逻辑 S4） */
+	public void onResult(Long taskId, Long deviceId, boolean success, String version, String code, String msg) {
+		OtaTaskDeviceRow row = findDevice(taskId, deviceId);
+		if (row == null || row.getState() == DEV_SUCCESS || row.getState() == DEV_CANCELED) {
+			return;
+		}
+		OtaTaskRow task = taskMapper.selectById(taskId);
+		if (task == null) {
+			return;
+		}
+		OtaPackageRow pkg = packageMapper.selectById(task.getPackageId());
+		if (success && pkg != null && version != null && version.equals(pkg.getVersion())) {
+			finishDevice(task, row, DEV_SUCCESS, version);
+		}
+		else {
+			OtaTaskDeviceRow upd = new OtaTaskDeviceRow();
+			upd.setState(DEV_FAILED);
+			upd.setFailCode(code);
+			upd.setFailMsg(msg);
+			upd.setFinishTime(LocalDateTime.now());
+			upd.setVersionAfter(version);
+			deviceMapper.update(upd, new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+				.eq(OtaTaskDeviceRow::getDeviceId, deviceId));
+			refreshTaskCounters(taskId);
+		}
+	}
+
+	/** 版本上报：设备上报版本 == 目标版本 → 视为升级成功（唯一成功判据，同阿里云） */
+	public void onInform(Long deviceId, String version) {
+		if (version == null || version.isBlank()) {
+			return;
+		}
+		// deviceId 全局唯一（跨租户不冲突），消费线程无租户上下文故不按租户过滤
+		List<OtaTaskDeviceRow> actives = deviceMapper
+			.selectList(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getDeviceId, deviceId)
+				.in(OtaTaskDeviceRow::getState, DEV_PENDING, DEV_DOWNLOADING, DEV_UPGRADING));
+		for (OtaTaskDeviceRow row : actives) {
+			OtaTaskRow task = taskMapper.selectById(row.getTaskId());
+			if (task == null) {
+				continue;
+			}
+			OtaPackageRow pkg = packageMapper.selectById(task.getPackageId());
+			if (pkg != null && version.equals(pkg.getVersion())) {
+				log.info("[OTA] 版本上报判定成功 deviceId={} version={} taskId={}", deviceId, version, task.getTaskId());
+				finishDevice(task, row, DEV_SUCCESS, version);
+			}
+		}
+	}
+
+	/** 主动拉取：设备存在 PENDING 任务 → 立即补推 */
+	public void onPull(Long deviceId) {
+		List<OtaTaskDeviceRow> pendings = deviceMapper
+			.selectList(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getDeviceId, deviceId)
+				.eq(OtaTaskDeviceRow::getState, DEV_PENDING));
+		for (OtaTaskDeviceRow row : pendings) {
+			OtaTaskRow task = taskMapper.selectById(row.getTaskId());
+			if (task != null && task.getStatus() == TASK_RUNNING) {
+				dispatch(task, row);
+			}
+		}
+	}
+
+	/** 设备上线补推：state=PENDING 且任务执行中 → 下发 */
+	public void onDeviceOnline(Long deviceId) {
+		onPull(deviceId);
+	}
+
+	// ---------------- 内部工具 ----------------
+
+	/** 设备成功终态：更新明细 + 版本回写 device + 刷新任务统计与完成判定 */
+	private void finishDevice(OtaTaskRow task, OtaTaskDeviceRow row, int state, String version) {
+		OtaTaskDeviceRow upd = new OtaTaskDeviceRow();
+		upd.setState(state);
+		upd.setProgress(100);
+		upd.setVersionAfter(version);
+		upd.setFinishTime(LocalDateTime.now());
+		deviceMapper.update(upd,
+				new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, task.getTaskId())
+					.eq(OtaTaskDeviceRow::getDeviceId, row.getDeviceId()));
+		// 版本回写 device 服务（失败不阻断，下次 inform 仍可判定）
+		writeBackFirmwareVersion(row.getDeviceId(), version);
+		refreshTaskCounters(task.getTaskId());
+	}
+
+	/** 刷新任务成功/失败计数，全终态置任务完成 */
+	private void refreshTaskCounters(Long taskId) {
+		OtaTaskRow task = taskMapper.selectById(taskId);
+		if (task == null) {
+			return;
+		}
+		long success = deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+				.eq(OtaTaskDeviceRow::getState, DEV_SUCCESS));
+		long fail = deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+				.in(OtaTaskDeviceRow::getState, DEV_FAILED, DEV_TIMEOUT));
+		long total = deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId));
+		OtaTaskRow upd = new OtaTaskRow();
+		upd.setSuccessCount((int) success);
+		upd.setFailCount((int) fail);
+		if (success + fail + countActive(taskId) == total) {
+			upd.setStatus(TASK_DONE);
+		}
+		taskMapper.update(upd, new LambdaQueryWrapper<OtaTaskRow>().eq(OtaTaskRow::getTaskId, taskId));
+	}
+
+	/** 进行中（未终态：待升级/下载中/升级中）明细数 */
+	private long countActive(Long taskId) {
+		return deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+				.in(OtaTaskDeviceRow::getState, DEV_PENDING, DEV_DOWNLOADING, DEV_UPGRADING));
+	}
+
+	/** 回写 device.firmware_version（Feign，失败记日志不阻断） */
+	private void writeBackFirmwareVersion(Long deviceId, String version) {
+		try {
+			DeviceUpdateReq req = new DeviceUpdateReq();
+			req.setFirmwareVersion(version);
+			deviceFeignClient.update(deviceId, req);
+		}
+		catch (Exception e) {
+			log.warn("[OTA] 版本回写 device 失败 deviceId={} version={}", deviceId, version, e);
+		}
+	}
+
+	/** 按产品 + deviceId 解析设备名（构造下行 topic；缓存缺失回退 Feign） */
+	private String resolveDeviceName(String productKey, Long deviceId) {
+		try {
+			DeviceQuery q = new DeviceQuery();
+			q.setProductKey(productKey);
+			q.setPageSize(500);
+			Result<PageResult<DeviceView>> r = deviceFeignClient.page(q);
+			if (r != null && r.isSuccess() && r.getData() != null) {
+				for (DeviceView v : r.getData().getRecords()) {
+					if (deviceId.equals(v.getDeviceId())) {
+						return v.getDeviceName();
+					}
+				}
+			}
+		}
+		catch (Exception e) {
+			log.warn("[OTA] 设备名解析失败 deviceId={}", deviceId, e);
+		}
+		return null;
+	}
+
+	/** 解析任务目标设备列表（全部=产品下全部设备；指定=传入列表；灰度=按比例取前 N） */
+	private List<Long> resolveDevices(Long tenantId, OtaTaskCreateReq req) {
+		OtaPackageRow pkg = packageMapper.selectById(req.getPackageId());
+		int taskType = req.getTaskType() == null ? 1 : req.getTaskType();
+		if (taskType == 2 && req.getDeviceIds() != null && !req.getDeviceIds().isEmpty()) {
+			return new ArrayList<>(req.getDeviceIds());
+		}
+		List<Long> all = listProductDevices(tenantId, pkg.getProductKey());
+		if (taskType == 3) {
+			int ratio = req.getGrayRatio() == null ? 10 : Math.max(1, Math.min(100, req.getGrayRatio()));
+			int count = (int) Math.max(1, Math.ceil(all.size() * ratio / 100.0));
+			return all.size() <= count ? all : new ArrayList<>(all.subList(0, count));
+		}
+		return all;
+	}
+
+	/** 按产品分页拉全设备（Feign，最多 1000 台） */
+	private List<Long> listProductDevices(Long tenantId, String productKey) {
+		List<Long> ids = new ArrayList<>();
+		int page = 1;
+		int pageSize = 500;
+		while (page * pageSize <= 1000) {
+			DeviceQuery q = new DeviceQuery();
+			q.setPageNum(page);
+			q.setPageSize(pageSize);
+			q.setProductKey(productKey);
+			Result<PageResult<DeviceView>> r = deviceFeignClient.page(q);
+			if (r == null || !r.isSuccess() || r.getData() == null) {
+				break;
+			}
+			List<DeviceView> records = r.getData().getRecords();
+			if (records == null || records.isEmpty()) {
+				break;
+			}
+			for (DeviceView v : records) {
+				ids.add(v.getDeviceId());
+			}
+			if (records.size() < pageSize) {
+				break;
+			}
+			page++;
+		}
+		return ids;
+	}
+
+	private OtaTaskDeviceRow findDevice(Long taskId, Long deviceId) {
+		return deviceMapper.selectOne(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+			.eq(OtaTaskDeviceRow::getDeviceId, deviceId));
+	}
+
+	private String downloadUrl(OtaPackageRow pkg) {
+		return propsDownloadBase() + "/" + pkg.getProductKey() + "/" + pkg.getVersion() + "/" + pkg.getModule() + "/"
+				+ pkg.getFileName();
+	}
+
+	private String propsDownloadBase() {
+		// 下载基础地址由 OtaProperties 注入（S1 配置 download-base-url）
+		return props.getDownloadBaseUrl();
+	}
+
+	private long requireTenant() {
+		Long t = TenantContext.getTenantId();
+		if (t == null) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少租户上下文");
+		}
+		return t;
+	}
+
+	/** 任务统计（版本分布/成功率），管理端展示用 */
+	public Map<String, Object> statistics(Long taskId) {
+		OtaTaskRow task = get(taskId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("taskId", taskId);
+		out.put("deviceCount", task.getDeviceCount());
+		out.put("successCount", task.getSuccessCount());
+		out.put("failCount", task.getFailCount());
+		long success = deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
+				.eq(OtaTaskDeviceRow::getState, DEV_SUCCESS));
+		long total = deviceMapper
+			.selectCount(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId));
+		out.put("successRate", total == 0 ? 0 : Math.round(success * 10000.0 / total) / 100.0);
+		out.put("status", task.getStatus());
+		return out;
+	}
+
+}
