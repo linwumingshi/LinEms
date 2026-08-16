@@ -29,6 +29,16 @@
             <el-tag size="small" :type="statusType(row.status)">{{ TASK_STATUS[row.status] || row.status }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="计划开始" width="205">
+          <template #default="{ row }">
+            <template v-if="row.scheduleTime">
+              <el-tag v-if="row.status === 0" size="small" type="info">已排期</el-tag>
+              <span v-if="row.status === 0" class="countdown">{{ countdownText(row) }}</span>
+              <span v-else class="sched-time">{{ row.scheduleTime }}</span>
+            </template>
+            <span v-else class="muted">立即开始</span>
+          </template>
+        </el-table-column>
         <el-table-column label="设备" width="110">
           <template #default="{ row }">
             <span class="stat">{{ row.successCount }}/{{ row.deviceCount }}</span>
@@ -193,7 +203,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { otaApi } from '@/api/ota'
 import type { DeviceView, OtaPackage, OtaTask, OtaTaskCreateReq, OtaTaskDevice, OtaTaskStatistics } from '@/types/models'
@@ -237,6 +247,10 @@ const pickerTable = ref()
 const selectedDevices = ref<DeviceView[]>([])
 const scheduleDate = ref<Date | null>(null)
 
+/** 实时时钟（驱动「已排期」任务倒计时，每秒刷新） */
+const now = ref(Date.now())
+let clockTimer: number | undefined
+
 /** 设备状态标签样式 */
 function devStatusTag(s: number): 'success' | 'primary' | 'warning' | 'info' | 'danger' {
   return s === 3 ? 'success' : s === 2 ? 'warning' : s === 4 || s === 5 ? 'info' : 'danger'
@@ -261,6 +275,24 @@ function statusType(s: number): 'success' | 'primary' | 'warning' | 'info' | 'da
 }
 function devStatusType(s: number): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
   return s === 3 ? 'success' : s === 1 || s === 2 ? 'primary' : s === 4 || s === 5 ? 'danger' : 'info'
+}
+
+/** 已排期任务距开始时间的倒计时文案（scheduleTime 为本地时间字符串，无时区偏移） */
+function countdownText(row: OtaTask): string {
+  const target = new Date(row.scheduleTime as string).getTime()
+  let diff = target - now.value
+  if (diff <= 0) return '即将开始'
+  const d = Math.floor(diff / 86400000)
+  diff -= d * 86400000
+  const h = Math.floor(diff / 3600000)
+  diff -= h * 3600000
+  const m = Math.floor(diff / 60000)
+  diff -= m * 60000
+  const s = Math.floor(diff / 1000)
+  if (d > 0) return `约 ${d}天${h}时${m}分 后开始`
+  if (h > 0) return `约 ${h}时${m}分 后开始`
+  if (m > 0) return `约 ${m}分${s}秒 后开始`
+  return `约 ${s}秒 后开始`
 }
 
 async function load() {
@@ -467,7 +499,10 @@ async function cancel(row: OtaTask) {
 onMounted(() => {
   load()
   loadPkgOptions()
+  // 每秒刷新时钟，驱动「已排期」任务倒计时实时更新
+  clockTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
 })
+onUnmounted(() => { if (clockTimer) clearInterval(clockTimer) })
 </script>
 
 <style scoped>
@@ -527,5 +562,20 @@ onMounted(() => {
 .pick-more {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.countdown {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--el-color-info);
+  font-weight: 600;
+}
+.sched-time {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.muted {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
 }
 </style>
