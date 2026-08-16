@@ -13,6 +13,7 @@ import com.energyx.access.publish.EventPublisher;
 import com.energyx.common.kafka.BytesKafkaRecordHandler;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.LifecycleMessage;
+import com.energyx.common.message.OtaUpMessage;
 import com.energyx.common.message.RawMessage;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
@@ -27,8 +28,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 设备上行报文处理器（消费 mqtt.uplink 的二进制信封）。
@@ -55,6 +58,9 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 
 	private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<LinkedHashMap<String, Object>>() {
 	};
+
+	/** OTA 命名空间子类型（对应设备 topic {pk}/{dn}/ota/{type}） */
+	private static final Set<String> OTA_TYPES = Set.of("inform", "progress", "result", "pull");
 
 	private final EventPublisher publisher;
 
@@ -100,6 +106,10 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 		MqttTopicInfo info = MqttTopicUtil.parseUpTopic(envelope.getTopic());
 		if (info == null) {
+			// OTA 命名空间（{pk}/{dn}/ota/{type}）透传：不进入物模型链路，直接转发 OTA 中心
+			if (processOta(envelope)) {
+				return;
+			}
 			return; // down/* 或非法格式，非设备上行
 		}
 		byte[] payload = envelope.decodePayload();
@@ -123,6 +133,46 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 			case ACK -> processAck(device, payload, messageId);
 			case LIFECYCLE -> processDeviceLifecycle(device, info, payload, messageId);
 		}
+	}
+
+	/**
+	 * OTA 命名空间透传：识别 {@code {pk}/{dn}/ota/{inform|progress|result|pull}} 报文， 查设备上下文后原样转发
+	 * ota.uplink（不进入物模型校验/标准化链路）。
+	 * @return true=已作为 OTA 报文处理；false=非 OTA topic（down/* 或非法格式）
+	 */
+	private boolean processOta(RouterEnvelope envelope) {
+		String topic = envelope.getTopic();
+		if (topic == null || topic.isBlank()) {
+			return false;
+		}
+		String[] parts = topic.split("/");
+		if (parts.length != 4 || !"ota".equals(parts[2])) {
+			return false;
+		}
+		String otaType = parts[3];
+		if (!OTA_TYPES.contains(otaType)) {
+			return false;
+		}
+		DeviceInfo device = deviceInfoCache.get(parts[0], parts[1]);
+		if (device == null) {
+			log.warn("[Access] OTA 报文设备不存在 productKey={} deviceName={}，丢弃", parts[0], parts[1]);
+			return true;
+		}
+		try {
+			OtaUpMessage msg = new OtaUpMessage();
+			msg.setDeviceId(device.getDeviceId());
+			msg.setTenantId(device.getTenantId());
+			msg.setProductKey(parts[0]);
+			msg.setDeviceName(parts[1]);
+			msg.setOtaType(otaType);
+			msg.setTopic(topic);
+			msg.setPayload(new String(envelope.decodePayload(), StandardCharsets.UTF_8));
+			publisher.publishOta(msg);
+		}
+		catch (Exception e) {
+			log.error("[Access] OTA 报文透传失败 topic={}", topic, e);
+		}
+		return true;
 	}
 
 	private void processProperty(DeviceInfo device, MqttTopicInfo info, byte[] payload, String messageId) {

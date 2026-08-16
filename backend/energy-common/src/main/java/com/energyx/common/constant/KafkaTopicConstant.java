@@ -62,6 +62,12 @@ public final class KafkaTopicConstant {
 	/** 通知 */
 	public static final String IOT_NOTIFY = "iot-notify";
 
+	/** OTA 上行（设备 OTA 报文：access 透传 ota/ 命名空间 → energy-ota 消费，key=deviceId） */
+	public static final String OTA_UPLINK = "ota.uplink";
+
+	/** OTA 下行前缀（ota.down.{nodeId}，energy-ota 生产 → access 桥接下发） */
+	public static final String OTA_DOWN_PREFIX = "ota.down.";
+
 	/** 死信队列（基础设施 topic，非业务 topic：消费失败且重试耗尽后的兜底落点） */
 	public static final String IOT_DLQ = "iot-dlq";
 

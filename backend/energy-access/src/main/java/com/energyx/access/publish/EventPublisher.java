@@ -8,6 +8,7 @@ import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.message.CommandAckMessage;
 import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.LifecycleMessage;
+import com.energyx.common.message.OtaUpMessage;
 import com.energyx.common.message.RawMessage;
 import com.energyx.common.message.ThingEventMessage;
 import com.energyx.common.message.ThingPropertyMessage;
@@ -75,6 +76,13 @@ public class EventPublisher {
 
 	public void publishCommandDown(CommandDownMessage m) {
 		send(KafkaTopicConstant.IOT_COMMAND_DOWN, String.valueOf(m.getDeviceId()), m);
+	}
+
+	/**
+	 * 设备 OTA 报文透传（上行）：把 OTA 命名空间报文转发到 ota.uplink 供 OTA 中心消费。 不进入物模型标准化链路，仅携带设备上下文原样透传。
+	 */
+	public void publishOta(OtaUpMessage m) {
+		send(KafkaTopicConstant.OTA_UPLINK, String.valueOf(m.getDeviceId()), m);
 	}
 
 	/**
