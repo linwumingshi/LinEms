@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,7 +57,7 @@ public class RuleService {
 	}
 
 	/** 创建规则：校验 DSL → 落库（enabled 由请求决定）→ 广播热更新 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public RuleView create(SaveRuleRequest req) {
 		RuleConfig config = req.getDsl();
 		dslValidator.validate(config, null);
@@ -75,13 +77,19 @@ public class RuleService {
 		row.setVersion(0);
 		row.setCreateBy(req.getCreateBy() == null ? 0L : req.getCreateBy());
 		ruleMapper.insert(row);
-		notifyChanged(row.getRuleId());
+		final Long committedRuleId = row.getRuleId();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			@Override
+			public void afterCommit() {
+				notifyChanged(committedRuleId);
+			}
+		});
 		log.info("[Rule] 创建规则 ruleId={} code={} enabled={}", row.getRuleId(), row.getRuleCode(), row.getEnabled());
 		return toView(ruleMapper.selectById(row.getRuleId()));
 	}
 
 	/** 更新规则：乐观锁 version → 广播热更新 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public RuleView update(Long ruleId, SaveRuleRequest req) {
 		SceneRuleRow existing = ruleMapper.selectById(ruleId);
 		if (existing == null) {
@@ -111,13 +119,18 @@ public class RuleService {
 		if (updated == 0) {
 			throw new IllegalArgumentException("规则更新冲突，请刷新后重试");
 		}
-		notifyChanged(ruleId);
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			@Override
+			public void afterCommit() {
+				notifyChanged(ruleId);
+			}
+		});
 		log.info("[Rule] 更新规则 ruleId={} code={}", ruleId, row.getRuleCode());
 		return toView(ruleMapper.selectById(ruleId));
 	}
 
 	/** 删除规则：先停用再删除（防在途执行）→ 广播热更新 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void delete(Long ruleId) {
 		SceneRuleRow existing = ruleMapper.selectById(ruleId);
 		if (existing == null) {
@@ -125,7 +138,12 @@ public class RuleService {
 		}
 		ruleMapper.updateEnabled(ruleId, 0);
 		ruleMapper.deleteById(ruleId);
-		notifyChanged(ruleId);
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			@Override
+			public void afterCommit() {
+				notifyChanged(ruleId);
+			}
+		});
 		log.info("[Rule] 删除规则 ruleId={} code={}", ruleId, existing.getRuleCode());
 	}
 

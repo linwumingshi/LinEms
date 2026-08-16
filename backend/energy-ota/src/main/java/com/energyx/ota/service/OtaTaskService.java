@@ -24,6 +24,8 @@ import com.energyx.common.message.OtaDownMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -115,7 +117,7 @@ public class OtaTaskService {
 	 * 创建批次任务：校验升级包 → 解析目标设备（全部/指定/灰度比例）→ 快照明细（PENDING）→ 入库。 返回任务 ID；任务默认待开始，scheduleTime
 	 * 为空则立即开始。
 	 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public Long create(OtaTaskCreateReq req) {
 		Long tenantId = requireTenant();
 		OtaPackageRow pkg = packageMapper.selectById(req.getPackageId());
@@ -188,7 +190,7 @@ public class OtaTaskService {
 	}
 
 	/** 取消任务（待开始/执行中可取消，未终态明细置已取消） */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void cancel(Long taskId) {
 		OtaTaskRow task = get(taskId);
 		if (task.getStatus() != TASK_PENDING && task.getStatus() != TASK_RUNNING) {
@@ -215,6 +217,7 @@ public class OtaTaskService {
 	// ---------------- 任务推进 ----------------
 
 	/** 立即开始任务（status 0→1），对全部 PENDING 设备下发升级通知 */
+	@Transactional(rollbackFor = Exception.class)
 	public void start(Long taskId) {
 		OtaTaskRow task = get(taskId);
 		if (task.getStatus() != TASK_PENDING) {
@@ -222,7 +225,14 @@ public class OtaTaskService {
 		}
 		task.setStatus(TASK_RUNNING);
 		taskMapper.updateById(task);
-		dispatchPending(task);
+		// 设备下发（含 Feign 查差分/设备名、MQ 发布）放到事务提交后，避免事务内远程调用持有 DB 连接
+		final Long committedTaskId = task.getTaskId();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			@Override
+			public void afterCommit() {
+				onTaskStartedAfterCommit(committedTaskId);
+			}
+		});
 	}
 
 	/**
@@ -770,6 +780,22 @@ public class OtaTaskService {
 				log.warn("[OTA] 灰度推进失败 taskId={}", task.getTaskId(), e);
 			}
 		}
+	}
+
+	/**
+	 * 事务提交后下发设备升级通知。
+	 * <p>
+	 * start 事务内只做任务状态置 RUNNING；设备下发（含 Feign 查差分/设备名、MQ 发布）延迟到此处， 避免事务内远程调用持有 DB
+	 * 连接，也保证仅当状态落库成功后才真正下发。
+	 * </p>
+	 * @param taskId 已启动任务 ID（提交后已生成）
+	 */
+	public void onTaskStartedAfterCommit(Long taskId) {
+		OtaTaskRow task = taskMapper.selectById(taskId);
+		if (task == null || task.getStatus() != TASK_RUNNING) {
+			return;
+		}
+		dispatchPending(task);
 	}
 
 }

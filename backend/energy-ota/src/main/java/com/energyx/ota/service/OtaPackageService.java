@@ -16,6 +16,8 @@ import com.energyx.ota.web.dto.OtaPackageSaveReq;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -65,7 +67,7 @@ public class OtaPackageService {
 	 * @param req 升级包元数据（产品/版本/类型/源版本等）
 	 * @return 升级包 ID
 	 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public Long upload(MultipartFile file, OtaPackageSaveReq req) {
 		Long tenantId = requireTenant();
 		if (file == null || file.isEmpty()) {
@@ -99,7 +101,6 @@ public class OtaPackageService {
 
 		try {
 			byte[] fileBytes = file.getBytes();
-			storageService.store(objectKey, new java.io.ByteArrayInputStream(fileBytes), fileBytes.length);
 			String sha256 = OtaCryptoUtil.sha256(fileBytes);
 			String md5 = digestHex(new java.io.ByteArrayInputStream(fileBytes), "MD5");
 
@@ -122,13 +123,25 @@ public class OtaPackageService {
 			row.setStatus(1);
 			row.setCreateBy(req.getCreateBy() == null ? 0L : req.getCreateBy());
 			packageMapper.insert(row);
-			log.info("[OTA] 升级包上传成功 productKey={} version={} type={} size={} packageId={}", productKey, version,
+			// 文件落盘放到事务提交后（提交后发）：避免事务内文件 IO 持有 DB 连接；
+			// 落盘失败时由 afterCommit 回调补偿删除已插入的元数据，杜绝无文件的孤儿升级包记录。
+			final Long committedPackageId = row.getPackageId();
+			final String committedObjectKey = objectKey;
+			final byte[] committedBytes = fileBytes;
+			final long committedSize = fileBytes.length;
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+				@Override
+				public void afterCommit() {
+					onPackageStoredAfterCommit(committedPackageId, committedObjectKey, committedBytes, committedSize);
+				}
+			});
+			log.info("[OTA] 升级包元数据入库成功 productKey={} version={} type={} size={} packageId={}", productKey, version,
 					packageType, fileBytes.length, row.getPackageId());
 			return row.getPackageId();
 		}
 		catch (IOException e) {
-			log.error("[OTA] 升级包落盘失败 productKey={} version={}", productKey, version, e);
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "升级包文件存储失败");
+			log.error("[OTA] 升级包读取失败 productKey={} version={}", productKey, version, e);
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "升级包文件读取失败");
 		}
 	}
 
@@ -138,7 +151,7 @@ public class OtaPackageService {
 	 * @param basePackageId 源全量包 ID
 	 * @return 差分包 ID（null=差分无收益，退化为全量）
 	 */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public Long generateDiff(Long packageId, Long basePackageId) {
 		Long tenantId = requireTenant();
 		OtaPackageRow target = get(packageId);
@@ -218,11 +231,18 @@ public class OtaPackageService {
 	}
 
 	/** 删除升级包（逻辑删 + 物理文件删除） */
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void delete(Long packageId) {
 		OtaPackageRow row = get(packageId);
 		packageMapper.deleteById(packageId);
-		storageService.delete(row.getFilePath());
+		// 物理文件删除作为事务提交后的副作用（提交后发），避免事务内文件 IO 持有 DB 连接
+		final String committedFilePath = row.getFilePath();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+			@Override
+			public void afterCommit() {
+				onPackageDeletedAfterCommit(committedFilePath);
+			}
+		});
 	}
 
 	/** 验签（S5-2）：文件 SHA256 + 签名 是否与公钥匹配 */
@@ -311,6 +331,45 @@ public class OtaPackageService {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少租户上下文");
 		}
 		return t;
+	}
+
+	// ---------------- 事务提交后副作用（文件 IO 移出事务边界） ----------------
+
+	/**
+	 * 事务提交后落盘（文件 IO 移出事务边界）。
+	 * <p>
+	 * upload 仅在事务内写入元数据；文件真正落盘放到此处，避免事务内文件 IO 持有 DB 连接。
+	 * 若落盘失败，补偿删除已提交的元数据，保证「无文件则无元数据」，不产生孤儿记录。
+	 * </p>
+	 * @param packageId 升级包 ID（提交后已生成）
+	 * @param objectKey 存储相对路径
+	 * @param bytes 文件字节（提交后写入）
+	 * @param size 文件大小
+	 */
+	public void onPackageStoredAfterCommit(Long packageId, String objectKey, byte[] bytes, long size) {
+		try {
+			storageService.store(objectKey, new java.io.ByteArrayInputStream(bytes), size);
+			log.info("[OTA] 升级包落盘成功 packageId={} objectKey={}", packageId, objectKey);
+		}
+		catch (Exception e) {
+			log.error("[OTA] 升级包落盘失败（元数据已提交），补偿删除元数据 packageId={} objectKey={}", packageId, objectKey, e);
+			// 补偿：删除已插入的元数据，避免产生无文件的孤儿升级包记录
+			packageMapper.deleteById(packageId);
+		}
+	}
+
+	/**
+	 * 事务提交后清理物理文件（文件删除失败仅留孤儿文件，不影响元数据已删除）。
+	 * @param filePath 已删除升级包的物理文件路径
+	 */
+	public void onPackageDeletedAfterCommit(String filePath) {
+		try {
+			storageService.delete(filePath);
+			log.info("[OTA] 升级包物理文件删除成功 filePath={}", filePath);
+		}
+		catch (Exception e) {
+			log.error("[OTA] 升级包物理文件删除失败（元数据已删除） filePath={}", filePath, e);
+		}
 	}
 
 }
