@@ -86,9 +86,16 @@ public class OtaTaskService {
 
 	private final OtaNotifyService notifyService;
 
+	private final OtaPackageService packageService;
+
+	private final OtaUrlSignService urlSignService;
+
+	private final OtaSignService signService;
+
 	public OtaTaskService(OtaTaskMapper taskMapper, OtaTaskDeviceMapper deviceMapper, OtaPackageMapper packageMapper,
 			OtaDownPublisher downPublisher, OtaVersionCache versionCache, DeviceFeignClient deviceFeignClient,
-			OtaProperties props, OtaNotifyService notifyService) {
+			OtaProperties props, OtaNotifyService notifyService, OtaPackageService packageService,
+			OtaUrlSignService urlSignService, OtaSignService signService) {
 		this.taskMapper = taskMapper;
 		this.deviceMapper = deviceMapper;
 		this.packageMapper = packageMapper;
@@ -97,6 +104,9 @@ public class OtaTaskService {
 		this.deviceFeignClient = deviceFeignClient;
 		this.props = props;
 		this.notifyService = notifyService;
+		this.packageService = packageService;
+		this.urlSignService = urlSignService;
+		this.signService = signService;
 	}
 
 	// ---------------- 任务 CRUD ----------------
@@ -251,28 +261,43 @@ public class OtaTaskService {
 		return Math.max(1, count);
 	}
 
-	/** 单设备下发：构造升级通知信封 → 定向/广播；在线置下载中，离线保持待升级（lifecycle/pull 补推） */
+	/** 单设备下发：构造升级通知信封（S5：差分匹配 + 签名 URL + RSA 信息）→ 定向/广播；在线置下载中，离线保持待升级 */
 	public boolean dispatch(OtaTaskRow task, OtaTaskDeviceRow row) {
 		OtaPackageRow pkg = packageMapper.selectById(task.getPackageId());
 		if (pkg == null) {
 			return false;
+		}
+		// S5-1 差分优先：设备当前版本（versionBefore）有匹配差分包则下差分，无则退化全量
+		OtaPackageRow deliver = pkg;
+		boolean useDiff = task.getDownloadPolicy() != null && task.getDownloadPolicy() == 1;
+		if (useDiff && pkg.getPackageType() == 1 && StringUtils.hasText(row.getVersionBefore())) {
+			OtaPackageRow diff = packageService.findDiff(task.getTenantId(), pkg.getProductKey(), pkg.getVersion(),
+					row.getVersionBefore());
+			if (diff != null) {
+				deliver = diff;
+			}
 		}
 		OtaDownMessage msg = new OtaDownMessage();
 		msg.setTaskId(task.getTaskId());
 		msg.setDeviceId(row.getDeviceId());
 		msg.setTenantId(task.getTenantId());
 		msg.setProductKey(pkg.getProductKey());
-		msg.setPackageId(pkg.getPackageId());
+		msg.setPackageId(deliver.getPackageId());
 		msg.setVersion(pkg.getVersion());
-		msg.setPackageType(pkg.getPackageType());
-		msg.setBaseVersion(pkg.getBaseVersion());
+		msg.setPackageType(deliver.getPackageType());
+		msg.setBaseVersion(deliver.getBaseVersion());
 		msg.setModule(pkg.getModule());
-		msg.setUrl(downloadUrl(pkg));
-		msg.setSize(pkg.getFileSize());
-		msg.setSha256(pkg.getSha256());
-		msg.setTargetSha256(pkg.getSha256());
-		msg.setSignMethod("SHA256");
-		msg.setSegmentSize(1024 * 1024);
+		// S5-4 签名 URL（时效 HMAC）
+		msg.setUrl(urlSignService.signUrl(deliver.getFilePath()));
+		msg.setSize(deliver.getFileSize());
+		// 差分包：sha256=差分自身，targetSha256=合并产物（全量包）校验
+		msg.setSha256(deliver.getSha256());
+		msg.setTargetSha256(pkg.getPackageType() == 1 ? pkg.getSha256() : pkg.getSha256());
+		msg.setSignMethod("SHA256+RSA");
+		msg.setSegmentSize(props.getSegmentSize());
+		// S5-2 RSA 签名与公钥（设备侧验签安装）
+		msg.getExtData().put("signature", deliver.getSignature() == null ? "" : deliver.getSignature());
+		msg.getExtData().put("publicKey", signService.publicKeyBase64());
 		msg.getExtData().put("ota_notice", pkg.getDescription());
 		// 下发需要设备名（构造下行 topic）——快照时未存设备名，经 Feign 查询补充
 		String deviceName = resolveDeviceName(pkg.getProductKey(), row.getDeviceId());
@@ -627,16 +652,6 @@ public class OtaTaskService {
 	private OtaTaskDeviceRow findDevice(Long taskId, Long deviceId) {
 		return deviceMapper.selectOne(new LambdaQueryWrapper<OtaTaskDeviceRow>().eq(OtaTaskDeviceRow::getTaskId, taskId)
 			.eq(OtaTaskDeviceRow::getDeviceId, deviceId));
-	}
-
-	private String downloadUrl(OtaPackageRow pkg) {
-		return propsDownloadBase() + "/" + pkg.getProductKey() + "/" + pkg.getVersion() + "/" + pkg.getModule() + "/"
-				+ pkg.getFileName();
-	}
-
-	private String propsDownloadBase() {
-		// 下载基础地址由 OtaProperties 注入（S1 配置 download-base-url）
-		return props.getDownloadBaseUrl();
 	}
 
 	private long requireTenant() {
