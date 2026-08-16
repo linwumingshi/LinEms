@@ -34,3 +34,4 @@ test/stress/results/
 
 # WorkBuddy 会话数据（memory/任务状态等，不入库）
 .workbuddy/
+deploy/ota-files/
