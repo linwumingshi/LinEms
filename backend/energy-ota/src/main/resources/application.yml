@@ -1,0 +1,52 @@
+server:
+  port: 8118
+
+spring:
+  application:
+    name: energy-ota
+  config:
+    import: nacos:energy-shared.yaml?group=ENERGY
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/es_ota?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+
+mybatis-plus:
+  type-enums-package: com.energyx.common.enums
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+  configuration:
+    map-underscore-to-camel-case: true
+
+# OTA 业务配置
+energy:
+  ota:
+    # 升级包文件本地存储根目录（对象存储抽象后续替换）
+    storage-dir: D:/ProgramData/_GitHub/EnergyStorageIotPlatform/deploy/ota-files
+    # 升级包下载基础地址（HTTP 静态服务或网关转发）
+    download-base-url: http://127.0.0.1:8118/api/ota/files
+    # 设备 OTA 报文 Kafka topic
+    uplink-topic: ota.uplink
+    downlink-prefix: ota.down.

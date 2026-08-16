@@ -42,6 +42,7 @@
     <module>energy-ems</module>
     <module>energy-rule</module>
     <module>energy-notify</module>
+    <module>energy-ota</module>
   </modules>
 
   <properties>
