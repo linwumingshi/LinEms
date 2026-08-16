@@ -6,6 +6,7 @@ import com.energyx.common.exception.BusinessException;
 import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.model.PageResult;
 import com.energyx.common.tenant.TenantContext;
+import com.energyx.common.tenant.TenantInfo;
 import com.energyx.ota.config.OtaProperties;
 import com.energyx.ota.entity.OtaPackageRow;
 import com.energyx.ota.mapper.OtaPackageMapper;
@@ -254,6 +255,33 @@ public class OtaPackageService {
 	/** objectKey 构造（存储相对路径） */
 	public String objectKey(String productKey, String version, String module, String fileName) {
 		return productKey + "/" + version + "/" + module + "/" + fileName;
+	}
+
+	/**
+	 * 按文件相对路径精确查询归属租户 ID（下载接口越权校验用）。
+	 *
+	 * <p>
+	 * 临时清除租户上下文以绕过 MyBatis-Plus 租户插件，确保按 filePath 精确匹配—— 否则插件会附加 {@code tenant_id = 当前租户}
+	 * 条件，导致跨租户文件查不到而被误判为「无主」放行。
+	 * </p>
+	 * @param objectKey 存储相对路径（{productKey}/{version}/{module}/{fileName}）
+	 * @return 归属租户 ID；文件无对应元数据记录时返回 null
+	 */
+	public Long findTenantIdByFilePathUnfiltered(String objectKey) {
+		Long savedTenant = TenantContext.getTenantId();
+		Long savedEnterprise = TenantContext.getEnterpriseId();
+		boolean hadTenant = TenantContext.hasTenant();
+		TenantContext.clear();
+		try {
+			OtaPackageRow row = packageMapper.selectOne(
+					new LambdaQueryWrapper<OtaPackageRow>().eq(OtaPackageRow::getFilePath, objectKey).last("LIMIT 1"));
+			return row == null ? null : row.getTenantId();
+		}
+		finally {
+			if (hadTenant) {
+				TenantContext.set(new TenantInfo(savedTenant, savedEnterprise));
+			}
+		}
 	}
 
 	/** 文件绝对路径（本地实现需要；oss 时仅日志用） */

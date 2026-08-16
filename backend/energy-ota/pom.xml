@@ -31,6 +31,12 @@
       <artifactId>energy-common</artifactId>
     </dependency>
 
+    <!-- 复用网关同款 JWT 验签（管理端下载接口登录态校验，与网关共享 secret/issuer） -->
+    <dependency>
+      <groupId>com.energyx</groupId>
+      <artifactId>energy-security-core</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>

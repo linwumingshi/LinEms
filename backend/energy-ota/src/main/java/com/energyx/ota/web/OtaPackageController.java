@@ -1,8 +1,10 @@
 package com.energyx.ota.web;
 
+import com.energyx.common.exception.BusinessException;
 import com.energyx.common.model.Result;
 import com.energyx.ota.config.OtaProperties;
 import com.energyx.ota.entity.OtaPackageRow;
+import com.energyx.ota.security.OtaJwtAuth;
 import com.energyx.ota.service.OtaPackageService;
 import com.energyx.ota.service.OtaUrlSignService;
 import com.energyx.ota.storage.StorageService;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -48,12 +52,15 @@ public class OtaPackageController {
 
 	private final OtaProperties props;
 
+	private final OtaJwtAuth otaJwtAuth;
+
 	public OtaPackageController(OtaPackageService packageService, OtaUrlSignService urlSignService,
-			StorageService storageService, OtaProperties props) {
+			StorageService storageService, OtaProperties props, OtaJwtAuth otaJwtAuth) {
 		this.packageService = packageService;
 		this.urlSignService = urlSignService;
 		this.storageService = storageService;
 		this.props = props;
+		this.otaJwtAuth = otaJwtAuth;
 	}
 
 	@PostMapping(value = "/packages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -112,10 +119,11 @@ public class OtaPackageController {
 	}
 
 	/**
-	 * 升级包文件下载——签名 URL 校验（S5-4）+ HTTP Range 分片/断点续传。
-	 * 路径：/api/ota/files/{productKey}/{version}/{module}/{fileName}?expires=&sign=
+	 * 升级包文件下载——双模式鉴权 + HTTP Range 分片/断点续传。
+	 * 路径：/api/ota/files/{productKey}/{version}/{module}/{fileName}[?expires=&sign=]
 	 * <ul>
-	 * <li>缺 expires/sign 或校验失败 → 403（杜绝未授权/篡改下载）；</li>
+	 * <li>设备/信封模式：携带合法 {@code expires+sign} 签名 URL（S5-4），无需登录；过期/篡改 → 403；</li>
+	 * <li>管理端模式：无签名参数时要求合法登录态 JWT（与网关同源验签），未登录/无效 → 401；</li>
 	 * <li>带 Range 头 → 206 Partial Content（分片断点续传，块大小 segmentSize）；</li>
 	 * <li>普通 GET → 200 全量。</li>
 	 * </ul>
@@ -128,19 +136,42 @@ public class OtaPackageController {
 			return ResponseEntity.notFound().build();
 		}
 		String objectKey = uri.substring(prefix.length());
-		// 签名 URL 校验（S5-4）
+
+		// 双模式鉴权：签名 URL（设备）优先，其次管理端登录态 JWT
 		String expiresStr = request.getParameter("expires");
 		String sign = request.getParameter("sign");
-		long expires;
-		try {
-			expires = Long.parseLong(expiresStr);
+		if (StringUtils.hasText(expiresStr) && sign != null) {
+			// 设备/信封模式：校验签名 URL（防篡改 + 时效）
+			long expires;
+			try {
+				expires = Long.parseLong(expiresStr.trim());
+			}
+			catch (NumberFormatException e) {
+				return ResponseEntity.status(HttpStatus.FORBIDDEN).body("缺少或非法签名参数".getBytes(StandardCharsets.UTF_8));
+			}
+			if (!urlSignService.verify(objectKey, expires, sign)) {
+				return ResponseEntity.status(HttpStatus.FORBIDDEN)
+					.body("下载链接已过期或签名无效".getBytes(StandardCharsets.UTF_8));
+			}
 		}
-		catch (NumberFormatException e) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).body("缺少或非法签名参数".getBytes());
+		else {
+			// 管理端模式：要求合法登录态（前端浏览器下载走此分支）
+			Long tokenTenant;
+			try {
+				tokenTenant = otaJwtAuth.requireAuthenticatedTenant(request);
+			}
+			catch (BusinessException e) {
+				// 未登录/失效：返回 401（不走全局异常处理器包成 200+JSON，否则前端会把错误体当固件文件下载）
+				return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+					.body(("下载需登录：" + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+			}
+			// 固件归属租户校验（防越权下载其他租户固件）：按 filePath 精确匹配，绕过租户插件避免误判
+			Long ownerTenant = packageService.findTenantIdByFilePathUnfiltered(objectKey);
+			if (ownerTenant != null && !ownerTenant.equals(tokenTenant)) {
+				return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权下载该租户的固件".getBytes(StandardCharsets.UTF_8));
+			}
 		}
-		if (!urlSignService.verify(objectKey, expires, sign)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).body("下载链接已过期或签名无效".getBytes());
-		}
+
 		if (!storageService.exists(objectKey)) {
 			return ResponseEntity.notFound().build();
 		}
