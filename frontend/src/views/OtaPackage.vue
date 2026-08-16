@@ -2,7 +2,9 @@
   <div class="page">
     <el-card shadow="never" class="toolbar-card">
       <div class="toolbar">
-        <el-input v-model="query.productKey" placeholder="产品标识" clearable style="width: 180px" @keyup.enter="load" />
+        <el-select v-model="query.productKey" placeholder="产品" filterable clearable style="width: 200px" @change="load">
+          <el-option v-for="p in productOptions" :key="p.productKey" :label="`${p.productName} (${p.productKey})`" :value="p.productKey" />
+        </el-select>
         <el-input v-model="query.version" placeholder="版本号" clearable style="width: 140px" @keyup.enter="load" />
         <el-button type="primary" @click="load">查询</el-button>
         <el-button type="success" @click="uploadVisible = true">上传升级包</el-button>
@@ -79,8 +81,10 @@
           </el-upload>
           <div class="tip" v-if="file">已选：{{ file.name }}（{{ fmtSize(file.size) }}）</div>
         </el-form-item>
-        <el-form-item label="产品标识" required>
-          <el-input v-model="form.productKey" placeholder="如 snd_ess_pcs" />
+        <el-form-item label="产品" required>
+          <el-select v-model="form.productKey" filterable placeholder="选择产品" style="width: 100%">
+            <el-option v-for="p in productOptions" :key="p.productKey" :label="`${p.productName} (${p.productKey})`" :value="p.productKey" />
+          </el-select>
         </el-form-item>
         <el-form-item label="版本号" required>
           <el-input v-model="form.version" placeholder="如 1.0.0" />
@@ -113,8 +117,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { otaApi } from '@/api/ota'
+import { productApi } from '@/api/product'
 import { getToken } from '@/utils/auth-storage'
-import type { OtaPackage, OtaPackageSaveReq } from '@/types/models'
+import type { OtaPackage, OtaPackageSaveReq, Product } from '@/types/models'
 
 const loading = ref(false)
 const uploading = ref(false)
@@ -122,6 +127,8 @@ const uploadVisible = ref(false)
 const rows = ref<OtaPackage[]>([])
 const total = ref(0)
 const file = ref<File | null>(null)
+/** 产品下拉选项（来自产品服务，网关 /api/product/page） */
+const productOptions = ref<Product[]>([])
 
 const query = reactive({ productKey: '', version: '', pageNum: 1, pageSize: 10 })
 const form = reactive<OtaPackageSaveReq & { packageType: number }>({
@@ -155,13 +162,21 @@ async function load() {
   }
 }
 
+async function loadProducts() {
+  try {
+    const data = await productApi.page({ pageSize: 200 })
+    productOptions.value = data.records ?? []
+  }
+  catch { /* 静默：产品下拉加载失败不阻断主流程 */ }
+}
+
 function onFileChange(up: { raw: File }) {
   file.value = up.raw
 }
 
 async function submitUpload() {
   if (!file.value) return ElMessage.warning('请选择固件文件')
-  if (!form.productKey) return ElMessage.warning('请填写产品标识')
+  if (!form.productKey) return ElMessage.warning('请选择产品')
   if (!form.version) return ElMessage.warning('请填写版本号')
   uploading.value = true
   try {
@@ -227,7 +242,7 @@ async function remove(row: OtaPackage) {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadProducts() })
 </script>
 
 <style scoped>
