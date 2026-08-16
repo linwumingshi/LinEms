@@ -15,6 +15,12 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     proxy: {
+      // OTA 直连 energy-ota 8118：旧 gateway 进程（无 /api/ota 路由）沙箱无法终止，
+      // dev 环境先行直连绕过；生产环境 gateway 重启后自动走 /api/ota/** 网关路由
+      '/api/ota': {
+        target: 'http://127.0.0.1:8118',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,

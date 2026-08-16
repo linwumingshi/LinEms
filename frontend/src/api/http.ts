@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosResponse } from 'axios'
 import type { ApiResult } from '@/types/models'
-import { clearAuth, getToken } from '@/utils/auth-storage'
+import { clearAuth, getStoredUser, getToken } from '@/utils/auth-storage'
 
 /** 成功业务码（与后端 ErrorCode.SUCCESS=0 对齐，见 Result.java） */
 export const SUCCESS_CODE = 0
@@ -54,11 +54,16 @@ const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// 请求拦截器：附加 Bearer token（登录/登出等无 token 请求不受影响）
+// 请求拦截器：附加 Bearer token + 租户上下文（登录/登出等无 token 请求不受影响）
 http.interceptors.request.use((config) => {
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // 网关从 JWT 注入租户；直连服务（如 dev proxy 直达 energy-ota 8118）需显式带租户头
+  const user = getStoredUser()
+  if (user?.tenantId) {
+    config.headers['x-tenant-id'] = user.tenantId
   }
   return config
 })
