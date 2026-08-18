@@ -58,15 +58,23 @@ public class NettyServerConfig {
 		this.mqttHandler = mqttHandler;
 	}
 
-	/** boss：accept 连接；worker：读/写事件循环（原生传输自适应） */
+	/**
+	 * boss 事件循环组：仅 1 线程负责 accept 新连接（连接处理全在 worker，避免 accept 争用）。
+	 * @return boss 事件循环组
+	 */
 	@Bean(name = "bossGroup", destroyMethod = "shutdownGracefully")
 	public EventLoopGroup bossGroup() {
 		return TransportFactory.newEventLoopGroup(1);
 	}
 
+	/**
+	 * worker 事件循环组：处理已建立连接的读/写事件（原生传输自适应，见 {@link TransportFactory}）。
+	 * @return worker 事件循环组
+	 */
 	@Bean(name = "workerGroup", destroyMethod = "shutdownGracefully")
 	public EventLoopGroup workerGroup() {
 		int threads = brokerProperties.getWorkerThreads();
+		// 未显式配置时按 CPU 核数推导（≥4），避免单核机器线程数过少
 		if (threads <= 0) {
 			threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
 		}
@@ -80,7 +88,7 @@ public class NettyServerConfig {
 	 */
 	@Bean(destroyMethod = "config")
 	public ServerBootstrap mqttServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
-		return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(null));
+		return this.baseBootstrap(bossGroup, workerGroup).childHandler(this.mqttChannelInitializer(null));
 	}
 
 	/**
@@ -119,21 +127,38 @@ public class NettyServerConfig {
 	@ConditionalOnProperty(prefix = "energyx.broker.tls", name = "enabled", havingValue = "true")
 	public ServerBootstrap mqttTlsServerBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup,
 			SslContext brokerSslContext) {
-		return baseBootstrap(bossGroup, workerGroup).childHandler(mqttChannelInitializer(brokerSslContext));
+		return this.baseBootstrap(bossGroup, workerGroup).childHandler(this.mqttChannelInitializer(brokerSslContext));
 	}
 
-	/** 共享 acceptor 骨架：event loop / channel / socket 选项 / 水位线（明文与 TLS 完全一致）。 */
+	/**
+	 * 共享 acceptor 骨架：事件循环组、channel 类型、socket 选项与背压水位线（明文与 TLS 完全一致）。
+	 *
+	 * <p>
+	 * 该骨架是所有监听端口的唯一装配入口，option 为 server channel 级（accept 队列），childOption 为 已建立连接的 channel
+	 * 级。调参影响全局连接行为，修改需与容量规划对齐（P2-5 池化分配器）。
+	 * </p>
+	 * @param bossGroup accept 事件循环组（连接接入）
+	 * @param workerGroup 读写事件循环组（连接处理）
+	 * @return 已装配 server channel 级选项的 {@link ServerBootstrap}（尚未绑定端口）
+	 */
 	private ServerBootstrap baseBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
 		return new ServerBootstrap().group(bossGroup, workerGroup)
 			.channel(TransportFactory.serverChannelClass())
+			// accept 队列长度：积压连接数上限（超限由 TCP 层丢弃/重传，防内核队列溢出）
 			.option(ChannelOption.SO_BACKLOG, 8192)
+			// 允许端口快速复用：重启/集群多实例监听同端口不因 TIME_WAIT 失败
 			.option(ChannelOption.SO_REUSEADDR, true)
+			// 连接级：禁用 Nagle 合并，小报文（MQTT 控制报文普遍 < 1KB）立即发出，降低交互时延
 			.childOption(ChannelOption.TCP_NODELAY, true)
+			// 连接级：开启 TCP keepalive，对端异常（断电/网线拔除）时由内核探测并断开僵尸连接
 			.childOption(ChannelOption.SO_KEEPALIVE, true)
+			// 连接级：接收缓冲区 256KB，与 1MB 报文上限匹配，减少大数据包下的系统调用次数
 			.childOption(ChannelOption.SO_RCVBUF, 262_144)
+			// 连接级：发送缓冲区 256KB，支撑下行大报文（OTA 分片）的批量写出
 			.childOption(ChannelOption.SO_SNDBUF, 262_144)
 			// P2-5：显式启用池化 ByteBuf 分配器，减少高并发下堆外内存分配与 GC 压力
 			.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+			// 背压水位线：写缓冲超 256KB 标记不可写（触发 handler 背压），低于 32KB 恢复可写
 			.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(32 * 1024, 256 * 1024));
 	}
 
@@ -148,13 +173,12 @@ public class NettyServerConfig {
 				if (sslContext != null) {
 					ch.pipeline().addLast(SSL_HANDLER_NAME, sslContext.newHandler(ch.alloc()));
 				}
+				// 解码器：单报文上限 1MB（超过按协议错误帧处理，防超大报文拖垮内存）
 				ch.pipeline()
-					.addLast("decoder", new MqttDecoder(1024 * 1024)) // 单报文 ≤ 1MB
+					.addLast("decoder", new MqttDecoder(1024 * 1024))
 					.addLast("encoder", MqttEncoder.INSTANCE)
-					.addLast(IDLE_HANDLER_NAME, new IdleStateHandler(90, 0, 0)) // 预置，CONNECT
-																				// 后按
-																				// keepalive
-																				// 重设
+					// 预置空闲检测 90s：CONNECT 携带 keepalive 后由 handler 按 1.5× 动态重设
+					.addLast(IDLE_HANDLER_NAME, new IdleStateHandler(90, 0, 0))
 					.addLast(MQTT_HANDLER_NAME, mqttHandler);
 			}
 		};

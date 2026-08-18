@@ -23,7 +23,6 @@ import com.energyx.broker.session.SessionStore;
 import com.energyx.broker.stats.BrokerMetrics;
 import com.energyx.broker.stats.BrokerStats;
 import com.energyx.common.constant.KafkaTopicConstant;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -40,7 +39,6 @@ import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttPubAckMessage;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
-import io.netty.handler.codec.mqtt.MqttReasonCodeAndPropertiesVariableHeader;
 import io.netty.handler.codec.mqtt.MqttSubAckMessage;
 import io.netty.handler.codec.mqtt.MqttSubAckPayload;
 import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
@@ -120,8 +118,6 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	private final BrokerMetrics metrics;
 
-	private final ObjectMapper objectMapper;
-
 	private final ExecutorService executor;
 
 	private final ScheduledExecutorService scheduler;
@@ -143,7 +139,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	public MqttChannelInboundHandler(DeviceAuthService authService, SessionRegistry sessionRegistry,
 			SessionStore sessionStore, LocalSubscriberIndex subscriberIndex, MessageDeliverer deliverer,
 			LifecycleNotifier lifecycleNotifier, KafkaEventProducer kafkaProducer, BrokerProperties properties,
-			BrokerStats stats, BrokerMetrics metrics, PublishRateLimiter rateLimiter, ObjectMapper objectMapper,
+			BrokerStats stats, BrokerMetrics metrics, PublishRateLimiter rateLimiter,
 			@Qualifier("brokerExecutor") ExecutorService executor,
 			@Qualifier("brokerScheduler") ScheduledExecutorService scheduler) {
 		this.authService = authService;
@@ -157,7 +153,6 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		this.stats = stats;
 		this.metrics = metrics;
 		this.rateLimiter = rateLimiter;
-		this.objectMapper = objectMapper;
 		this.executor = executor;
 		this.scheduler = scheduler;
 		this.authSlots = new Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
@@ -166,6 +161,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	// ---------------- 连接生命周期 ----------------
 
+	/**
+	 * 连接建立回调（IO 线程）：接入计数 + 准入控制。
+	 *
+	 * <p>
+	 * 超过单节点最大连接数（{@code energyx.broker.max-connections}）直接关闭新连接并记录拒绝指标， 防止连接风暴打满节点。
+	 * </p>
+	 */
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) {
 		// 准入控制：超过单节点上限拒绝新连接
@@ -177,13 +179,22 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 	}
 
+	/**
+	 * 连接关闭回调（IO 线程）：统一收尾入口。
+	 *
+	 * <p>
+	 * 注销会话、释放连接锁；按会话类型分流——瞬时会话（clean/expiry=0）直接删除全部 Redis 状态，
+	 * 持久会话保存会话元数据与幽灵订阅（支撑离线队列）；随后异步发离线通知，并按优雅/非优雅断开 决定遗嘱投递（延迟遗嘱在窗口内重连则取消）。
+	 * </p>
+	 */
 	@Override
 	public void channelInactive(ChannelHandlerContext ctx) {
 		rawConnections.decrementAndGet();
 		Session session = ctx.channel().attr(SESSION_ATTR).getAndSet(null);
 		ctx.channel().attr(DEVICE_KEY_ATTR).set(null);
 		if (session == null) {
-			return; // 未认证连接直接断开
+			// 未认证连接直接断开（无会话上下文可清理）
+			return;
 		}
 		session.getPendingWrites().clear();
 		String deviceKey = session.getDeviceKey();
@@ -223,7 +234,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			});
 		}
 
-		DeviceCredential cred = attrCredential(session);
+		DeviceCredential cred = this.attrCredential(session);
 		if (cred != null) {
 			String reason = graceful ? "NORMAL" : "HEARTBEAT_TIMEOUT";
 			String remoteIp = session.getRemoteIp();
@@ -259,13 +270,22 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		log.info("[Broker] 连接关闭 deviceKey={} reason={}", deviceKey, graceful ? "NORMAL" : "ABNORMAL");
 	}
 
+	/**
+	 * 用户事件回调（IO 线程）：处理空闲超时。
+	 *
+	 * <p>
+	 * 收到 {@link IdleStateEvent}（keepalive 阈值内无读写）判定心跳超时，关闭连接交由 {@link #channelInactive}
+	 * 走统一离线收尾；其余事件上抛父类。
+	 * </p>
+	 */
 	@Override
 	public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
 		if (evt instanceof IdleStateEvent) {
 			Session session = ctx.channel().attr(SESSION_ATTR).get();
 			log.warn("[Broker] 心跳超时断开 deviceKey={} remote={}", session == null ? "?" : session.getDeviceKey(),
 					ctx.channel().remoteAddress());
-			ctx.close(); // 触发 channelInactive → 离线事件
+			// 关闭连接，由 channelInactive 统一触发离线事件与持久化收尾
+			ctx.close();
 		}
 		else {
 			super.userEventTriggered(ctx, evt);
@@ -284,6 +304,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		super.channelWritabilityChanged(ctx);
 	}
 
+	/**
+	 * 通道异常回调（IO 线程）：记录告警后关闭连接。
+	 *
+	 * <p>
+	 * 不在此处区分异常类型——统一关连接，由 {@link #channelInactive} 执行离线收尾（设备重连重传兜底）。
+	 * </p>
+	 */
 	@Override
 	public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
@@ -294,6 +321,14 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	// ---------------- 报文分发 ----------------
 
+	/**
+	 * 报文分发入口（Netty 回调，IO 线程执行）。
+	 *
+	 * <p>
+	 * 按 MQTT 报文类型分发到对应处理分支；仅识别 {@link MqttMessage} 子类，其余类型（如握手遗留对象）直接忽略。 无论分发是否成功，报文引用在
+	 * finally 中统一释放（{@link ReferenceCountUtil#release}），避免堆外内存泄漏。
+	 * </p>
+	 */
 	@Override
 	public void channelRead(ChannelHandlerContext ctx, Object msgObj) {
 		if (!(msgObj instanceof MqttMessage msg)) {
@@ -302,16 +337,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		try {
 			MqttMessageType type = msg.fixedHeader().messageType();
 			switch (type) {
-				case CONNECT -> handleConnect(ctx, (MqttConnectMessage) msg);
-				case PUBLISH -> handlePublish(ctx, (MqttPublishMessage) msg);
-				case PUBACK -> handlePubAck(ctx, (MqttPubAckMessage) msg);
-				case PUBREC -> handlePubRec(ctx, msg);
-				case PUBREL -> handlePubRel(ctx, msg);
-				case PUBCOMP -> handlePubComp(ctx, msg);
-				case SUBSCRIBE -> handleSubscribe(ctx, (MqttSubscribeMessage) msg);
-				case UNSUBSCRIBE -> handleUnsubscribe(ctx, (MqttUnsubscribeMessage) msg);
-				case PINGREQ -> handlePingReq(ctx);
-				case DISCONNECT -> handleDisconnect(ctx, msg);
+				case CONNECT -> this.handleConnect(ctx, (MqttConnectMessage) msg);
+				case PUBLISH -> this.handlePublish(ctx, (MqttPublishMessage) msg);
+				case PUBACK -> this.handlePubAck(ctx, (MqttPubAckMessage) msg);
+				case PUBREC -> this.handlePubRec(ctx, msg);
+				case PUBREL -> this.handlePubRel(ctx, msg);
+				case PUBCOMP -> this.handlePubComp(ctx, msg);
+				case SUBSCRIBE -> this.handleSubscribe(ctx, (MqttSubscribeMessage) msg);
+				case UNSUBSCRIBE -> this.handleUnsubscribe(ctx, (MqttUnsubscribeMessage) msg);
+				case PINGREQ -> this.handlePingReq(ctx);
+				case DISCONNECT -> this.handleDisconnect(ctx, msg);
 				default -> log.debug("[Broker] 忽略报文类型 {}", type);
 			}
 		}
@@ -322,6 +357,15 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	// ---------------- CONNECT ----------------
 
+	/**
+	 * CONNECT 握手处理（IO 线程入口，慢路径剥离）。
+	 *
+	 * <p>
+	 * 协议版本/空 clientId/重复 CONNECT 三关在 IO 线程直接拒绝；认证（Redis/MySQL）、连接锁抢占、 sessionPresent
+	 * 判定等阻塞操作经 {@code brokerExecutor} 异步执行，仅最终会话注册与 CONNACK 回投 eventLoop， 保证 IO
+	 * 线程零阻塞（P2-8 认证风暴防护：并发认证受信号量限流）。
+	 * </p>
+	 */
 	private void handleConnect(ChannelHandlerContext ctx, MqttConnectMessage msg) {
 		Channel channel = ctx.channel();
 		MqttConnectVariableHeader vh = msg.variableHeader();
@@ -329,7 +373,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		int version = vh.version();
 
 		if (version != 3 && version != 4 && version != 5) {
-			sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION, false);
+			this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION, false);
 			channel.close();
 			return;
 		}
@@ -337,7 +381,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		// 但本平台认证为「clientId 即设备身份」（HMAC username 内嵌 clientId，凭据按 clientId 绑定），
 		// 空 clientId 无法通过认证且构成匿名接入风险，故维持拒绝（安全约束优先于协议完备）。
 		if (clientId.isEmpty()) {
-			sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, false);
+			this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, false);
 			channel.close();
 			return;
 		}
@@ -354,9 +398,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 		// ---- v5 连接属性协商：Session Expiry Interval / Receive Maximum / Maximum Packet Size
 		// ----
-		long sessionExpirySeconds = -1; // -1 = 未指定，沿用默认
-		int receiveMaximum = -1; // -1 = 未指定，用协议上限
-		int maxPacketSize = 0; // 0 = 未指定，不限制
+		// 会话过期秒数：-1 = 未指定，沿用默认（7 天或 clean 会话 0）
+		long sessionExpirySeconds = -1;
+		// 接收并发上限：-1 = 未指定，用协议上限 65535（再经 inflight 配置收敛）
+		int receiveMaximum = -1;
+		// 最大报文尺寸：0 = 未指定（v3），不限制下行报文大小
+		int maxPacketSize = 0;
 		if (version == 5) {
 			MqttProperties props = msg.variableHeader().properties();
 			MqttProperties.IntegerProperty expiry = (MqttProperties.IntegerProperty) props
@@ -398,8 +445,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			}
 		}
 
-		ConnectParams params = new ConnectParams(version, clientId, vh.keepAliveTimeSeconds(), vh.isCleanSession(),
-				username, password, will, remoteIp(channel), sessionExpirySeconds, receiveMaximum, maxPacketSize);
+		ConnectParams params = new ConnectParams(version, vh.keepAliveTimeSeconds(), vh.isCleanSession(), will,
+				this.remoteIp(channel), sessionExpirySeconds, receiveMaximum, maxPacketSize);
 
 		// 慢路径全部在业务线程：认证（Redis/MySQL）→ 连接锁（Redis）→ sessionPresent 判定（Redis），
 		// 仅最终会话注册与 CONNACK 回投 eventLoop（IO 线程零阻塞）
@@ -416,7 +463,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			stats.recordAuthOverloadRejected();
 			log.warn("[Auth] 认证并发超限拒绝 clientId={} remote={}", clientId, channel.remoteAddress());
 			channel.eventLoop().execute(() -> {
-				sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, false);
+				this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, false);
 				channel.close();
 			});
 			return;
@@ -438,7 +485,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				stats.recordAuthFailure();
 				AuthResult denied = result;
 				channel.eventLoop().execute(() -> {
-					sendConnAck(channel, returnCode(denied.getConnackCode()), false);
+					this.sendConnAck(channel, this.returnCode(denied.getConnackCode()), false);
 					channel.close();
 				});
 				return;
@@ -447,10 +494,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			String deviceKey = cred.getDeviceKey();
 
 			// P1-12 mTLS：设备证书 CN 必须等于 clientId（身份绑定；信任链由 TLS 握手层校验）
-			if (properties.getTls().isClientAuth() && !verifyClientCert(channel, clientId)) {
+			if (properties.getTls().isClientAuth() && !this.verifyClientCert(channel, clientId)) {
 				stats.recordAuthFailure();
 				channel.eventLoop().execute(() -> {
-					sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED, false);
+					this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED, false);
 					channel.close();
 				});
 				return;
@@ -462,7 +509,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				if (owner != null && !owner.equals(properties.getNodeId())) {
 					// 节点心跳判定：owner 已死（宕机/失联）则跳过无效踢线，直接接管；存活才发 KICK
 					if (sessionStore.isNodeAlive(owner)) {
-						kickRemote(owner, deviceKey);
+						this.kickRemote(owner, deviceKey);
 					}
 					else {
 						log.info("[Broker] owner 节点心跳消失视为宕机，跳过踢线直接接管 deviceKey={} owner={}", deviceKey, owner);
@@ -472,13 +519,22 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			}
 
 			boolean sessionPresent = !params.cleanSession && sessionStore.existsSession(deviceKey);
-			channel.eventLoop().execute(() -> completeConnect(ctx, params, cred, sessionPresent));
+			channel.eventLoop().execute(() -> this.completeConnect(ctx, params, cred, sessionPresent));
 		});
 	}
 
+	/**
+	 * 完成连接建立（认证通过后回投 eventLoop 执行）。
+	 *
+	 * <p>
+	 * 职责：踢本节点旧连接 → 构建并注册 Session（写入 channel attribute）→ 按 keepalive 重设 idle 阈值 → 发送
+	 * CONNACK → 异步执行会话恢复与上线通知。v3/v5 的 CONNACK 差异与 v5 属性协商在此收敛。
+	 * </p>
+	 */
 	private void completeConnect(ChannelHandlerContext ctx, ConnectParams p, DeviceCredential cred,
 			boolean sessionPresent) {
 		Channel channel = ctx.channel();
+		// 连接可能已在认证期间被对端关闭，回投后先校验活性再继续
 		if (!channel.isActive()) {
 			return;
 		}
@@ -521,7 +577,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 		// keepalive：>0 按 1.5× 重设 IdleStateHandler；=0 按协议不启用超时，移除预置 idle handler
 		if (p.keepAliveSeconds > 0) {
-			replaceIdleHandler(channel, p.keepAliveSeconds);
+			this.replaceIdleHandler(channel, p.keepAliveSeconds);
 		}
 		else {
 			ChannelPipeline pipeline = channel.pipeline();
@@ -537,10 +593,10 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 		if (p.version == 5) {
 			// v5 CONNACK 能力声明（属性协商）：Maximum QoS=2、Retain Available=1（本 broker 能力）
-			sendConnAckV5(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
+			this.sendConnAckV5(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
 		}
 		else {
-			sendConnAck(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
+			this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
 		}
 		stats.recordAccepted();
 		log.info("[Broker] 设备上线 deviceKey={} version={} remote={}", deviceKey, p.version, p.remoteIp);
@@ -548,7 +604,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		// 异步恢复 + 上线通知：Redis/Kafka 阻塞操作全部走业务线程池。
 		// 重连风暴防护（可靠性）：恢复任务受信号量并发限流，超限延迟重试而非丢弃——
 		// 海量设备同时重连（断电恢复/基站批量上线）时恢复任务排开执行，不把 executor 打满。
-		executor.execute(() -> runSessionRestore(p, session, cred, 0));
+		executor.execute(() -> this.runSessionRestore(p, session, cred, 0));
 	}
 
 	/**
@@ -569,7 +625,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		if (!sessionRestoreSlots.tryAcquire()) {
 			log.info("[Broker] 会话恢复并发受限，{}s 后重试 deviceKey={} attempt={}",
 					properties.getSessionRestoreRetryDelaySeconds(), session.getDeviceKey(), attempt + 1);
-			scheduler.schedule(() -> runSessionRestore(p, session, cred, attempt + 1),
+			scheduler.schedule(() -> this.runSessionRestore(p, session, cred, attempt + 1),
 					properties.getSessionRestoreRetryDelaySeconds(), TimeUnit.SECONDS);
 			return;
 		}
@@ -617,6 +673,16 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 	}
 
+	/**
+	 * 远程踢线：通知设备当前所在节点断开连接（跨节点连接锁被占用时的接管路径）。
+	 *
+	 * <p>
+	 * 通过 {@code mqtt.broadcast} 广播 KICK 信封（各节点唯一消费组，按 sourceNode 去重）， 由 owner
+	 * 节点据此关闭旧连接，本节点随后完成连接锁接管。
+	 * </p>
+	 * @param ownerNode 设备当前所在节点（用于日志定位，实际由广播送达）
+	 * @param deviceKey 目标设备键（{productKey}_{deviceName}）
+	 */
 	private void kickRemote(String ownerNode, String deviceKey) {
 		try {
 			RouterEnvelope envelope = RouterEnvelope.kick(properties.getNodeId(), deviceKey);
@@ -648,7 +714,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			if (!(chain[0] instanceof X509Certificate leaf)) {
 				return false;
 			}
-			String cn = extractCn(leaf.getSubjectX500Principal().getName());
+			String cn = this.extractCn(leaf.getSubjectX500Principal().getName());
 			boolean ok = clientId.equals(cn);
 			if (!ok) {
 				log.warn("[mTLS] 证书 CN={} 与 clientId={} 不匹配，拒绝接入", cn, clientId);
@@ -680,6 +746,15 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	// ---------------- PUBLISH（设备上行） ----------------
 
+	/**
+	 * 设备上行 PUBLISH 处理。
+	 *
+	 * <p>
+	 * 前置校验：会话存在、topic ACL（{@link TopicAcl#canPublish}）、单设备发布限速（P2-7）。 QoS 分派：QoS0
+	 * 直接路由；QoS1 路由持久化确认后回 PUBACK（at-least-once）；QoS2 先入站缓存，收到 PUBREL
+	 * 才路由（恰好一次）。所有可能失败的分支以「关连接迫使设备重传」兜底，不丢报文语义。
+	 * </p>
+	 */
 	private void handlePublish(ChannelHandlerContext ctx, MqttPublishMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
@@ -693,7 +768,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		byte[] payload = new byte[msg.payload().readableBytes()];
 		msg.payload().getBytes(msg.payload().readerIndex(), payload);
 
-		DeviceCredential cred = attrCredential(session);
+		DeviceCredential cred = this.attrCredential(session);
 		if (!TopicAcl.canPublish(cred, topic)) {
 			log.warn("[ACL] 拒绝越权发布 deviceKey={} topic={}", session.getDeviceKey(), topic);
 			stats.recordRejected();
@@ -702,7 +777,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 
 		session.touch();
-		maybeRenewOnline(session, cred);
+		this.maybeRenewOnline(session, cred);
 		// P2-7 单设备发布限速：超限 QoS0 丢弃、QoS1/2 关连接迫使设备节流
 		if (!rateLimiter.tryAcquire(session.getDeviceKey())) {
 			stats.recordRateLimited();
@@ -717,7 +792,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 		Channel channel = ctx.channel();
 		// P1-10 链路追踪：同一上报报文的处理链日志共用 traceId（deviceKey+毫秒+序号）
-		String traceId = deviceKeyOf(session) + "-" + (System.currentTimeMillis() & 0xFFFFF) + "-"
+		String traceId = this.deviceKeyOf(session) + "-" + (System.currentTimeMillis() & 0xFFFFF) + "-"
 				+ Integer.toHexString(System.identityHashCode(msg));
 		switch (qos) {
 			case 0 -> deliverer.deliver(topic, payload, 0, retain, null);
@@ -728,7 +803,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 					metrics.recordPubAckLatency(publishStart);
 					channel.eventLoop().execute(() -> {
 						if (channel.isActive()) {
-							sendPubAck(channel, packetId);
+							this.sendPubAck(channel, packetId);
 						}
 					});
 				}, () -> channel.eventLoop().execute(() -> {
@@ -740,7 +815,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			case 2 -> {
 				// 收到 PUBREL 才路由（恰好一次入站）
 				session.getInboundQos2().put(packetId, new InboundPublish(topic, payload, qos));
-				sendPubRec(channel, packetId);
+				this.sendPubRec(channel, packetId);
 			}
 			default -> log.warn("[Broker] 非法 QoS={} deviceKey={}", qos, session.getDeviceKey());
 		}
@@ -754,6 +829,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		return session.getDeviceKey();
 	}
 
+	/**
+	 * PUBACK（QoS1 出站完成确认）：从出站 inflight 表移除并异步清理 Redis 持久化记录。
+	 */
 	private void handlePubAck(ChannelHandlerContext ctx, MqttPubAckMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
@@ -762,16 +840,20 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		int packetId = msg.variableHeader().messageId();
 		InflightMessage inflight = session.getOutboundInflight().remove(packetId);
 		if (inflight != null) {
-			asyncRemoveInflight(session.getDeviceKey(), packetId);
+			this.asyncRemoveInflight(session.getDeviceKey(), packetId);
 		}
 	}
 
+	/**
+	 * PUBREC（QoS2 出站第一阶段确认）：状态推进到 AWAITING_PUBCOMP 并持久化后发 PUBREL； 收到重复 PUBREC 视为 PUBREL
+	 * 丢失，重发 PUBREL 防御。
+	 */
 	private void handlePubRec(ChannelHandlerContext ctx, MqttMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
 			return;
 		}
-		int packetId = messageId(msg);
+		int packetId = this.messageId(msg);
 		InflightMessage inflight = session.getOutboundInflight().get(packetId);
 		if (inflight == null) {
 			return;
@@ -779,21 +861,24 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		if (inflight.getState() == InflightMessage.STATE_AWAITING_PUBREC) {
 			inflight.setState(InflightMessage.STATE_AWAITING_PUBCOMP);
 			session.getOutboundInflight().put(packetId, inflight);
-			asyncSaveInflight(session.getDeviceKey(), inflight);
-			sendPubRel(ctx.channel(), packetId);
+			this.asyncSaveInflight(session.getDeviceKey(), inflight);
+			this.sendPubRel(ctx.channel(), packetId);
 		}
 		else if (inflight.getState() == InflightMessage.STATE_AWAITING_PUBCOMP) {
 			// 防御分支：PUBREL 可能丢失，收到重复 PUBREC 时重发 PUBREL
-			sendPubRel(ctx.channel(), packetId);
+			this.sendPubRel(ctx.channel(), packetId);
 		}
 	}
 
+	/**
+	 * PUBREL（QoS2 入站第二阶段）：从入站缓存取出报文正式路由，持久化确认后回 PUBCOMP（恰好一次）； 缓存缺失视为重复 PUBREL，直接幂等确认。
+	 */
 	private void handlePubRel(ChannelHandlerContext ctx, MqttMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
 			return;
 		}
-		int packetId = messageId(msg);
+		int packetId = this.messageId(msg);
 		InboundPublish inbound = session.getInboundQos2().remove(packetId);
 		Channel channel = ctx.channel();
 		if (inbound != null) {
@@ -801,7 +886,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			deliverer.deliver(inbound.topic(), inbound.payload(), inbound.qos(), false, null,
 					() -> channel.eventLoop().execute(() -> {
 						if (channel.isActive()) {
-							sendPubComp(channel, packetId);
+							this.sendPubComp(channel, packetId);
 						}
 					}), () -> channel.eventLoop().execute(() -> {
 						log.error("[Deliver] QoS2 入站路由失败关连接 deviceKey={} topic={}", session.getDeviceKey(),
@@ -811,37 +896,44 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 		else {
 			// 重复 PUBREL（首次已完成或会话重启）：直接确认，幂等
-			sendPubComp(channel, packetId);
+			this.sendPubComp(channel, packetId);
 		}
 		stats.recordIncoming();
 	}
 
+	/**
+	 * PUBCOMP（QoS2 出站最终确认）：从出站 inflight 表移除并异步清理 Redis 持久化记录。
+	 */
 	private void handlePubComp(ChannelHandlerContext ctx, MqttMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
 			return;
 		}
-		int packetId = messageId(msg);
+		int packetId = this.messageId(msg);
 		session.getOutboundInflight().remove(packetId);
-		asyncRemoveInflight(session.getDeviceKey(), packetId);
+		this.asyncRemoveInflight(session.getDeviceKey(), packetId);
 	}
 
 	// ---------------- SUBSCRIBE / UNSUBSCRIBE ----------------
 
+	/**
+	 * SUBSCRIBE 处理：逐 filter 校验 ACL，合法者登记本地订阅索引并回成功 QoS，非法者回 0x80 拒绝码；
+	 * 持久会话异步落库，最后按顺序投递保留消息（SUBACK 之后，符合 MQTT 顺序语义）。
+	 */
 	private void handleSubscribe(ChannelHandlerContext ctx, MqttSubscribeMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
 			ctx.close();
 			return;
 		}
-		DeviceCredential cred = attrCredential(session);
+		DeviceCredential cred = this.attrCredential(session);
 		int packetId = msg.variableHeader().messageId();
 		List<MqttTopicSubscription> subs = msg.payload().topicSubscriptions();
 		List<Integer> returnCodes = new ArrayList<>(subs.size());
 		List<String> allowedFilters = new ArrayList<>();
 
 		for (MqttTopicSubscription sub : subs) {
-			String filter = sub.topicName();
+			String filter = sub.topicFilter();
 			int reqQos = sub.qualityOfService().value();
 			if (TopicAcl.canSubscribe(cred, filter)) {
 				returnCodes.add(reqQos);
@@ -850,14 +942,15 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				subscriberIndex.add(session, filter, reqQos);
 			}
 			else {
-				returnCodes.add(0x80); // 拒绝
+				// 拒绝订阅：回 0x80 失败码（MQTT 3.1.1 §3.8.4）
+				returnCodes.add(0x80);
 				log.warn("[ACL] 拒绝越权订阅 deviceKey={} filter={}", session.getDeviceKey(), filter);
 			}
 		}
-		sendSubAck(ctx.channel(), packetId, returnCodes);
+		this.sendSubAck(ctx.channel(), packetId, returnCodes);
 
 		if (!session.isCleanSession()) {
-			persistSubscriptions(session);
+			this.persistSubscriptions(session);
 		}
 		// 保留消息投递（SUBACK 之后再发，符合 MQTT 顺序语义）
 		for (String filter : allowedFilters) {
@@ -865,6 +958,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		}
 	}
 
+	/**
+	 * UNSUBSCRIBE 处理：移除本地订阅索引与会话订阅表，回 UNSUBACK；持久会话异步落库。
+	 */
 	private void handleUnsubscribe(ChannelHandlerContext ctx, MqttUnsubscribeMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
@@ -876,12 +972,15 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			session.getSubscriptions().remove(filter);
 			subscriberIndex.remove(session.getDeviceKey(), filter);
 		}
-		sendUnsubAck(ctx.channel(), packetId);
+		this.sendUnsubAck(ctx.channel(), packetId);
 		if (!session.isCleanSession()) {
-			persistSubscriptions(session);
+			this.persistSubscriptions(session);
 		}
 	}
 
+	/**
+	 * 会话订阅持久化（异步写 Redis，失败仅告警不阻断主流程）。
+	 */
 	private void persistSubscriptions(Session session) {
 		executor.execute(() -> {
 			try {
@@ -896,6 +995,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	// ---------------- PINGREQ / DISCONNECT ----------------
 
+	/**
+	 * PINGREQ 处理：刷新会话活跃时间并异步续期在线状态，回 PINGRESP。
+	 */
 	private void handlePingReq(ChannelHandlerContext ctx) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session == null) {
@@ -903,36 +1005,57 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			return;
 		}
 		session.touch();
-		maybeRenewOnline(session, attrCredential(session));
+		this.maybeRenewOnline(session, this.attrCredential(session));
 		ctx.channel()
 			.writeAndFlush(new MqttMessage(
 					new MqttFixedHeader(MqttMessageType.PINGRESP, false, MqttQoS.AT_MOST_ONCE, false, 0)));
 	}
 
+	/**
+	 * DISCONNECT 处理：标记优雅断开（不投遗嘱、正常持久化），随后关闭连接触发 channelInactive 收尾。
+	 */
 	private void handleDisconnect(ChannelHandlerContext ctx, MqttMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
 		if (session != null) {
 			session.setDisconnectedGracefully(true);
 		}
-		ctx.close(); // 优雅断开：channelInactive 执行持久化与离线事件
+		// 优雅断开：channelInactive 负责持久化会话与离线事件（不投遗嘱）
+		ctx.close();
 	}
 
 	// ---------------- 工具 ----------------
 
+	/**
+	 * 按需续期设备在线状态（Redis 写剥离到业务线程）。
+	 *
+	 * <p>
+	 * 仅当会话自上次续期超过阈值（{@link Session#shouldRenewOnline}）才发起，避免每个上行报文都打 Redis。
+	 * </p>
+	 */
 	private void maybeRenewOnline(Session session, DeviceCredential cred) {
 		if (cred != null && session.shouldRenewOnline()) {
 			executor.execute(() -> lifecycleNotifier.renewOnline(cred));
 		}
 	}
 
+	/**
+	 * 异步移除 Redis 中的出站 inflight 记录（业务线程执行，不阻塞 IO）。
+	 */
 	private void asyncRemoveInflight(String deviceKey, int packetId) {
 		executor.execute(() -> sessionStore.removeInflight(deviceKey, packetId));
 	}
 
+	/**
+	 * 异步持久化出站 inflight 记录（业务线程执行，不阻塞 IO）。
+	 */
 	private void asyncSaveInflight(String deviceKey, InflightMessage inflight) {
 		executor.execute(() -> sessionStore.saveInflight(deviceKey, inflight));
 	}
 
+	/**
+	 * 按 CONNECT keepalive 重设空闲超时：阈值为 keepalive×1.5（MQTT-3.1.2-24）， 已有预置 idle handler
+	 * 则原位替换，否则插入到 MQTT handler 之前。
+	 */
 	private void replaceIdleHandler(Channel channel, int keepAliveSeconds) {
 		int readerIdle = Math.max(1, (int) Math.ceil(keepAliveSeconds * 1.5));
 		ChannelPipeline pipeline = channel.pipeline();
@@ -946,6 +1069,12 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		log.debug("[Broker] keepalive={}s → idle 阈值 {}s", keepAliveSeconds, readerIdle);
 	}
 
+	/**
+	 * 发送 v3 CONNACK（QoS0，含 sessionPresent 标志）。
+	 * @param channel 目标连接
+	 * @param code MQTT 3.1.1 连接返回码
+	 * @param sessionPresent 是否恢复既有会话（持久会话重连为 true）
+	 */
 	private void sendConnAck(Channel channel, MqttConnectReturnCode code, boolean sessionPresent) {
 		channel.writeAndFlush(new MqttConnAckMessage(
 				new MqttFixedHeader(MqttMessageType.CONNACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
@@ -964,36 +1093,57 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				new MqttConnAckVariableHeader(code, sessionPresent, props)));
 	}
 
+	/**
+	 * 发送 PUBACK（QoS1 入站确认，路由持久化成功后调用）。
+	 * @param channel 目标连接
+	 * @param packetId 确认的报文标识符
+	 */
 	private void sendPubAck(Channel channel, int packetId) {
 		channel.writeAndFlush(new MqttPubAckMessage(
 				new MqttFixedHeader(MqttMessageType.PUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
 				MqttMessageIdVariableHeader.from(packetId)));
 	}
 
+	/**
+	 * 发送 PUBREC（QoS2 入站第一阶段确认，报文暂存入站缓存）。
+	 */
 	private void sendPubRec(Channel channel, int packetId) {
 		channel.writeAndFlush(
 				new MqttMessage(new MqttFixedHeader(MqttMessageType.PUBREC, false, MqttQoS.AT_MOST_ONCE, false, 0),
 						MqttMessageIdVariableHeader.from(packetId)));
 	}
 
+	/**
+	 * 发送 PUBREL（QoS2 出站第二阶段确认，QoS 固定为 1，见 MQTT-4.3.3-2）。
+	 */
 	private void sendPubRel(Channel channel, int packetId) {
 		channel.writeAndFlush(
 				new MqttMessage(new MqttFixedHeader(MqttMessageType.PUBREL, false, MqttQoS.AT_LEAST_ONCE, false, 0),
 						MqttMessageIdVariableHeader.from(packetId)));
 	}
 
+	/**
+	 * 发送 PUBCOMP（QoS2 最终确认，入站报文路由成功后调用）。
+	 */
 	private void sendPubComp(Channel channel, int packetId) {
 		channel.writeAndFlush(
 				new MqttMessage(new MqttFixedHeader(MqttMessageType.PUBCOMP, false, MqttQoS.AT_MOST_ONCE, false, 0),
 						MqttMessageIdVariableHeader.from(packetId)));
 	}
 
+	/**
+	 * 发送 SUBACK（逐 filter 返回授权 QoS 或 0x80 拒绝码）。
+	 * @param codes 与请求顺序一致的结果码列表（合法 QoS 或 0x80）
+	 */
 	private void sendSubAck(Channel channel, int packetId, List<Integer> codes) {
 		channel.writeAndFlush(new MqttSubAckMessage(
 				new MqttFixedHeader(MqttMessageType.SUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
 				MqttMessageIdVariableHeader.from(packetId), new MqttSubAckPayload(codes)));
 	}
 
+	/**
+	 * 发送 UNSUBACK（Netty 无专用类，以 MqttMessage + messageId 构造）。
+	 */
 	private void sendUnsubAck(Channel channel, int packetId) {
 		// Netty 无 MqttUnsubAckMessage 类，UNSUBACK = MqttMessage + messageId
 		channel.writeAndFlush(
@@ -1012,6 +1162,11 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		throw new IllegalArgumentException("无法解析 packetId: " + msg.fixedHeader().messageType());
 	}
 
+	/**
+	 * 认证返回码映射：平台 connackCode → Netty MQTT 返回码（v3/v5 共用）。
+	 * @param code 平台连接拒绝码（1 协议版本/2 标识符/3 服务不可用/5 未授权/其余 账号或密码错误）
+	 * @return 对应 MQTT 连接返回码
+	 */
 	private MqttConnectReturnCode returnCode(int code) {
 		return switch (code) {
 			case 1 -> MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION;
@@ -1022,6 +1177,14 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		};
 	}
 
+	/**
+	 * 从会话 attribute 重建设备凭据（ACL/限速/生命周期通知共用）。
+	 *
+	 * <p>
+	 * 凭据在 CONNECT 阶段写入 session attribute（见 {@link #completeConnect}），此处按需还原； 未写入（理论不可达）返回
+	 * null，调用方按无凭据处理。
+	 * </p>
+	 */
 	private DeviceCredential attrCredential(Session session) {
 		Object deviceId = session.attr(Session.SessionAttr.DEVICE_ID);
 		if (deviceId == null) {
@@ -1034,6 +1197,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				(DeviceStatus) session.attr(Session.SessionAttr.DEVICE_STATUS), 1, "", false);
 	}
 
+	/**
+	 * 提取对端 IP（去端口）；非 InetSocketAddress 返回 null。
+	 */
 	private String remoteIp(Channel channel) {
 		if (channel.remoteAddress() instanceof InetSocketAddress addr) {
 			return addr.getAddress().getHostAddress();
@@ -1044,9 +1210,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	/**
 	 * CONNECT 解析结果（认证回调使用，跨线程传递）
 	 */
-	private record ConnectParams(int version, String clientId, int keepAliveSeconds, boolean cleanSession,
-			String username, String password, Session.MqttWill will, String remoteIp, long sessionExpirySeconds,
-			int receiveMaximum, int maxPacketSize) {
+	private record ConnectParams(int version, int keepAliveSeconds, boolean cleanSession, Session.MqttWill will,
+			String remoteIp, long sessionExpirySeconds, int receiveMaximum, int maxPacketSize) {
 	}
 
 }
