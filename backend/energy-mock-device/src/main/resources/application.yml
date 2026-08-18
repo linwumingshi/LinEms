@@ -1,0 +1,44 @@
+server:
+  port: 8119
+
+spring:
+  # 模拟设备无 DB，显式排除数据源自动配置，避免 Spring Boot 无 url 启动失败
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  application:
+    name: energy-mock-device
+  # 父 POM 强制继承 nacos-config 客户端，必须声明 import（optional=无配置也不失败），否则启动报
+  # “No spring.config.import property has been defined”
+  config:
+    # 父 POM 强制继承 nacos-config 客户端，必须声明 import（可选 dataId 不存在也不失败），否则启动报
+    # “No spring.config.import property has been defined” / “dataId must be specified”
+    import: "optional:nacos:energy-mock-device.properties"
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      # 仅用注册发现（Feign 寻址 energy-device）；模拟设备配置全部本地化，不接入 Nacos 配置中心
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: public
+        group: ENERGY
+
+# 日志落盘（javaw 无控制台，必须写文件才能排障）
+logging:
+  file:
+    name: logs/mock-device.log
+  level:
+    com.energyx.mock: INFO
+
+# 模拟设备业务配置
+energy:
+  mock:
+    # broker 连接地址（原生 MQTT TCP，对应 BROKER_MQTT_PORT）
+    broker-host: 127.0.0.1
+    broker-port: 18831
+    # 连接超时（秒）
+    connect-timeout: 10
+    # 心跳间隔（秒）
+    keep-alive: 60
+    # 单台模拟设备最大并发（仅限流提示，Paho 每设备一个 client）
+    max-devices: 50

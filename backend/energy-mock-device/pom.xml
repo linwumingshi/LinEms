@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  energy-mock-device：模拟设备（带前端页面的设备仿真器，Phase 模拟设备）
+  - 用 Paho MQTT 客户端（原生 TCP）连 energy-mqtt-broker:18831，按 HMAC-SHA256 契约鉴权，
+    作为真实设备接入平台（出现在设备管理/影子/指令中心/OTA）。
+  - 提供 REST 控制面（/api/mock/**）+ WebSocket（/ws/mock）给前端做"一键建设备/上报/看下行/OTA 仿真"。
+  - 无 DB：设备注册表为运行时内存态（模拟设备为临时验证用途，进程重启即清空，平台侧真实设备仍保留）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.energyx</groupId>
+    <artifactId>energy-ems-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>energy-mock-device</artifactId>
+  <name>energy-mock-device</name>
+  <description>模拟设备：Paho MQTT 仿真设备 + REST/WS 控制面，用于验证平台与设备交互功能</description>
+
+  <properties>
+    <!-- 本地仓库仅有 micrometer 1.13.4 全系列，覆盖 Boot 3.5.4 BOM 管理的 1.15.2 保持离线可构建 -->
+    <micrometer.version>1.13.4</micrometer.version>
+    <prometheus-client.version>1.2.1</prometheus-client.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.energyx</groupId>
+      <artifactId>energy-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- WebSocket：前端实时接收设备下行（命令/OTA/日志） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-websocket</artifactId>
+    </dependency>
+
+    <!-- 跨服务集成（自动建档：在 energy-device 创建设备并取回密钥） -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+
+    <!-- Paho MQTT 客户端（原生 TCP 连 broker:18831；本地仓库 1.2.5 可用） -->
+    <dependency>
+      <groupId>org.eclipse.paho</groupId>
+      <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+      <version>1.2.5</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- 可观测性：actuator + Prometheus 指标端点 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.energyx.mock.MockDeviceApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

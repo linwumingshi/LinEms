@@ -15,6 +15,11 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     proxy: {
+      // 模拟设备直连 energy-mock-device 8119：dev 环境直连（须在 /api 通用代理之前，避免被网关吞掉）
+      '/api/mock': {
+        target: 'http://127.0.0.1:8119',
+        changeOrigin: true,
+      },
       // OTA 直连 energy-ota 8118：旧 gateway 进程（无 /api/ota 路由）沙箱无法终止，
       // dev 环境先行直连绕过；生产环境 gateway 重启后自动走 /api/ota/** 网关路由
       '/api/ota': {

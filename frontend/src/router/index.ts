@@ -128,6 +128,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '设备管理', icon: 'Cpu' },
       },
       {
+        path: 'simulator',
+        name: 'Simulator',
+        component: () => import('@/views/Simulator.vue'),
+        meta: { title: '模拟设备', icon: 'Iphone' },
+      },
+      {
         path: 'system/user',
         name: 'SystemUser',
         component: () => import('@/views/SystemUser.vue'),
