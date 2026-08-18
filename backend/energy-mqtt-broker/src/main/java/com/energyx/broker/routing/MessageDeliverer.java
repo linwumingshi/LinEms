@@ -143,8 +143,9 @@ public class MessageDeliverer {
 	 */
 	private void routeDirected(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
-		if (MqttTopicUtil.parseUpTopic(topic) != null) {
+		if (MqttTopicUtil.parseUpTopic(topic) != null || MqttTopicUtil.isOtaUpTopic(topic)) {
 			// 设备上行快路径：mqtt.uplink，key=deviceKey（分区有序）。IO 线程直接发。
+			// up/* 与 ota/*（OTA 上行 inform/progress/result/pull）均经此通道，由 access 分流处理。
 			String deviceKey = MqttTopicUtil.buildDeviceKey(topic.split("/")[0], topic.split("/")[1]);
 			byte[] envelope = RouterEnvelopeCodec
 				.encode(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
@@ -248,6 +249,25 @@ public class MessageDeliverer {
 	/** 兼容期旧通道：mqtt.router 全量 fan-out（JSON 信封，仅多版本混布时启用） */
 	private void routeLegacy(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
+		// OTA 上行与 up/* 同源：即便回落旧通道，也必须进 mqtt.uplink 供 access 透传 ota.uplink
+		if (MqttTopicUtil.parseUpTopic(topic) != null || MqttTopicUtil.isOtaUpTopic(topic)) {
+			String deviceKey = MqttTopicUtil.buildDeviceKey(topic.split("/")[0], topic.split("/")[1]);
+			byte[] envelope = RouterEnvelopeCodec
+				.encode(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
+			kafkaProducer.sendBytes(KafkaTopicConstant.MQTT_UPLINK, deviceKey, envelope, () -> {
+				stats.recordCrossNode();
+				if (onRouted != null) {
+					onRouted.run();
+				}
+			}, () -> {
+				stats.recordRouteFailure();
+				log.error("[Deliver] 上行路由持久化失败 topic={}，触发降级", topic);
+				if (onRouteFailed != null) {
+					onRouteFailed.run();
+				}
+			});
+			return;
+		}
 		String envelope = toJson(RouterEnvelope.publish(properties.getNodeId(), topic, payload, qos, retain));
 		kafkaProducer.send(KafkaTopicConstant.MQTT_ROUTER, topic, envelope, () -> {
 			stats.recordCrossNode();

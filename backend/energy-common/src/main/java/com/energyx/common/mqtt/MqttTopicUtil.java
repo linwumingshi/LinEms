@@ -1,5 +1,7 @@
 package com.energyx.common.mqtt;
 
+import java.util.Set;
+
 /**
  * MQTT Topic 约定（Phase1 §6）： 上行 {productKey}/{deviceName}/up/{type} type ∈ property |
  * event | lifecycle | ack 下行 {productKey}/{deviceName}/down/command
@@ -67,6 +69,9 @@ public final class MqttTopicUtil {
 		return new MqttTopicInfo(parts[0], parts[1], type);
 	}
 
+	/** OTA 上行命名空间类型（对应设备 topic {pk}/{dn}/ota/{type}） */
+	private static final Set<String> OTA_UP_TYPES = Set.of("inform", "progress", "result", "pull");
+
 	/** 是否为平台下行 topic（`{pk}/{dn}/down/*`，阶段 2 下行定向投递判定） */
 	public static boolean isDownTopic(String topic) {
 		if (topic == null || topic.isBlank()) {
@@ -74,6 +79,26 @@ public final class MqttTopicUtil {
 		}
 		String[] parts = topic.split("/");
 		return parts.length >= 4 && "down".equals(parts[2]);
+	}
+
+	/**
+	 * 是否为设备 OTA 上行 topic（{pk}/{dn}/ota/{inform|progress|result|pull}）。
+	 *
+	 * <p>
+	 * 与 access {@code UplinkProcessor#processOta} 的命名空间一致：OTA 上行报文不进入物模型链路， broker 需将其与
+	 * {@code up/*} 同样转发至 {@code mqtt.uplink}，再由 access 透传到 {@code ota.uplink} 供 OTA 中心消费。
+	 * {@code ota/down} 为平台下行，不在此列（其 type=down 不属于 OTA_UP_TYPES）。
+	 * </p>
+	 */
+	public static boolean isOtaUpTopic(String topic) {
+		if (topic == null || topic.isBlank()) {
+			return false;
+		}
+		String[] parts = topic.split("/");
+		if (parts.length != 4 || !"ota".equals(parts[2])) {
+			return false;
+		}
+		return OTA_UP_TYPES.contains(parts[3]);
 	}
 
 	/** 提取下行 topic 对应的 deviceKey（`{pk}_{dn}`）；非 down topic 返回 null */
