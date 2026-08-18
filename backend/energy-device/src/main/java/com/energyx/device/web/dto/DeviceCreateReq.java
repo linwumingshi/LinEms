@@ -21,6 +21,13 @@ public class DeviceCreateReq {
 	private String deviceName;
 
 	/**
+	 * 用户自定义显示名（可空，仅展示用；为空时前端回退显示设备 code）。
+	 *
+	 */
+	@Size(max = 128, message = "显示名长度不能超过 128")
+	private String displayName;
+
+	/**
 	 * 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER），见
 	 * {@link DeviceType}。
 	 *

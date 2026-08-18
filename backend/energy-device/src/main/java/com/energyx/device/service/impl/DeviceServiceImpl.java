@@ -120,6 +120,7 @@ public class DeviceServiceImpl extends ServiceImpl<DeviceMapper, Device> impleme
 		Device update = new Device();
 		update.setDeviceId(deviceId);
 		update.setDeviceName(req.getDeviceName());
+		update.setDisplayName(req.getDisplayName());
 		update.setDeviceType(req.getDeviceType());
 		update.setStationId(req.getStationId());
 		update.setFirmwareVersion(req.getFirmwareVersion());

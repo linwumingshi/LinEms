@@ -102,12 +102,15 @@ async function save() {
         stationId: form.value.stationId,
         firmwareVersion: form.value.firmwareVersion, mac: form.value.mac,
         ip: form.value.ip, sort: form.value.sort,
+        // null 表示不改，空串表示清空显示名（后端回退显示设备 code）
+        displayName: form.value.displayName ?? undefined,
       })
     } else {
       const id = await deviceApi.create({
         deviceName: form.value.deviceName!.trim(),
         deviceType: form.value.deviceType!,
         productKey: form.value.productKey!,
+        displayName: form.value.displayName?.trim() || undefined,
         parentId: form.value.parentId ?? undefined,
         stationId: form.value.stationId ?? undefined,
         enterpriseId: form.value.enterpriseId ?? undefined,
@@ -333,7 +336,7 @@ function onlineSeconds(sec?: string | number | null): string {
 }
 
 async function remove(row: Device) {
-  try { await ElMessageBox.confirm(`确定删除设备「${row.deviceName}」吗？将级联删除其整棵子树并吊销凭据。`, '提示', { type: 'warning' }) } catch { return }
+  try { await ElMessageBox.confirm(`确定删除设备「${row.displayName || row.deviceName}」吗？将级联删除其整棵子树并吊销凭据。`, '提示', { type: 'warning' }) } catch { return }
   try {
     await deviceApi.remove(row.deviceId)
     ElMessage.success('已删除')
@@ -347,7 +350,7 @@ const stateActionLabel: Record<StateAction, string> = { activate: '激活', disa
 /** 状态动作：激活(0/1→2)/禁用(2/3→4)/启用(4→2)，确认后调用对应 API 并刷新当前页 */
 async function setState(row: Device, action: StateAction) {
   const label = stateActionLabel[action]
-  try { await ElMessageBox.confirm(`确定${label}设备「${row.deviceName}」吗？`, '提示', { type: 'warning' }) } catch { return }
+  try { await ElMessageBox.confirm(`确定${label}设备「${row.displayName || row.deviceName}」吗？`, '提示', { type: 'warning' }) } catch { return }
   const api = { activate: deviceApi.activate, disable: deviceApi.disable, enable: deviceApi.enable }[action]
   try {
     await api(row.deviceId)
@@ -396,7 +399,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
           </el-select>
         </el-form-item>
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" placeholder="设备名模糊" clearable style="width: 200px" @keyup.enter="search" />
+          <el-input v-model="query.keyword" placeholder="设备 code 模糊" clearable style="width: 200px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
@@ -410,7 +413,10 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
         <el-table-column prop="deviceId" label="deviceId" width="130" show-overflow-tooltip>
           <template #default="{ row }"><span class="ex-num">{{ row.deviceId }}</span></template>
         </el-table-column>
-        <el-table-column prop="deviceName" label="设备名" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="deviceName" label="设备 code" min-width="140" show-overflow-tooltip />
+        <el-table-column label="设备名称" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.displayName || row.deviceName }}</template>
+        </el-table-column>
         <el-table-column prop="productKey" label="productKey" width="130" show-overflow-tooltip />
         <el-table-column label="类型" width="130"><template #default="{ row }">{{ deviceTypeText(row.deviceType) }}</template></el-table-column>
         <el-table-column label="状态" width="90">
@@ -447,8 +453,11 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑设备' : '新增设备'" width="600px">
       <el-form label-width="110px">
-        <el-form-item label="设备名" required :error="errs.deviceName">
+        <el-form-item label="设备 code" required :error="errs.deviceName">
           <el-input v-model="form.deviceName" placeholder="如 sim-dev-000001（禁止 _ 与 &）" maxlength="128" :disabled="isEdit" />
+        </el-form-item>
+        <el-form-item label="设备名称" :error="errs.displayName">
+          <el-input v-model="form.displayName" placeholder="用户自定义显示名（可选，如 1号PCS）" maxlength="128" />
         </el-form-item>
         <el-form-item label="产品" required :error="errs.productKey">
           <el-select v-model="form.productKey" filterable style="width: 100%" :disabled="isEdit" @change="onProductChange">
@@ -484,7 +493,7 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
       </template>
     </el-dialog>
 
-    <el-drawer v-model="drawerVisible" size="820px" :title="`设备详情 · ${detail?.deviceName ?? ''}`">
+    <el-drawer v-model="drawerVisible" size="820px" :title="`设备详情 · ${detail?.displayName || detail?.deviceName || ''}`">
       <template v-if="detail">
         <el-tabs v-model="activeTab">
           <el-tab-pane name="basic" label="基本信息">

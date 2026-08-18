@@ -47,6 +47,16 @@ public class Device extends BaseEntity {
 	private String deviceName;
 
 	/**
+	 * 用户自定义显示名（可空，仅管理端展示用）。
+	 *
+	 * <p>
+	 * 语义：deviceName 是设备 code（平台内唯一标识/接入协议锚点，创建后不可改）；displayName 可空可改可重复， 为空时前端回退显示设备
+	 * code。
+	 * </p>
+	 */
+	private String displayName;
+
+	/**
 	 * 设备类型（ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER），见
 	 * {@link com.energyx.common.enums.DeviceType}
 	 */

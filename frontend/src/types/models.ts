@@ -549,6 +549,8 @@ export interface Device {
   stationId: string | null
   productKey: string
   deviceName: string
+  /** 用户自定义显示名（可空，仅展示；为空时前端回退显示设备 code） */
+  displayName: string | null
   /** 设备类型（DeviceType：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
   deviceType: DeviceType
   parentId: string
@@ -573,6 +575,8 @@ export interface Device {
 
 export interface DeviceCreateReq {
   deviceName: string
+  /** 用户自定义显示名（可空，仅展示） */
+  displayName?: string
   /** 设备类型（DeviceType：ENERGY_CABINET/BATTERY_CLUSTER/PCS/BMS/EMS/EDGE_GW/METER） */
   deviceType: DeviceType
   productKey: string
@@ -590,7 +594,7 @@ export interface DeviceCreateReq {
 
 /** 更新仅改非空字段；productKey/deviceType/parentId/enterpriseId 不可改 */
 export type DeviceUpdateReq = Partial<Pick<Device,
-  'deviceName' | 'deviceType' | 'stationId' | 'status' | 'firmwareVersion' | 'mac' | 'ip' | 'sort'>>
+  'deviceName' | 'displayName' | 'deviceType' | 'stationId' | 'status' | 'firmwareVersion' | 'mac' | 'ip' | 'sort'>>
 
 export interface CredentialView {
   deviceId: string
