@@ -38,11 +38,11 @@ public interface SceneExecLogMapper extends BaseMapper<SceneExecLogRow> {
 			</script>
 			""")
 	List<SceneExecLogRow> selectPage(@Param("tenantId") Long tenantId, @Param("ruleId") Long ruleId,
+	/** 分页计数 */
 			@Param("triggerType") String triggerType, @Param("deviceId") Long deviceId,
 			@Param("startTime") LocalDateTime startTime, @Param("endTime") LocalDateTime endTime,
 			@Param("offset") long offset, @Param("size") long size);
 
-	/** 分页计数 */
 	@Select("""
 			<script>
 			SELECT COUNT(*) FROM iot_scene_exec_log
@@ -56,10 +56,10 @@ public interface SceneExecLogMapper extends BaseMapper<SceneExecLogRow> {
 			</script>
 			""")
 	long countPage(@Param("tenantId") Long tenantId, @Param("ruleId") Long ruleId,
+	/** 清理 N 天前的日志（定时任务，按月分区可直接 DROP 旧分区，此处按行清理兜底） */
 			@Param("triggerType") String triggerType, @Param("deviceId") Long deviceId,
 			@Param("startTime") LocalDateTime startTime, @Param("endTime") LocalDateTime endTime);
 
-	/** 清理 N 天前的日志（定时任务，按月分区可直接 DROP 旧分区，此处按行清理兜底） */
 	@Delete("DELETE FROM iot_scene_exec_log WHERE create_time < #{cutoff}")
 	int deleteBefore(@Param("cutoff") LocalDateTime cutoff);
 

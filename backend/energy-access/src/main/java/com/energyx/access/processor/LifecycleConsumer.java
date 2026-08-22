@@ -25,6 +25,10 @@ public class LifecycleConsumer implements KafkaRecordHandler {
 		this.objectMapper = objectMapper;
 	}
 
+	/**
+	 * 消费生命周期消息：反序列化后委托 LifecycleProcessor 落地设备在线态与上下线记录。
+	 * @param record Kafka 消费者记录（value 为 LifecycleMessage JSON）
+	 */
 	@Override
 	public void handle(ConsumerRecord<String, String> record) {
 		LifecycleMessage msg;

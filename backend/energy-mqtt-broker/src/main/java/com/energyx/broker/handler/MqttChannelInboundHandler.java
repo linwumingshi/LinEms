@@ -136,6 +136,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	private final Semaphore sessionRestoreSlots;
 
+	/**
+	 * 构造 MQTT 报文分发处理器。
+	 *
+	 * <p>
+	 * 注入全部依赖（认证、会话、路由、生命周期、统计、限速等），并按配置初始化认证与会话恢复两套并发信号量， 防止连接风暴与重连风暴打满业务线程池。
+	 * </p>
+	 */
 	public MqttChannelInboundHandler(DeviceAuthService authService, SessionRegistry sessionRegistry,
 			SessionStore sessionStore, LocalSubscriberIndex subscriberIndex, MessageDeliverer deliverer,
 			LifecycleNotifier lifecycleNotifier, KafkaEventProducer kafkaProducer, BrokerProperties properties,
@@ -155,6 +162,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		this.rateLimiter = rateLimiter;
 		this.executor = executor;
 		this.scheduler = scheduler;
+		// 并发信号量下限保护（至少 1），避免配置为 0 时所有连接/恢复被直接拒绝
 		this.authSlots = new Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
 		this.sessionRestoreSlots = new Semaphore(Math.max(1, properties.getSessionRestoreMaxConcurrent()));
 	}
@@ -331,6 +339,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	@Override
 	public void channelRead(ChannelHandlerContext ctx, Object msgObj) {
+		// 仅处理 MQTT 报文，其余类型（如 TLS 握手遗留对象）直接忽略
 		if (!(msgObj instanceof MqttMessage msg)) {
 			return;
 		}
@@ -351,6 +360,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			}
 		}
 		finally {
+			// 无论分发是否成功，统一释放报文引用，防止堆外内存（ByteBuf）泄漏
 			ReferenceCountUtil.release(msgObj);
 		}
 	}
@@ -701,6 +711,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	private boolean verifyClientCert(Channel channel, String clientId) {
 		try {
+			// 取握手完成后的对端证书链（CONNECT 到达即已 TLS 握手，可直接读取）
 			SslHandler sslHandler = channel.pipeline().get(SslHandler.class);
 			if (sslHandler == null) {
 				log.warn("[mTLS] 非 TLS 连接尝试设备接入，拒绝 clientId={}", clientId);
@@ -711,6 +722,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 				log.warn("[mTLS] 对端未提供证书 clientId={}", clientId);
 				return false;
 			}
+			// 取叶子证书（设备证书）的 subject CN，与 clientId 比对完成身份绑定
 			if (!(chain[0] instanceof X509Certificate leaf)) {
 				return false;
 			}
@@ -838,6 +850,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			return;
 		}
 		int packetId = msg.variableHeader().messageId();
+		// QoS1 出站完成：移除内存 inflight；命中则异步清理 Redis 持久化记录（断连续传兜底）
 		InflightMessage inflight = session.getOutboundInflight().remove(packetId);
 		if (inflight != null) {
 			this.asyncRemoveInflight(session.getDeviceKey(), packetId);
@@ -910,6 +923,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			return;
 		}
 		int packetId = this.messageId(msg);
+		// QoS2 最终确认：移除内存 inflight 并异步清理 Redis，完成恰好一次投递闭环
 		session.getOutboundInflight().remove(packetId);
 		this.asyncRemoveInflight(session.getDeviceKey(), packetId);
 	}
@@ -963,11 +977,13 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	private void handleUnsubscribe(ChannelHandlerContext ctx, MqttUnsubscribeMessage msg) {
 		Session session = ctx.channel().attr(SESSION_ATTR).get();
+		// 无会话上下文的 UNSUBSCRIBE 视为非法/已失效连接，直接关断
 		if (session == null) {
 			ctx.close();
 			return;
 		}
 		int packetId = msg.variableHeader().messageId();
+		// 本地索引与内存订阅表同步移除，回 UNSUBACK；持久会话异步落库保持 Redis 一致
 		for (String filter : msg.payload().topics()) {
 			session.getSubscriptions().remove(filter);
 			subscriberIndex.remove(session.getDeviceKey(), filter);
@@ -1004,6 +1020,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			ctx.close();
 			return;
 		}
+		// 刷新活跃时间并续期在线态，回 PINGRESP 维持 keepalive 心跳
 		session.touch();
 		this.maybeRenewOnline(session, this.attrCredential(session));
 		ctx.channel()
@@ -1057,6 +1074,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 * 则原位替换，否则插入到 MQTT handler 之前。
 	 */
 	private void replaceIdleHandler(Channel channel, int keepAliveSeconds) {
+		// 空闲阈值取 keepalive×1.5（MQTT-3.1.2-24）：给对端心跳留出冗余，避免误判超时断连
 		int readerIdle = Math.max(1, (int) Math.ceil(keepAliveSeconds * 1.5));
 		ChannelPipeline pipeline = channel.pipeline();
 		IdleStateHandler idle = new IdleStateHandler(readerIdle, 0, 0);
@@ -1064,6 +1082,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			pipeline.replace(NettyServerConfig.IDLE_HANDLER_NAME, NettyServerConfig.IDLE_HANDLER_NAME, idle);
 		}
 		else {
+			// 首次注入：置于业务 handler 之前，避免影响既有 pipeline 结构
 			pipeline.addBefore(NettyServerConfig.MQTT_HANDLER_NAME, NettyServerConfig.IDLE_HANDLER_NAME, idle);
 		}
 		log.debug("[Broker] keepalive={}s → idle 阈值 {}s", keepAliveSeconds, readerIdle);
@@ -1083,6 +1102,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * v5 CONNACK：携带服务端能力声明（Maximum QoS=2、Retain Available=1，见 v5 属性协商）
+	 * @param channel 目标连接
+	 * @param code MQTT 5.0 连接返回码
+	 * @param sessionPresent 是否恢复既有会话（持久会话重连为 true）
 	 */
 	private void sendConnAckV5(Channel channel, MqttConnectReturnCode code, boolean sessionPresent) {
 		MqttProperties props = new MqttProperties();
@@ -1106,6 +1128,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 发送 PUBREC（QoS2 入站第一阶段确认，报文暂存入站缓存）。
+	 * @param channel 目标连接
+	 * @param packetId 确认的报文标识符
 	 */
 	private void sendPubRec(Channel channel, int packetId) {
 		channel.writeAndFlush(
@@ -1115,6 +1139,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 发送 PUBREL（QoS2 出站第二阶段确认，QoS 固定为 1，见 MQTT-4.3.3-2）。
+	 * @param channel 目标连接
+	 * @param packetId 确认的报文标识符
 	 */
 	private void sendPubRel(Channel channel, int packetId) {
 		channel.writeAndFlush(
@@ -1124,6 +1150,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 发送 PUBCOMP（QoS2 最终确认，入站报文路由成功后调用）。
+	 * @param channel 目标连接
+	 * @param packetId 确认的报文标识符
 	 */
 	private void sendPubComp(Channel channel, int packetId) {
 		channel.writeAndFlush(
@@ -1133,6 +1161,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 发送 SUBACK（逐 filter 返回授权 QoS 或 0x80 拒绝码）。
+	 * @param channel 目标连接
+	 * @param packetId SUBACK 对应的报文标识符
 	 * @param codes 与请求顺序一致的结果码列表（合法 QoS 或 0x80）
 	 */
 	private void sendSubAck(Channel channel, int packetId, List<Integer> codes) {
@@ -1143,6 +1173,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 发送 UNSUBACK（Netty 无专用类，以 MqttMessage + messageId 构造）。
+	 * @param channel 目标连接
+	 * @param packetId UNSUBACK 对应的报文标识符
 	 */
 	private void sendUnsubAck(Channel channel, int packetId) {
 		// Netty 无 MqttUnsubAckMessage 类，UNSUBACK = MqttMessage + messageId
@@ -1153,6 +1185,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	/**
 	 * 提取报文 packetId（v3/v5 统一：各 VariableHeader 均继承 MqttMessageIdVariableHeader）
+	 * @param msg 待解析的 MQTT 报文
+	 * @throws IllegalArgumentException 报文类型不含 messageId（无法解析 packetId）时抛出
 	 */
 	private int messageId(MqttMessage msg) {
 		Object vh = msg.variableHeader();
@@ -1168,6 +1202,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 * @return 对应 MQTT 连接返回码
 	 */
 	private MqttConnectReturnCode returnCode(int code) {
+		// 平台拒绝码（1 协议版本/2 标识符/3 服务不可用/5 未授权/其余 账号密码错误）→ Netty MQTT 返回码
 		return switch (code) {
 			case 1 -> MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION;
 			case 2 -> MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED;

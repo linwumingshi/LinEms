@@ -37,18 +37,21 @@ public class KafkaTopicInitializer {
 
 	private final BrokerProperties properties;
 
+	/** 构造器：持有 Broker 配置（分区数、nodeId、bootstrap 等）。 */
 	public KafkaTopicInitializer(BrokerProperties properties) {
 		this.properties = properties;
 	}
 
 	/** 异步初始化，最多尝试 3 次 */
 	public void initializeAsync() {
+		// 路由未启用或 Kafka 未配置则跳过 topic 预创建（单机调试模式）
 		if (!properties.isEnableRouter() || properties.getKafkaBootstrapServers() == null
 				|| properties.getKafkaBootstrapServers().isBlank()) {
 			log.warn("[Kafka] bootstrap 未配置，跳过 topic 预创建");
 			return;
 		}
 		Thread initThread = new Thread(() -> {
+			// 最多重试 3 次，退避随次数递增（2s/4s/6s）；全失败仅告警，路由仍可用（仅分区数降级）
 			for (int i = 1; i <= 3; i++) {
 				try {
 					ensureTopics();
@@ -72,6 +75,11 @@ public class KafkaTopicInitializer {
 		initThread.start();
 	}
 
+	/**
+	 * 用 AdminClient 预创建/扩容路由 topic（幂等：已存在且分区达标则跳过）。 失败向上抛，由 initializeAsync 的重试循环处理；生命周期
+	 * topic 一并确保存在。
+	 * @throws Exception topic 列举/创建/扩容任一环节失败时抛出
+	 */
 	private void ensureTopics() throws Exception {
 		Properties props = new Properties();
 		props.put(org.apache.kafka.clients.admin.AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
@@ -107,7 +115,16 @@ public class KafkaTopicInitializer {
 		}
 	}
 
-	/** 不存在的纳入创建；存在但分区不足纳入扩容；达标跳过 */
+	/**
+	 * 不存在的纳入创建；存在但分区不足纳入扩容；达标跳过。
+	 * @param admin AdminClient（用于查询当前分区数）
+	 * @param existing 已存在的 topic 名称集合
+	 * @param toCreate 待创建的新 topic 列表（输出）
+	 * @param toExpand 待扩容的 topic 映射（输出）
+	 * @param topic 目标 topic 名
+	 * @param partitions 期望分区数
+	 * @throws Exception 查询分区数失败时抛出
+	 */
 	private void addIfNeed(AdminClient admin, Set<String> existing, List<NewTopic> toCreate,
 			Map<String, NewPartitions> toExpand, String topic, int partitions) throws Exception {
 		if (!existing.contains(topic)) {

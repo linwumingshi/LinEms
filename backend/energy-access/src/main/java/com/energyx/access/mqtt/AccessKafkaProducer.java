@@ -57,6 +57,9 @@ public class AccessKafkaProducer implements AutoCloseable {
 		log.info("[Access] Kafka 生产者初始化完成 bootstrap={}", properties.getKafkaBootstrapServers());
 	}
 
+	/**
+	 * @return Kafka 是否启用（bootstrap 未配置则停用，消息静默丢弃）
+	 */
 	public boolean isEnabled() {
 		return enabled;
 	}
@@ -79,6 +82,7 @@ public class AccessKafkaProducer implements AutoCloseable {
 		});
 	}
 
+	/** 关闭生产者：flush 刷盘后 3s 超时关闭（AutoCloseable） */
 	@Override
 	public void close() {
 		if (producer != null) {

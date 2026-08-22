@@ -38,10 +38,15 @@ public class OfflineCommandRedeliverer {
 		this.objectMapper = objectMapper;
 	}
 
+	/**
+	 * 设备上线补发离线指令：按 FIFO 从 Redis 离线队列取出 CommandDownMessage 重新桥接下行，直到达上限或队列空。
+	 * @param deviceId 设备 ID
+	 */
 	public void redeliver(long deviceId) {
 		String key = AccessKeys.cmdQueue(deviceId);
 		int sent = 0;
 		String json;
+		// 按 FIFO 从离线队列左弹出，逐条桥接下行，受上限保护避免单设备风暴
 		while (sent < props.getOfflineMaxRedeliver() && (json = redis.opsForList().leftPop(key)) != null) {
 			try {
 				CommandDownMessage cmd = objectMapper.readValue(json, CommandDownMessage.class);

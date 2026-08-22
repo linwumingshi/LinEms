@@ -86,6 +86,7 @@ public class RetainedMessageStore {
 	/** 匹配订阅过滤表达式的全部保留消息（新订阅时投递） */
 	public List<RetainedEntry> match(String topicFilter) {
 		List<RetainedEntry> result = new ArrayList<>();
+		// 共享订阅先剥 $share 前缀；保留消息匹配走本节点内存缓存，无需回查 Redis
 		String stripped = TopicMatcher.stripSharePrefix(topicFilter);
 		for (Map.Entry<String, RetainedEntry> e : cache.entrySet()) {
 			if (TopicMatcher.matches(e.getKey(), stripped)) {
@@ -99,6 +100,7 @@ public class RetainedMessageStore {
 	 * 冷启动预热：SCAN mqtt:retained:* 全量回填内存缓存（后台线程，不阻塞启动）。 预热完成前到达的新订阅可能投不到历史保留消息，属可接受的短暂窗口。
 	 */
 	public void warmUp() {
+		// 后台线程执行，不阻塞 Broker 启动；SCAN 分批回填内存缓存，支撑节点重启后新订阅立即可投保留消息
 		executor.execute(() -> {
 			long start = System.currentTimeMillis();
 			int loaded = 0;
@@ -107,6 +109,7 @@ public class RetainedMessageStore {
 				List<String> batch = new ArrayList<>(1_000);
 				while (cursor.hasNext()) {
 					batch.add(cursor.next());
+					// 每满 1000 条批量回填一次，平衡 SCAN 游标与单次 multiGet 开销
 					if (batch.size() >= 1_000) {
 						loaded += loadBatch(batch);
 						batch.clear();
@@ -115,6 +118,7 @@ public class RetainedMessageStore {
 				loaded += loadBatch(batch);
 			}
 			catch (Exception e) {
+				// 预热失败不致命：保留消息以 Redis 为准，运行期逐步经路由同步回内存
 				log.error("[Retained] 冷启动预热失败，保留消息以 Redis 为准逐步经路由同步", e);
 				return;
 			}
@@ -122,6 +126,7 @@ public class RetainedMessageStore {
 		});
 	}
 
+	/** 批量读取 retained key 的 JSON 并回填内存缓存（不覆盖运行期已写入的更新值） */
 	private int loadBatch(List<String> keys) {
 		if (keys.isEmpty()) {
 			return 0;
@@ -147,6 +152,7 @@ public class RetainedMessageStore {
 		return loaded;
 	}
 
+	/** 当前内存保留消息缓存条数（非 Redis 全量，仅本节点已加载部分） */
 	public int size() {
 		return cache.size();
 	}
@@ -173,6 +179,7 @@ public class RetainedMessageStore {
 			this.ts = ts;
 		}
 
+		/** 解码 Base64 还原原始保留消息 payload 字节 */
 		public byte[] payload() {
 			return Base64.getDecoder().decode(payloadBase64);
 		}

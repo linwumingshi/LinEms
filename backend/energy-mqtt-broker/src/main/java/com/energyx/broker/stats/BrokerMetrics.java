@@ -42,6 +42,13 @@ public class BrokerMetrics {
 
 	private final Timer pubAckLatency;
 
+	/**
+	 * 构造期一次性注册所有 Broker Micrometer 指标：连接/订阅 Gauge、各计数器 FunctionCounter、线程池指标与 PUBACK
+	 * 时延直方图。
+	 * <p>
+	 * 计数器数据源为 {@link BrokerStats} 的 AtomicLong（弱引用读取），与运维端点共享同一份计数，不产生双写不一致。
+	 * </p>
+	 */
 	public BrokerMetrics(MeterRegistry registry, BrokerStats stats, SessionRegistry sessionRegistry,
 			LocalSubscriberIndex subscriberIndex, @Qualifier("brokerExecutor") ExecutorService brokerExecutor) {
 		Gauge.builder("mqtt.broker.connections", sessionRegistry, SessionRegistry::connectionCount)

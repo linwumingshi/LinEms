@@ -13,6 +13,7 @@ public class AccessProperties {
 	/** 节点 ID（下行信封 sourceNode，标识来源） */
 	private String nodeId = "access-1";
 
+	/** Kafka bootstrap 地址（逗号分隔），覆盖即切换集群；缺省本地单机 9092 */
 	private String kafkaBootstrapServers = "127.0.0.1:9092";
 
 	/** 每个消费引擎的线程数（分区并行数，单分区内仍保序） */

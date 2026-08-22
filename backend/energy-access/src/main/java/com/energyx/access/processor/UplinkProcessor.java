@@ -6,8 +6,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.energyx.access.config.AccessProperties;
 import com.energyx.access.device.DeviceInfo;
 import com.energyx.access.device.DeviceInfoCache;
-import com.energyx.access.model.ModelValidator;
-import com.energyx.access.model.ThingModel;
 import com.energyx.access.model.ThingModelCache;
 import com.energyx.access.publish.EventPublisher;
 import com.energyx.common.kafka.BytesKafkaRecordHandler;
@@ -23,6 +21,8 @@ import com.energyx.common.mqtt.MqttUpType;
 import com.energyx.common.mqtt.RouterEnvelope;
 import com.energyx.common.mqtt.RouterEnvelopeCodec;
 import com.energyx.common.redis.MessageDedup;
+import com.energyx.common.thingmodel.ModelValidator;
+import com.energyx.common.thingmodel.ThingModel;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -88,6 +88,11 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		this.idGenerator = idGenerator;
 	}
 
+	/**
+	 * 消费单条上行报文：解码信封 → 解析上行 topic → 设备上下文 → 去重 → 按 upType 分流处理。
+	 * @param record Kafka 消费者记录（value 为二进制信封）
+	 * @throws Exception 解码或处理过程中的异常（由消费引擎捕获并走 DLQ）
+	 */
 	@Override
 	public void handle(ConsumerRecord<String, byte[]> record) throws Exception {
 		RouterEnvelope envelope;
@@ -127,6 +132,7 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 		traceRaw(messageId, deviceKey, device.getDeviceId(), envelope, null);
 
+		// 按上行类型分流：property/event/ack/lifecycle 各自标准化后发布到对应 topic
 		switch (info.upType()) {
 			case PROPERTY -> processProperty(device, info, payload, messageId);
 			case EVENT -> processEvent(device, info, payload, messageId);
@@ -175,6 +181,13 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		return true;
 	}
 
+	/**
+	 * 处理属性上报：物模型校验 + 强转后标准化发布 iot-thing-property。
+	 * @param device 设备上下文
+	 * @param info 已解析的上行 topic 信息
+	 * @param payload 报文负载（JSON 字节）
+	 * @param messageId 消息唯一 ID（用于链路追踪）
+	 */
 	private void processProperty(DeviceInfo device, MqttTopicInfo info, byte[] payload, String messageId) {
 		try {
 			JsonNode root = objectMapper.readTree(payload);
@@ -210,6 +223,13 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 处理事件上报：事件白名单校验 + 级别映射后标准化发布 iot-thing-event。
+	 * @param device 设备上下文
+	 * @param info 已解析的上行 topic 信息
+	 * @param payload 报文负载（JSON 字节）
+	 * @param messageId 消息唯一 ID（用于链路追踪）
+	 */
 	private void processEvent(DeviceInfo device, MqttTopicInfo info, byte[] payload, String messageId) {
 		try {
 			JsonNode root = objectMapper.readTree(payload);
@@ -248,6 +268,12 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 处理指令应答：解析 commandId/status/result 后标准化发布 iot-command-ack。
+	 * @param device 设备上下文
+	 * @param payload 报文负载（JSON 字节）
+	 * @param messageId 消息唯一 ID（用于链路追踪）
+	 */
 	private void processAck(DeviceInfo device, byte[] payload, String messageId) {
 		try {
 			JsonNode root = objectMapper.readTree(payload);
@@ -270,6 +296,13 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 处理设备自报生命周期（ONLINE/OFFLINE）：标准化发布 iot-device-lifecycle，由 access 落库。
+	 * @param device 设备上下文
+	 * @param info 已解析的上行 topic 信息
+	 * @param payload 报文负载（JSON 字节）
+	 * @param messageId 消息唯一 ID（用于链路追踪）
+	 */
 	private void processDeviceLifecycle(DeviceInfo device, MqttTopicInfo info, byte[] payload, String messageId) {
 		try {
 			JsonNode root = objectMapper.readTree(payload);
@@ -294,6 +327,11 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 提取报文 messageId；设备未带则生成雪花 ID（保证幂等键稳定）。
+	 * @param payload 报文负载（JSON 字节）
+	 * @return 报文 messageId（设备带则用之，否则生成新 ID）
+	 */
 	private String extractMessageId(byte[] payload) {
 		try {
 			JsonNode root = objectMapper.readTree(payload);
@@ -305,6 +343,14 @@ public class UplinkProcessor implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 原始报文留痕：无条件写 iot-raw（追踪/补数），rejectReason 非空表示被拒绝的报文。
+	 * @param messageId 消息唯一 ID
+	 * @param deviceKey 设备键（productKey_deviceName）
+	 * @param deviceId 设备 ID（未识别时为 null）
+	 * @param envelope 原始信封（含 topic/qos/payload）
+	 * @param rejectReason 拒绝原因（null 表示正常留痕）
+	 */
 	private void traceRaw(String messageId, String deviceKey, Long deviceId, RouterEnvelope envelope,
 			String rejectReason) {
 		RawMessage raw = new RawMessage();

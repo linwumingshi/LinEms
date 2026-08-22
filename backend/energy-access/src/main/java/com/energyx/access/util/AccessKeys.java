@@ -12,21 +12,26 @@ package com.energyx.access.util;
  */
 public final class AccessKeys {
 
+	/** 工具类私有构造：禁止实例化 */
 	private AccessKeys() {
 	}
 
+	/** 消息幂等 key：按消费阶段 stage + 设备 ID + messageId 命名，窗口内重复报文去重 */
 	public static String msgDedup(String stage, long deviceId, String messageId) {
 		return "iot:msg:dedup:" + stage + ":" + deviceId + ":" + messageId;
 	}
 
+	/** 设备信息缓存 key：deviceKey → 设备维度上下文（deviceId/tenantId/stationId/enterpriseId） */
 	public static String deviceInfo(String deviceKey) {
 		return "cache:device:" + deviceKey;
 	}
 
+	/** 产品当前生效物模型缓存 key：productKey → 物模型定义 */
 	public static String modelCurrent(String productKey) {
 		return "cache:model:current:" + productKey;
 	}
 
+	/** 设备离线指令队列 key：deviceId → 上线时补发积压下行指令 */
 	public static String cmdQueue(long deviceId) {
 		return "iot:cmd:q:" + deviceId;
 	}

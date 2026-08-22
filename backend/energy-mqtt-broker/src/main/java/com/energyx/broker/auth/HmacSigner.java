@@ -19,8 +19,10 @@ import java.util.HexFormat;
  */
 public final class HmacSigner {
 
+	/** 算法名常量：JCA 标准名 HmacSHA256 */
 	private static final String HMAC_SHA256 = "HmacSHA256";
 
+	/** 工具类禁止实例化（私有构造） */
 	private HmacSigner() {
 	}
 
@@ -29,13 +31,16 @@ public final class HmacSigner {
 		return hmacSha256Hex(deviceSecret, clientId + "&" + timestamp + "&" + nonce);
 	}
 
+	/** 对消息用密钥做 HMAC-SHA256，返回 64 位小写 hex（底层原语，供 {@link #sign} 复用） */
 	public static String hmacSha256Hex(String key, String message) {
 		try {
+			// 以 deviceSecret 为密钥、待签消息为数据做 HMAC-SHA256，输出 64 位小写 hex
 			Mac mac = Mac.getInstance(HMAC_SHA256);
 			mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), HMAC_SHA256));
 			return HexFormat.of().formatHex(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
 		}
 		catch (Exception e) {
+			// 不应发生（算法/编码均为常量），包装为运行时异常暴露配置问题
 			throw new IllegalStateException("HMAC-SHA256 计算失败", e);
 		}
 	}

@@ -66,7 +66,9 @@ public class LifecycleNotifier {
 		sessionStore.refreshConnLockIfOwner(cred.getDeviceKey(), properties.getNodeId());
 	}
 
+	/** 组装并发送 lifecycle 事件（Kafka iot-device-lifecycle，key=deviceId）；事件停用或序列化失败仅告警不阻断 */
 	private void publish(DeviceCredential cred, String eventType, String reason, String ip) {
+		// 事件未启用或 Kafka 停用时跳过（单机调试/降级模式），不阻断主流程
 		if (!properties.isEnableLifecycleEvent() || !producer.isEnabled()) {
 			return;
 		}
@@ -81,6 +83,7 @@ public class LifecycleNotifier {
 		event.put("reason", reason);
 		event.put("ts", System.currentTimeMillis());
 		try {
+			// 以 deviceId 为 key 保证同设备生命周期事件有序；序列化失败仅告警不阻断
 			producer.send(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE, String.valueOf(cred.getDeviceId()),
 					objectMapper.writeValueAsString(event));
 		}

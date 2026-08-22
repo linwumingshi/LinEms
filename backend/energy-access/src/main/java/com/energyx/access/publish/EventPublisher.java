@@ -54,26 +54,32 @@ public class EventPublisher {
 		this.objectMapper = objectMapper;
 	}
 
+	/** 发布原始报文留痕 iot-raw（key=messageId） */
 	public void publishRaw(RawMessage m) {
 		send(KafkaTopicConstant.IOT_RAW, m.getMessageId(), m);
 	}
 
+	/** 发布属性标准化消息 iot-thing-property（key=deviceId） */
 	public void publishProperty(ThingPropertyMessage m) {
 		send(KafkaTopicConstant.IOT_THING_PROPERTY, String.valueOf(m.getDeviceId()), m);
 	}
 
+	/** 发布事件标准化消息 iot-thing-event（key=deviceId） */
 	public void publishEvent(ThingEventMessage m) {
 		send(KafkaTopicConstant.IOT_THING_EVENT, String.valueOf(m.getDeviceId()), m);
 	}
 
+	/** 发布指令应答 iot-command-ack（key=commandId，与指令记录同分区保序） */
 	public void publishAck(CommandAckMessage m) {
 		send(KafkaTopicConstant.IOT_COMMAND_ACK, m.getCommandId(), m);
 	}
 
+	/** 发布设备生命周期 iot-device-lifecycle（key=deviceId） */
 	public void publishLifecycle(LifecycleMessage m) {
 		send(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE, String.valueOf(m.getDeviceId()), m);
 	}
 
+	/** 发布平台下行指令 iot-command-down（key=deviceId） */
 	public void publishCommandDown(CommandDownMessage m) {
 		send(KafkaTopicConstant.IOT_COMMAND_DOWN, String.valueOf(m.getDeviceId()), m);
 	}
@@ -122,6 +128,12 @@ public class EventPublisher {
 		}
 	}
 
+	/**
+	 * 统一序列化发送：JSON 序列化后交 AccessKafkaProducer 异步发送，失败仅记日志不阻塞主流程。
+	 * @param topic 目标 topic
+	 * @param key 分区 key（保证同设备/同指令有序）
+	 * @param value 消息对象
+	 */
 	private void send(String topic, String key, Object value) {
 		try {
 			producer.send(topic, key, objectMapper.writeValueAsString(value));

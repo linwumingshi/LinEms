@@ -85,6 +85,12 @@ public class MqttBrokerServer {
 		this.executor = brokerExecutor;
 	}
 
+	/**
+	 * 启动 Broker：绑定明文（及可选 TLS）端口、启动跨节点路由消费、异步预创建 Kafka topic、后台预热保留消息。
+	 * <p>
+	 * 端口绑定失败抛 {@link IllegalStateException} 中断 Spring 上下文启动；其余步骤（topic 预创建、保留消息预热）不阻塞启动。
+	 * </p>
+	 */
 	@PostConstruct
 	public void start() {
 		try {
@@ -105,6 +111,12 @@ public class MqttBrokerServer {
 		retainedStore.warmUp(); // 冷启动预热保留消息（后台线程，不阻塞启动）
 	}
 
+	/**
+	 * 优雅停机：关闭监听通道（拒绝新连接）→ 通知在线设备（MQTT5 DISCONNECT 0x8B）→ 停路由消费与生产 → 停线程池。
+	 * <p>
+	 * 持久会话状态（订阅/inflight/离线队列）已在 Redis，其他节点可在设备重连时接管，停机不丢数据。
+	 * </p>
+	 */
 	@PreDestroy
 	public void stop() {
 		log.info("[Broker] 优雅停机开始，在线会话 {}", sessionRegistry.connectionCount());

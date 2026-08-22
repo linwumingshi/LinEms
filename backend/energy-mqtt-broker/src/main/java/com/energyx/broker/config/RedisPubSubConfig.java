@@ -16,6 +16,14 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 @Configuration
 public class RedisPubSubConfig {
 
+	/**
+	 * Redis 消息监听容器 Bean：托管 pub/sub 专用连接与自动重连（凭据失效广播等场景使用）。
+	 * <p>
+	 * 选用 Spring 容器而非手动 subscribe，规避 Lettuce 下手动拿 pub/sub 连接行为不可靠；容器负责维护专用连接并处理断线重连。
+	 * </p>
+	 * @param connectionFactory Redis 连接工厂
+	 * @return 已配置连接工厂的监听容器
+	 */
 	@Bean(destroyMethod = "stop")
 	public RedisMessageListenerContainer redisMessageListenerContainer(RedisConnectionFactory connectionFactory) {
 		RedisMessageListenerContainer container = new RedisMessageListenerContainer();

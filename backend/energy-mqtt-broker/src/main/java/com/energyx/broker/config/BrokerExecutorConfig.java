@@ -45,6 +45,13 @@ public class BrokerExecutorConfig {
 		this.brokerStats = brokerStats;
 	}
 
+	/**
+	 * 业务线程池 Bean（名称 brokerExecutor）：承载认证、Redis 会话持久化、Kafka 生命周期生产、离线投递等阻塞慢路径。
+	 * <p>
+	 * IO 线程（Netty EventLoop）只做编解码与路由分发，所有阻塞操作剥离到此池；拒绝策略为记日志丢弃，避免阻塞 IO 线程拖垮连接面。
+	 * </p>
+	 * @return 固定大小业务线程池（线程数 = max(4, CPU×2)，有界队列 10000）
+	 */
 	@Bean(name = "brokerExecutor", destroyMethod = "shutdown")
 	public ExecutorService brokerExecutor() {
 		int threads = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);

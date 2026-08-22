@@ -105,6 +105,13 @@ public class Session {
 	@Setter
 	private int maxPacketSize;
 
+	/**
+	 * 构造一个设备内存热会话。
+	 * @param deviceKey 设备键 {productKey}_{deviceName}
+	 * @param channel 设备当前所在节点的 Netty 连接 channel
+	 * @param mqttVersion MQTT 协议版本（3.1.1=4 / 5.0=5）
+	 * @param cleanSession 是否干净会话（true 表示断开即清持久态）
+	 */
 	public Session(String deviceKey, Channel channel, int mqttVersion, boolean cleanSession) {
 		this.deviceKey = deviceKey;
 		this.channel = channel;
@@ -112,15 +119,18 @@ public class Session {
 		this.cleanSession = cleanSession;
 	}
 
+	/** 判断连接是否在线（channel 存在且活跃） */
 	public boolean isOnline() {
 		return channel != null && channel.isActive();
 	}
 
 	/** 分配下一个未占用的 packetId（1~65535 循环，跳过 in-flight 占用）；已满返回 -1 */
 	public int allocPacketId() {
+		// 容量闸门：in-flight 已满（达协议上限 65535）直接拒绝分配
 		if (outboundInflight.size() >= 65_535) {
 			return -1;
 		}
+		// 1~65535 循环防回绕分配；跳过已被占用者，全占用则返回 -1 由调用方降级（QoS>0 丢弃）
 		for (int i = 0; i < 65_535; i++) {
 			int id = packetIdCursor.getAndUpdate(v -> (v % 65_535) + 1);
 			if (!outboundInflight.containsKey(id)) {
@@ -130,10 +140,12 @@ public class Session {
 		return -1;
 	}
 
+	/** 刷新最近活跃时间（心跳/收发报文时调用，供连接锁与超时审计） */
 	public void touch() {
 		this.lastActivityNanos = System.nanoTime();
 	}
 
+	/** 读取最近活跃时间戳（纳秒） */
 	public long lastActivityNanos() {
 		return lastActivityNanos;
 	}
@@ -141,6 +153,7 @@ public class Session {
 	/** 是否允许续期在线 TTL（10s 节流） */
 	public boolean shouldRenewOnline() {
 		long now = System.nanoTime();
+		// 节流：距上次续期不足 10s 则跳过，避免每条上行报文都打 Redis（降低心跳续期开销）
 		if (now - lastRenewNanos >= RENEW_THROTTLE_NANOS) {
 			lastRenewNanos = now;
 			return true;
@@ -153,6 +166,7 @@ public class Session {
 		return attributes.get(key);
 	}
 
+	/** 写入业务附加属性（键常量见 {@link SessionAttr}） */
 	public void putAttr(String key, Object value) {
 		attributes.put(key, value);
 	}

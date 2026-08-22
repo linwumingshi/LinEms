@@ -138,6 +138,7 @@ public class DeviceAuthService {
 
 	/** 封禁判定：本地快表未过期直接命中；否则查 Redis 并回填本地 */
 	private boolean isBanned(String clientId) {
+		// L1 本地快表：未过期直接命中，挡高频重复请求、减少 Redis RTT
 		Long until = localBanUntil.get(clientId);
 		if (until != null) {
 			if (until > System.currentTimeMillis()) {
@@ -145,6 +146,7 @@ public class DeviceAuthService {
 			}
 			localBanUntil.remove(clientId);
 		}
+		// 本地未命中则查 Redis 权威封禁（跨节点共享，TTL 自然解封），并回填本地快表
 		if (sessionStore.isAuthBanned(clientId)) {
 			rememberBanLocally(clientId);
 			return true;
@@ -154,6 +156,7 @@ public class DeviceAuthService {
 
 	/** 认证失败计数 +1（Redis 跨节点共享窗口计数），达阈值则封禁（TTL 自然解封）并通知 access 回写设备表 */
 	private void recordFailureAndMaybeBan(String clientId) {
+		// 跨节点共享窗口计数 +1；达阈值则封禁（TTL 自然解封）并通知 access 回写设备表
 		long fails = sessionStore.incrAuthFail(clientId);
 		if (fails >= properties.getAuthFailureBanThreshold()) {
 			sessionStore.banClient(clientId);
@@ -184,6 +187,7 @@ public class DeviceAuthService {
 			msg.setEventType(eventType);
 			msg.setReason(reason);
 			msg.setTs(System.currentTimeMillis());
+			// 解析 clientId 反查设备维度信息，事件退化时 deviceId=null 由 access 忽略
 			DeviceRow device = resolveDevice(clientId);
 			if (device != null) {
 				msg.setDeviceId(device.deviceId());
@@ -191,6 +195,7 @@ public class DeviceAuthService {
 				msg.setProductKey(device.productKey());
 				msg.setDeviceName(device.deviceName());
 			}
+			// key=clientId 保证同设备事件有序；发布失败仅告警，不阻断认证主流程
 			producer.send(KafkaTopicConstant.IOT_DEVICE_LIFECYCLE, clientId, objectMapper.writeValueAsString(msg));
 		}
 		catch (Exception e) {

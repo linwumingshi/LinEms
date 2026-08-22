@@ -5,6 +5,7 @@ import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
 import com.energyx.command.client.DeviceFeignClient;
+import com.energyx.command.client.ProductFeignClient;
 import com.energyx.command.model.CommandRow;
 import com.energyx.command.model.DeviceInfo;
 import com.energyx.command.mqtt.CommandKafkaProducer;
@@ -67,6 +68,9 @@ class CommandServiceTest {
 	DeviceFeignClient deviceFeignClient;
 
 	@Mock
+	ProductFeignClient productFeignClient;
+
+	@Mock
 	StringRedisTemplate redis;
 
 	@Mock
@@ -90,10 +94,12 @@ class CommandServiceTest {
 	@BeforeEach
 	void setUp() {
 		props = new CommandProperties();
-		service = new CommandService(commandMapper, ackMapper, deviceFeignClient, redis, producer, objectMapper,
-				idempotencyUtils, props, new SnowflakeIdGenerator());
+		service = new CommandService(commandMapper, ackMapper, deviceFeignClient, productFeignClient, redis, producer,
+				objectMapper, idempotencyUtils, props, new SnowflakeIdGenerator());
 		lenient().when(redis.opsForList()).thenReturn(listOps);
 		lenient().when(redis.opsForHash()).thenReturn(hashOps);
+		// 默认 WARN 模式：物模型缺失（Feign 未配置）→ 跳过校验，保持历史行为
+		lenient().when(productFeignClient.getThingModelByKey(anyString())).thenReturn(null);
 	}
 
 	private static DeviceInfo dev() {

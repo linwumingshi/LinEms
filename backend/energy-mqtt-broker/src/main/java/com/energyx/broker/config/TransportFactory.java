@@ -33,6 +33,7 @@ public final class TransportFactory {
 
 	private static volatile TransportKind kind = TransportKind.NIO;
 
+	/** 传输层类型：Epoll（Linux 原生）/ KQueue（macOS 原生）/ NIO（回退） */
 	public enum TransportKind {
 
 		EPOLL, KQUEUE, NIO
@@ -82,6 +83,7 @@ public final class TransportFactory {
 
 	/** 创建事件循环组（ioThreads ≤0 时按 2×CPU 默认） */
 	public static EventLoopGroup newEventLoopGroup(int ioThreads) {
+		// 未显式配置线程数时按 2×CPU 推导（下限 4），兼顾吞吐与上下文切换开销
 		int threads = ioThreads > 0 ? ioThreads : Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
 		return switch (detect()) {
 			case EPOLL -> new EpollEventLoopGroup(threads);
@@ -93,6 +95,7 @@ public final class TransportFactory {
 	/** 创建服务端 channel 类（acceptor 用） */
 	@SuppressWarnings("unchecked")
 	public static Class<? extends ServerChannel> serverChannelClass() {
+		// 按探测到的传输类型返回对应服务端 channel 类（acceptor 创建用）
 		return switch (detect()) {
 			case EPOLL -> EpollServerSocketChannel.class;
 			case KQUEUE -> (Class<? extends ServerChannel>) reflectiveChannelClass();
@@ -104,6 +107,7 @@ public final class TransportFactory {
 
 	private static boolean kqueueAvailable() {
 		try {
+			// 反射探测 KQueue 类可用性（本地仓库无构件，故不引入编译期依赖，运行期动态加载）
 			Class<?> kq = Class.forName("io.netty.channel.kqueue.KQueue");
 			Method isAvailable = kq.getMethod("isAvailable");
 			return Boolean.TRUE.equals(isAvailable.invoke(null));
@@ -115,10 +119,12 @@ public final class TransportFactory {
 
 	private static EventLoopGroup reflectiveGroup(int threads) {
 		try {
+			// 反射创建 KQueue 事件循环组（macOS 原生传输）
 			Class<?> cls = Class.forName("io.netty.channel.kqueue.KQueueEventLoopGroup");
 			return (EventLoopGroup) cls.getConstructor(int.class).newInstance(threads);
 		}
 		catch (Throwable t) {
+			// 反射失败（无构件/平台不支持）回退 NIO，保证跨平台可运行
 			log.warn("[Transport] KQueue 反射创建失败（{}），回退 NIO", t.getMessage());
 			return new NioEventLoopGroup(threads);
 		}
@@ -126,9 +132,11 @@ public final class TransportFactory {
 
 	private static Class<?> reflectiveChannelClass() {
 		try {
+			// 反射获取 KQueue 服务端 channel 类
 			return Class.forName("io.netty.channel.kqueue.KQueueServerSocketChannel");
 		}
 		catch (Throwable t) {
+			// 失败回退 NIO 服务端 channel 类
 			log.warn("[Transport] KQueue channel 反射失败（{}），回退 NIO", t.getMessage());
 			return NioServerSocketChannel.class;
 		}

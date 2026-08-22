@@ -30,6 +30,10 @@ public class CommandDownConsumer implements KafkaRecordHandler {
 		this.objectMapper = objectMapper;
 	}
 
+	/**
+	 * 消费下行指令：反序列化 CommandDownMessage 后桥接为 mqtt.router PUBLISH 信封下发。
+	 * @param record Kafka 消费者记录（value 为 CommandDownMessage JSON）
+	 */
 	@Override
 	public void handle(ConsumerRecord<String, String> record) {
 		CommandDownMessage cmd;

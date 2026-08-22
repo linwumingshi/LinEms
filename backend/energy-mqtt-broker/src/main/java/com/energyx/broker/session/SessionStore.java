@@ -124,6 +124,7 @@ public class SessionStore {
 			return;
 		}
 		try {
+			// 遗嘱 JSON 存入会话哈希（byte[] payload 自动 base64），节点宕机后重连可补投
 			redis.opsForHash().put(BrokerKeys.session(deviceKey), "will", objectMapper.writeValueAsString(will));
 		}
 		catch (Exception e) {
@@ -141,6 +142,7 @@ public class SessionStore {
 			return objectMapper.readValue(String.valueOf(json), Session.MqttWill.class);
 		}
 		catch (Exception e) {
+			// 非法遗嘱 JSON：降级删除，避免污染后续恢复流程
 			log.warn("[SessionStore] 遗嘱反序列化失败 deviceKey={}，删除", deviceKey);
 			deleteWill(deviceKey);
 			return null;
@@ -152,10 +154,12 @@ public class SessionStore {
 		redis.opsForHash().delete(BrokerKeys.session(deviceKey), "will");
 	}
 
+	/** 读取持久会话元数据哈希（node/clean/expiry/ts/will 等字段） */
 	public Map<Object, Object> loadSession(String deviceKey) {
 		return redis.opsForHash().entries(BrokerKeys.session(deviceKey));
 	}
 
+	/** 删除持久会话元数据（clean 会话 / 会话过期清理时调用） */
 	public void deleteSession(String deviceKey) {
 		redis.delete(BrokerKeys.session(deviceKey));
 	}
@@ -165,6 +169,7 @@ public class SessionStore {
 	/** 全量覆盖持久订阅集（干净会话重连时用） */
 	public void saveSubscriptions(String deviceKey, Set<MqttSubscription> subs) {
 		String key = BrokerKeys.subs(deviceKey);
+		// 先清后写（全量覆盖），避免重连遗留旧订阅造成幽灵投递
 		redis.delete(key);
 		if (!subs.isEmpty()) {
 			Set<String> members = new HashSet<>(subs.size());
@@ -172,6 +177,7 @@ public class SessionStore {
 				members.add(s.encode());
 			}
 			redis.opsForSet().add(key, members.toArray(new String[0]));
+			// 订阅集随会话 TTL，保证与持久会话生命周期一致
 			redis.expire(key, Duration.ofSeconds(properties.getSessionTtlSeconds()));
 		}
 	}
@@ -182,6 +188,7 @@ public class SessionStore {
 		if (members != null) {
 			for (String m : members) {
 				try {
+					// 逐成员解码；编码损坏的成员丢弃，避免整批订阅恢复失败
 					result.add(MqttSubscription.decode(m));
 				}
 				catch (IllegalArgumentException e) {
@@ -207,6 +214,7 @@ public class SessionStore {
 		redis.expire(BrokerKeys.inflight(deviceKey), Duration.ofSeconds(properties.getSessionTtlSeconds()));
 	}
 
+	/** 移除单条 outbound in-flight（收到 PUBACK/PUBCOMP 确认后调用） */
 	public void removeInflight(String deviceKey, int packetId) {
 		redis.opsForHash().delete(BrokerKeys.inflight(deviceKey), String.valueOf(packetId));
 	}
@@ -216,6 +224,7 @@ public class SessionStore {
 		List<InflightMessage> result = new ArrayList<>();
 		for (Object value : entries.values()) {
 			try {
+				// 逐条解码 in-flight（按 packetId 定长字段）；解码失败成员丢弃，避免阻断续传
 				result.add(decodeInflight(String.valueOf(value)));
 			}
 			catch (IllegalArgumentException e) {
@@ -225,6 +234,7 @@ public class SessionStore {
 		return result;
 	}
 
+	/** 清空全部 outbound in-flight（clean 会话 / 会话清理时调用） */
 	public void deleteInflight(String deviceKey) {
 		redis.delete(BrokerKeys.inflight(deviceKey));
 	}
@@ -235,18 +245,21 @@ public class SessionStore {
 	}
 
 	private InflightMessage decodeInflight(String s) {
+		// 定长字段按 "|" 切分：packetId|qos|state|retain|base64(payload)|topic
 		int i1 = s.indexOf('|');
 		int i2 = s.indexOf('|', i1 + 1);
 		int i3 = s.indexOf('|', i2 + 1);
 		int i4 = s.indexOf('|', i3 + 1);
 		int i5 = s.indexOf('|', i4 + 1);
 		if (i5 < 0) {
+			// 字段数不足视为非法编码，交由调用方丢弃该成员
 			throw new IllegalArgumentException("非法 inflight 编码: " + s);
 		}
 		int packetId = Integer.parseInt(s.substring(0, i1));
 		int qos = Integer.parseInt(s.substring(i1 + 1, i2));
 		int state = Integer.parseInt(s.substring(i2 + 1, i3));
 		boolean retain = Boolean.parseBoolean(s.substring(i3 + 1, i4));
+		// payload 为 base64，与编码端 encodeInflight 对称还原
 		byte[] payload = Base64.getDecoder().decode(s.substring(i4 + 1, i5));
 		String topic = s.substring(i5 + 1);
 		return new InflightMessage(packetId, topic, payload, qos, retain, state, 0L);
@@ -265,6 +278,7 @@ public class SessionStore {
 			log.warn("[SessionStore] 离线消息序列化失败 deviceKey={}", deviceKey, e);
 			return;
 		}
+		// Lua 原子完成 RPUSH + 超容量裁剪 + EXPIRE：单 RTT，超容量时从队首丢弃最旧，避免队列无限增长
 		redis.execute(PUSH_OFFLINE_SCRIPT, Collections.singletonList(key), json,
 				String.valueOf(properties.getOfflineQueueCapacity()),
 				String.valueOf(properties.getOfflineQueueTtlSeconds()));
@@ -274,6 +288,7 @@ public class SessionStore {
 	@SuppressWarnings("unchecked")
 	public List<OfflineMessage> popOffline(String deviceKey) {
 		String key = BrokerKeys.offline(deviceKey);
+		// 单脚本原子弹出全部并清 key：避免 LRANGE 与 DEL 之间新入队消息被误删
 		List<String> values = redis.execute(POP_OFFLINE_SCRIPT, Collections.singletonList(key));
 		if (values == null || values.isEmpty()) {
 			return List.of();
@@ -284,6 +299,7 @@ public class SessionStore {
 				result.add(objectMapper.readValue(v, OfflineMessage.class));
 			}
 			catch (Exception e) {
+				// 非法 JSON 消息丢弃，不阻断其余消息补发
 				log.warn("[SessionStore] 丢弃非法离线消息 key={}", deviceKey);
 			}
 		}
@@ -293,6 +309,7 @@ public class SessionStore {
 	/** 查看离线队列队首（不删除）。队列空返回 message=null 且 skipped=false；非法消息已删除返回 skipped=true */
 	public OfflinePeek peekOfflineFirst(String deviceKey) {
 		String key = BrokerKeys.offline(deviceKey);
+		// 仅窥视队首不删除：配合 removeOfflineFirst 实现「投递成功才删一条」的逐条确认
 		List<String> values = redis.opsForList().range(key, 0, 0);
 		if (values == null || values.isEmpty()) {
 			return new OfflinePeek(null, false);
@@ -301,6 +318,7 @@ public class SessionStore {
 			return new OfflinePeek(objectMapper.readValue(values.get(0), OfflineMessage.class), false);
 		}
 		catch (Exception e) {
+			// 队首非法：删除该条并标记 skipped，调用方继续处理下一条
 			log.warn("[SessionStore] 丢弃非法离线消息 key={}", deviceKey);
 			removeOfflineFirst(deviceKey);
 			return new OfflinePeek(null, true);
@@ -336,6 +354,7 @@ public class SessionStore {
 		setString(BrokerKeys.connLock(deviceKey), nodeId, properties.getConnLockTtlSeconds());
 	}
 
+	/** 读取连接锁当前归属节点（无锁返回 null） */
 	public String getConnLockOwner(String deviceKey) {
 		return redis.opsForValue().get(BrokerKeys.connLock(deviceKey));
 	}
@@ -378,6 +397,7 @@ public class SessionStore {
 	public int releaseAllConnLocksIfOwner(String nodeId) {
 		int released = 0;
 		try {
+			// SCAN 前缀匹配本节点全部连接锁（避免 KEYS 阻塞）；仅释放归属为本节点的锁，不误删其他节点
 			Set<String> keys = scanKeys(BrokerKeys.connLockPrefix() + "*");
 			for (String key : keys) {
 				Long r = redis.execute(RELEASE_LOCK_SCRIPT, Collections.singletonList(key), nodeId);
@@ -397,13 +417,18 @@ public class SessionStore {
 		Set<String> keys = new HashSet<>();
 		StringRedisSerializer serializer = StringRedisSerializer.UTF_8;
 		redis.execute((RedisCallback<Set<String>>) connection -> {
-			org.springframework.data.redis.core.Cursor<byte[]> cursor = connection
-				.scan(org.springframework.data.redis.core.ScanOptions.scanOptions().match(pattern).count(500).build());
-			while (cursor.hasNext()) {
-				String sk = serializer.deserialize(cursor.next());
-				if (sk != null) {
-					keys.add(sk);
+			// 使用 keyCommands() 获取 KeyCommands 子接口，替代已废弃的 connection.scan()
+			try (Cursor<byte[]> cursor = connection.keyCommands()
+				.scan(ScanOptions.scanOptions().match(pattern).count(500).build())) {
+				while (cursor.hasNext()) {
+					String sk = serializer.deserialize(cursor.next());
+					if (sk != null) {
+						keys.add(sk);
+					}
 				}
+			}
+			catch (Exception e) {
+				log.warn("[SessionStore] SCAN 执行异常 pattern={}", pattern, e);
 			}
 			return keys;
 		});
@@ -447,10 +472,12 @@ public class SessionStore {
 		return Boolean.TRUE.equals(ok);
 	}
 
+	/** 暴露内部 ObjectMapper（供序列化工具类复用，如 LifecycleNotifier） */
 	public ObjectMapper objectMapper() {
 		return objectMapper;
 	}
 
+	/** 暴露内部 Redis 模板（供需要精细控制的调用方直接使用） */
 	public StringRedisTemplate redis() {
 		return redis;
 	}
@@ -460,6 +487,7 @@ public class SessionStore {
 		redis.opsForValue().set(key, value, ttlSeconds, TimeUnit.SECONDS);
 	}
 
+	/** 通用删除（按 key 直接删，供非标准前缀的清理场景） */
 	public void delete(String key) {
 		redis.delete(key);
 	}

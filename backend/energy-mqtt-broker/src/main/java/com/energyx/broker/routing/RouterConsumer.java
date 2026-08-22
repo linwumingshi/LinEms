@@ -71,6 +71,9 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 		this.objectMapper = objectMapper;
 	}
 
+	/**
+	 * 启动三通道消费引擎（down/broadcast/legacy）。已启动、路由停用或 Kafka 未配置则跳过。
+	 */
 	public synchronized void start() {
 		if (started || !properties.isEnableRouter() || !isKafkaEnabled()) {
 			log.warn("[Router] 路由消费者未启动（enableRouter=false 或 Kafka 停用）");
@@ -99,10 +102,18 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 				properties.isRouterLegacyBroadcast() ? KafkaTopicConstant.MQTT_ROUTER : "off", threads);
 	}
 
+	/**
+	 * 判断是否配置了 Kafka bootstrap（未配置则所有路由通道停用）。
+	 * @return 已配置且非空返回 true，否则 false
+	 */
 	private boolean isKafkaEnabled() {
 		return properties.getKafkaBootstrapServers() != null && !properties.getKafkaBootstrapServers().isBlank();
 	}
 
+	/**
+	 * 构造 Kafka 消费者公共配置：手动提交 + earliest 偏移 + 合理分区拉取/会话参数。
+	 * @return 消费者 Properties
+	 */
 	private Properties baseProps() {
 		Properties props = new Properties();
 		props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, properties.getKafkaBootstrapServers());
@@ -118,7 +129,10 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 		return props;
 	}
 
-	/** 二进制信封统一处理入口（down/broadcast/legacy 三通道共用） */
+	/**
+	 * 二进制信封统一处理入口（down/broadcast/legacy 三通道共用）。反序列化失败直接丢弃。
+	 * @param record Kafka 消费记录（value 为二进制信封）
+	 */
 	@Override
 	public void handle(ConsumerRecord<String, byte[]> record) {
 		final RouterEnvelope envelope;
@@ -146,6 +160,11 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 处理 PUBLISH 信封：解码载荷并本地投递（directed=true 时本节点即目标，无订阅则静默丢弃）。
+	 * @param envelope 路由信封
+	 * @param directed 是否为定向通道（down）消息
+	 */
 	private void handlePublish(RouterEnvelope envelope, boolean directed) {
 		byte[] payload = envelope.decodePayload();
 		// directed=true：消息已按 owner 定位到本节点，直接投递（本节点无订阅则静默丢弃，属正常竞态回落）
@@ -154,6 +173,10 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 		stats.recordIncoming();
 	}
 
+	/**
+	 * 处理 KICK 信封：关闭目标设备在本节点的连接（远端踢线）。
+	 * @param envelope 路由信封（携带 deviceKey）
+	 */
 	private void handleKick(RouterEnvelope envelope) {
 		Session session = sessionRegistry.get(envelope.getDeviceKey());
 		if (session != null) {
@@ -162,11 +185,20 @@ public class RouterConsumer implements BytesKafkaRecordHandler {
 		}
 	}
 
+	/**
+	 * 毒丸报文兜底进 DLQ（消费失败回调），避免重复阻塞分区。
+	 * @param topic 所属 Kafka topic
+	 * @param key 路由键
+	 * @param value 原始信封字节
+	 */
 	private void dlq(String topic, String key, byte[] value) {
 		// 消费失败的毒丸报文进 DLQ 兜底，避免重复阻塞分区
 		deliverer.sendToDlq(key, value);
 	}
 
+	/**
+	 * 停止并关闭所有消费引擎（down/broadcast/legacy）。
+	 */
 	public synchronized void stop() {
 		started = false;
 		if (downEngine != null) {

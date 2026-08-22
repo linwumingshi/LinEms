@@ -27,10 +27,12 @@ public class SessionRegistry {
 
 	private final AtomicInteger connectionCount = new AtomicInteger(0);
 
+	/** 按 deviceKey 取当前节点内 Session；未注册返回 null */
 	public Session get(String deviceKey) {
 		return sessions.get(deviceKey);
 	}
 
+	/** 注册 session 并累加连接计数（准入控制口径，O(1)） */
 	public void register(Session session) {
 		sessions.put(session.getDeviceKey(), session);
 		connectionCount.incrementAndGet();
@@ -52,6 +54,7 @@ public class SessionRegistry {
 	 */
 	public Session unregisterIfChannelMatches(String deviceKey, Channel channel) {
 		Session current = sessions.get(deviceKey);
+		// 原子校验：仅当注册表 session 仍持有同一 channel 才移除，防止旧连接晚到的 channelInactive 误删新会话
 		if (current != null && current.getChannel() == channel && sessions.remove(deviceKey, current)) {
 			connectionCount.decrementAndGet();
 			return current;
@@ -59,12 +62,14 @@ public class SessionRegistry {
 		return null;
 	}
 
+	/** 当前节点连接数（准入口径，用于上限判定） */
 	public int connectionCount() {
 		return connectionCount.get();
 	}
 
 	/** 关闭并注销本节点全部连接（优雅停机时调用，触发 offline 事件与持久化） */
 	public void closeAll(ChannelCloser closer) {
+		// 快照当前全部会话后逐个关闭；closer 由调用方实现真正 channel 关闭 + offline 事件/持久化
 		List<Session> all = new ArrayList<>(sessions.values());
 		log.info("[Broker] 优雅停机：关闭 {} 个在线会话", all.size());
 		for (Session session : all) {
@@ -72,11 +77,13 @@ public class SessionRegistry {
 				closer.close(session);
 			}
 			catch (Exception e) {
+				// 单会话关闭异常不影响其余会话的优雅下线
 				log.warn("[Broker] 关闭会话异常 deviceKey={}", session.getDeviceKey(), e);
 			}
 		}
 	}
 
+	/** 会话关闭回调：优雅停机时由调用方实现真正的 channel 关闭 + 离线事件/持久化 */
 	@FunctionalInterface
 	public interface ChannelCloser {
 

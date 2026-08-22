@@ -34,6 +34,12 @@ public class KafkaEventProducer implements AutoCloseable {
 
 	private final boolean enabled;
 
+	/**
+	 * 构造 Kafka 生产者（bootstrap 未配置时 {@code enabled=false}，进入单机调试模式：发送被丢弃、关闭空操作）。
+	 * <p>
+	 * 关键配置：acks=all + 幂等生产（防跨节点乱序/重复）；max.block.ms=200ms 防缓冲打满时阻塞调用方（可能是 Netty IO 线程）。
+	 * </p>
+	 */
 	public KafkaEventProducer(BrokerProperties properties) {
 		this.enabled = properties.getKafkaBootstrapServers() != null
 				&& !properties.getKafkaBootstrapServers().isBlank();
@@ -62,6 +68,7 @@ public class KafkaEventProducer implements AutoCloseable {
 		log.info("[Broker] Kafka 生产者初始化完成 bootstrap={}", properties.getKafkaBootstrapServers());
 	}
 
+	/** 是否启用 Kafka 生产（bootstrap 未配置时为 false，单机调试模式丢弃事件） */
 	public boolean isEnabled() {
 		return enabled;
 	}
@@ -118,6 +125,7 @@ public class KafkaEventProducer implements AutoCloseable {
 		}
 	}
 
+	/** 关闭生产者：flush 缓冲后关闭（优雅停机由 {@code @PreDestroy} 链路触发） */
 	@Override
 	public void close() {
 		if (producer != null) {

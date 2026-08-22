@@ -54,6 +54,9 @@ public class KafkaRetentionInitializer {
 		this.props = props;
 	}
 
+	/**
+	 * 启动后异步初始化保留策略：后台 daemon 线程执行，失败仅告警，不阻塞服务启动。
+	 */
 	@PostConstruct
 	public void initializeAsync() {
 		Thread t = new Thread(() -> {
@@ -68,6 +71,10 @@ public class KafkaRetentionInitializer {
 		t.start();
 	}
 
+	/**
+	 * 遍历保留矩阵，逐一描述并增量设置 topic 的 retention.ms（已达标则跳过，幂等收敛）。
+	 * @throws Exception AdminClient 调用或描述配置异常
+	 */
 	private void applyRetention() throws Exception {
 		Properties adminProps = new Properties();
 		adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, props.getKafkaBootstrapServers());
@@ -91,6 +98,11 @@ public class KafkaRetentionInitializer {
 		}
 	}
 
+	/**
+	 * 从 topic 配置中提取 retention.ms 当前值；缺失或非法返回 -1。
+	 * @param config topic 描述配置
+	 * @return 当前保留毫秒数，解析失败返回 -1
+	 */
 	private long retentionMs(Config config) {
 		for (ConfigEntry entry : config.entries()) {
 			if ("retention.ms".equals(entry.name()) && entry.value() != null) {

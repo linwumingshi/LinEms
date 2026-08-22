@@ -43,10 +43,13 @@ public class NettyServerConfig {
 
 	private static final Logger log = LoggerFactory.getLogger(NettyServerConfig.class);
 
+	/** pipeline 中 SslHandler 注册名（TLS 开启时置于 decoder 之前） */
 	public static final String SSL_HANDLER_NAME = "ssl";
 
+	/** pipeline 中 IdleStateHandler 注册名（连接空闲检测） */
 	public static final String IDLE_HANDLER_NAME = "mqttIdleState";
 
+	/** pipeline 中业务处理器 MqttChannelInboundHandler 注册名 */
 	public static final String MQTT_HANDLER_NAME = "mqttHandler";
 
 	private final BrokerProperties brokerProperties;

@@ -45,11 +45,16 @@ public class LifecycleProcessor {
 		this.idGenerator = idGenerator;
 	}
 
+	/**
+	 * 生命周期消息分发：按 eventType 路由到上线/下线/封禁/解封处理（deviceId 缺失则忽略）。
+	 * @param msg 生命周期消息
+	 */
 	public void process(LifecycleMessage msg) {
 		if (msg.getDeviceId() == null) {
 			log.warn("[Access] lifecycle 缺 deviceId，忽略");
 			return;
 		}
+		// 按事件类型路由：上线/下线/封禁/解封分别落地处理
 		if ("ONLINE".equals(msg.getEventType())) {
 			handleOnline(msg);
 		}
@@ -67,14 +72,23 @@ public class LifecycleProcessor {
 		}
 	}
 
+	/**
+	 * 上线处理：刷新设备在线态（status=3+broker_node）→ 写上线记录 → 触发离线指令补发。
+	 * @param msg 上线生命周期消息
+	 */
 	private void handleOnline(LifecycleMessage msg) {
 		Date now = new Date();
 		deviceStatusMapper.updateOnline(msg.getDeviceId(), msg.getBrokerNode(), msg.getIp(), now);
+		// 写上线记录（审计），并触发离线期间堆积指令的补发
 		insertRecord(msg, 1, now);
 		offlineRedeliverer.redeliver(msg.getDeviceId());
 		log.info("[Access] 设备上线 deviceId={} node={}", msg.getDeviceId(), msg.getBrokerNode());
 	}
 
+	/**
+	 * 离线处理：刷新设备离线态（status=2+累计在线秒数）→ 写离线记录。
+	 * @param msg 离线生命周期消息
+	 */
 	private void handleOffline(LifecycleMessage msg) {
 		Date now = new Date();
 		deviceStatusMapper.updateOffline(msg.getDeviceId(), now);
@@ -82,18 +96,30 @@ public class LifecycleProcessor {
 		log.info("[Access] 设备离线 deviceId={} reason={}", msg.getDeviceId(), msg.getReason());
 	}
 
-	/** 封禁回写（status=5）：Redis 封禁是权威，DB 的 5 是审计视图，ONLINE 事件不会再覆盖回 3 */
+	/**
+	 * 封禁回写（status=5）：Redis 封禁是权威，DB 的 5 是审计视图，ONLINE 事件不会再覆盖回 3。
+	 * @param msg 封禁生命周期消息
+	 */
 	private void handleBanned(LifecycleMessage msg) {
 		deviceStatusMapper.updateBanned(msg.getDeviceId());
 		log.info("[Access] 设备封禁 deviceId={} reason={}", msg.getDeviceId(), msg.getReason());
 	}
 
-	/** 解封回写（status=5 → 2） */
+	/**
+	 * 解封回写（status=5 → 2）：认证成功补发的 UNBANNED 事件回写设备表。
+	 * @param msg 解封生命周期消息
+	 */
 	private void handleUnbanned(LifecycleMessage msg) {
 		deviceStatusMapper.updateUnbanned(msg.getDeviceId());
 		log.info("[Access] 设备解封 deviceId={}", msg.getDeviceId());
 	}
 
+	/**
+	 * 写入上下线记录（按月分区审计），eventType=1 上线 / 2 离线。
+	 * @param msg 生命周期消息
+	 * @param eventType 事件类型（1=上线，2=离线）
+	 * @param now 事件发生时间
+	 */
 	private void insertRecord(LifecycleMessage msg, int eventType, Date now) {
 		onlineRecordMapper.insert(idGenerator.nextId(), msg.getDeviceId(),
 				msg.getTenantId() == null ? 0L : msg.getTenantId(), eventType, msg.getReason(), msg.getIp(),

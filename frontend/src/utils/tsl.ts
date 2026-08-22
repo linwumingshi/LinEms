@@ -81,14 +81,17 @@ export function parseSchema(schemaJson: string): ThingModelSchema {
 /** schema 序列化为 JSON 字符串（保证 3 字段齐全，无多余字段） */
 export function serializeSchema(schema: ThingModelSchema): string {
   const clean: ThingModelSchema = {
-    properties: (schema.properties ?? []).map((p: TsProperty) => ({
-      identifier: p.identifier, name: p.name, dataType: p.dataType,
-      ...(p.unit ? { unit: p.unit } : {}),
-      ...(p.accessMode ? { accessMode: p.accessMode } : {}),
-      ...(p.specs && Object.keys(p.specs).length > 0 ? { specs: p.specs } : {}),
-      ...(p.required ? { required: p.required } : {}),
-      ...(p.desc ? { desc: p.desc } : {}),
-    })),
+    properties: (schema.properties ?? []).map((p: TsProperty) => {
+      const specs = normalizePropertySpecs(p)
+      return {
+        identifier: p.identifier, name: p.name, dataType: p.dataType,
+        ...(p.unit ? { unit: p.unit } : {}),
+        ...(p.accessMode ? { accessMode: p.accessMode } : {}),
+        ...(specs && Object.keys(specs).length > 0 ? { specs } : {}),
+        ...(p.required ? { required: p.required } : {}),
+        ...(p.desc ? { desc: p.desc } : {}),
+      }
+    }),
     services: (schema.services ?? []).map((s: TsService) => ({
       identifier: s.identifier, name: s.name,
       ...(s.callType ? { callType: s.callType } : {}),
@@ -104,6 +107,25 @@ export function serializeSchema(schema: ThingModelSchema): string {
     })),
   }
   return JSON.stringify(clean, null, 2)
+}
+
+/**
+ * 属性 specs 归一化（M1 物模型契约统一）：兼容历史数据的<b>顶层 enumValues</b> 写法（种子数据/手写 JSON），
+ * 序列化时归入 specs.enumValues（UI 约定形式），保证 enumValues 不会在保存时丢失。
+ *
+ * <p>冲突策略：specs.enumValues 已存在（非空）时以 specs 为准（UI 当前编辑值）；仅当 specs 缺失或为空数组时
+ * 才用顶层值补入。返回新的 specs 对象，不修改入参。</p>
+ */
+function normalizePropertySpecs(p: TsProperty): Record<string, unknown> {
+  const legacy = (p as TsProperty & { enumValues?: unknown }).enumValues
+  const specs: Record<string, unknown> = p.specs ? { ...p.specs } : {}
+  if (Array.isArray(legacy) && legacy.length > 0) {
+    const current = specs.enumValues
+    if (current === undefined || (Array.isArray(current) && current.length === 0)) {
+      specs.enumValues = legacy
+    }
+  }
+  return specs
 }
 
 /** 校验（identifier 唯一性 + 必填），返回首个问题或空字符串 */

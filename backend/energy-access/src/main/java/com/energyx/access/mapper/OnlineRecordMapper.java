@@ -12,6 +12,18 @@ import java.util.Date;
 @Mapper
 public interface OnlineRecordMapper {
 
+	/**
+	 * 写入一条设备上下线记录到按月分区表 iot_device_online_record。
+	 * @param recordId 记录 ID
+	 * @param deviceId 设备 ID
+	 * @param tenantId 租户 ID
+	 * @param eventType 事件类型（1上线 / 2离线 等）
+	 * @param reason 事件原因
+	 * @param ip 设备 IP
+	 * @param brokerNode 接入 Broker 节点
+	 * @param reportTime 上报时间
+	 * @return 影响行数（1 表示成功插入）
+	 */
 	@Insert("""
 			INSERT INTO iot_device_online_record
 			  (record_id, device_id, tenant_id, event_type, reason, ip, broker_node, report_time)

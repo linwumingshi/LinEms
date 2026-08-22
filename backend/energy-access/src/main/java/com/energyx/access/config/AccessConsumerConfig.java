@@ -30,6 +30,13 @@ import java.util.Properties;
 @Configuration
 public class AccessConsumerConfig {
 
+	/**
+	 * 装配上行消费引擎（组 energy-access-uplink）：消费 mqtt.uplink 二进制路由信封，单分区单线程天然保序。
+	 * @param handler 上行报文处理器（UplinkProcessor）
+	 * @param producer 下行/回执生产者（消费失败兜底写入 DLQ）
+	 * @param props 接入配置（线程数、poll 间隔、bootstrap、DLQ topic）
+	 * @return 已启动的上行消费引擎
+	 */
 	@Bean(destroyMethod = "close")
 	public BytesKafkaConsumerEngine uplinkEngine(UplinkProcessor handler, AccessKafkaProducer producer,
 			AccessProperties props) {
@@ -45,6 +52,13 @@ public class AccessConsumerConfig {
 		return engine;
 	}
 
+	/**
+	 * 装配生命周期消费引擎（组 energy-access-lifecycle）：消费 iot-device-lifecycle，处理在线态/记录/离线补发。
+	 * @param handler 生命周期处理器（LifecycleConsumer）
+	 * @param producer 下行生产者（消费失败兜底写入 DLQ）
+	 * @param props 接入配置（线程数减半、poll 间隔、bootstrap、DLQ topic）
+	 * @return 已启动的生命周期消费引擎
+	 */
 	@Bean(destroyMethod = "close")
 	public KafkaConsumerEngine lifecycleEngine(LifecycleConsumer handler, AccessKafkaProducer producer,
 			AccessProperties props) {
@@ -53,6 +67,13 @@ public class AccessConsumerConfig {
 				producer::send, props.getDlqTopic()));
 	}
 
+	/**
+	 * 装配下行指令消费引擎（组 energy-access-command-down）：消费 iot-command-down，桥接平台下行指令到 Broker。
+	 * @param handler 下行指令处理器（CommandDownConsumer）
+	 * @param producer 下行生产者（消费失败兜底写入 DLQ）
+	 * @param props 接入配置（线程数减半、poll 间隔、bootstrap、DLQ topic）
+	 * @return 已启动的下行指令消费引擎
+	 */
 	@Bean(destroyMethod = "close")
 	public KafkaConsumerEngine commandDownEngine(CommandDownConsumer handler, AccessKafkaProducer producer,
 			AccessProperties props) {
@@ -61,11 +82,17 @@ public class AccessConsumerConfig {
 				props.getDlqTopic()));
 	}
 
+	/** 启动消费引擎并原样返回，便于 @Bean 方法链式收尾 */
 	private KafkaConsumerEngine start(KafkaConsumerEngine engine) {
 		engine.start();
 		return engine;
 	}
 
+	/**
+	 * 构造消费端公共配置：bootstrap、key/value 反序列化（String）、earliest 偏移重置、poll 上限与会话/心跳超时。
+	 * @param props 接入配置（提供 bootstrap servers）
+	 * @return 预置的 Kafka consumer Properties
+	 */
 	private Properties baseProps(AccessProperties props) {
 		Properties p = new Properties();
 		p.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, props.getKafkaBootstrapServers());

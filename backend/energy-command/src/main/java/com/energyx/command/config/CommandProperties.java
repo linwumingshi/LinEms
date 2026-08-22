@@ -43,6 +43,12 @@ public class CommandProperties {
 	/** 指令默认最大重试 */
 	private int defaultMaxRetry = 3;
 
+	/**
+	 * 物模型下发校验模式（M2.1）：OFF 不校验（保持历史行为）/ WARN 校验并告警不阻止（缺省）/ ENFORCE 校验失败拒绝下发。
+	 * 配置键：energyx.command.model-check.mode。
+	 */
+	private String modelCheckMode = "WARN";
+
 	private String dlqTopic = "iot-dlq";
 
 }

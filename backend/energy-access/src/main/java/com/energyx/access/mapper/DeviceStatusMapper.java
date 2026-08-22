@@ -12,6 +12,15 @@ import java.util.Date;
 @Mapper
 public interface DeviceStatusMapper {
 
+	/**
+	 * 标记设备上线：status→3，写入 broker_node/ip/last_online_time。 仅 2 已激活(离线)/3 在线 可更新，避免乱序
+	 * ONLINE 覆盖管理态（4禁用/5封禁）。
+	 * @param deviceId 设备 ID
+	 * @param brokerNode 接入 Broker 节点（下行路由定位）
+	 * @param ip 设备上线 IP
+	 * @param time 上线时间戳
+	 * @return 影响行数（0 表示状态态不匹配，未更新）
+	 */
 	@Update("""
 			UPDATE iot_device
 			SET status = 3, broker_node = #{brokerNode}, ip = #{ip}, last_online_time = #{time}

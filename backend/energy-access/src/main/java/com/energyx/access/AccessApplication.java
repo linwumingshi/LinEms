@@ -23,6 +23,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @EnableFeignClients(basePackages = "com.energyx.access.client")
 public class AccessApplication {
 
+	/** Spring Boot 启动入口：引导接入适配服务（物模型校验、标准化投递、下行桥接、生命周期落库） */
 	public static void main(String[] args) {
 		SpringApplication.run(AccessApplication.class, args);
 	}

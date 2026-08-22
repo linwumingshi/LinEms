@@ -90,6 +90,11 @@ public class MessageDeliverer {
 
 	/**
 	 * 设备上行报文入口（ACL 已在 handler 校验）。等价于无回调版本： 路由结果不通知调用方（用于遗嘱、跨节点转发等无需 ACK 的场景）。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param sourceNode 路由源节点；null 表示本节点发起
 	 */
 	public void deliver(String topic, byte[] payload, int qos, boolean retain, String sourceNode) {
 		deliver(topic, payload, qos, retain, sourceNode, null, null);
@@ -110,6 +115,10 @@ public class MessageDeliverer {
 	 * </ul>
 	 * 定向路由下 IO 线程零 Redis：owner 解析全部在 brokerExecutor 完成（仅下行/遗嘱路径）。
 	 * </p>
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
 	 * @param sourceNode 路由源节点；null 表示本节点发起（需要发路由），否则为远端已路由消息
 	 * @param onRouted 路由持久化确认回调（Kafka 回调成功，或路由停用/远端消息时立即触发）； 可能在任何线程触发，需要写 channel
 	 * 的回调必须自行回投 eventLoop
@@ -140,6 +149,12 @@ public class MessageDeliverer {
 	/**
 	 * 阶段 2 定向路由：上行走 mqtt.uplink 快路径（IO 线程直接发，无 Redis）； 下行/遗嘱走 owner
 	 * 解析（brokerExecutor，Redis 连接锁定位）。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param onRouted 路由持久化确认回调
+	 * @param onRouteFailed 路由持久化失败回调（为 null 时仅记日志）
 	 */
 	private void routeDirected(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
@@ -167,6 +182,15 @@ public class MessageDeliverer {
 		executor.execute(() -> routeDirectedSlow(topic, payload, qos, retain, onRouted, onRouteFailed));
 	}
 
+	/**
+	 * 定向路由的 Redis 慢路径：解析下行 owner 节点并定向投递，或离线/竞态回落广播。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param onRouted 路由持久化确认回调
+	 * @param onRouteFailed 路由持久化失败回调（为 null 时仅记日志）
+	 */
 	private void routeDirectedSlow(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
 		String deviceKey = MqttTopicUtil.deviceKeyOfDownTopic(topic);
@@ -228,6 +252,15 @@ public class MessageDeliverer {
 		sendToBroadcast(topic, payload, qos, retain, onRouted, onRouteFailed);
 	}
 
+	/**
+	 * 广播兜底通道：发往 mqtt.broadcast（每节点唯一消费组全量 fan-out），由 sourceNode 去重避免重复投递。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param onRouted 路由持久化确认回调
+	 * @param onRouteFailed 路由持久化失败回调（为 null 时仅记日志）
+	 */
 	private void sendToBroadcast(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
 		byte[] envelope = RouterEnvelopeCodec
@@ -246,7 +279,15 @@ public class MessageDeliverer {
 		});
 	}
 
-	/** 兼容期旧通道：mqtt.router 全量 fan-out（JSON 信封，仅多版本混布时启用） */
+	/**
+	 * 兼容期旧通道：mqtt.router 全量 fan-out（JSON 信封，仅多版本混布时启用）。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param onRouted 路由持久化确认回调
+	 * @param onRouteFailed 路由持久化失败回调（为 null 时仅记日志）
+	 */
 	private void routeLegacy(String topic, byte[] payload, int qos, boolean retain, Runnable onRouted,
 			Runnable onRouteFailed) {
 		// OTA 上行与 up/* 同源：即便回落旧通道，也必须进 mqtt.uplink 供 access 透传 ota.uplink
@@ -283,7 +324,11 @@ public class MessageDeliverer {
 		});
 	}
 
-	/** 消费失败毒丸报文兜底进 DLQ（RouterConsumer 调用；不重复投递） */
+	/**
+	 * 消费失败毒丸报文兜底进 DLQ（RouterConsumer 调用；不重复投递）。
+	 * @param key 路由键（如 topic 或 deviceKey）
+	 * @param value 原始信封字节
+	 */
 	public void sendToDlq(String key, byte[] value) {
 		try {
 			kafkaProducer.sendBytes(properties.getDlqTopicName(), key, value, null, null);
@@ -293,7 +338,13 @@ public class MessageDeliverer {
 		}
 	}
 
-	/** 本地投递：在线会话即时下发，持久离线会话进离线队列（Redis 写异步，不阻塞调用线程） */
+	/**
+	 * 本地投递：在线会话即时下发，持久离线会话进离线队列（Redis 写异步，不阻塞调用线程）。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 发布 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 */
 	private void deliverLocal(String topic, byte[] payload, int qos, boolean retain) {
 		List<LocalSubscriberIndex.SubscriberMatch> matches = subscriberIndex.match(topic);
 		for (LocalSubscriberIndex.SubscriberMatch m : matches) {
@@ -311,7 +362,16 @@ public class MessageDeliverer {
 		}
 	}
 
-	/** 向单会话投递（QoS 状态机 + inflight 上限 + Redis in-flight 异步持久化 + 背压挂起） */
+	/**
+	 * 向单会话投递（QoS 状态机 + inflight 上限 + Redis in-flight 异步持久化 + 背压挂起）。 QoS0 直接写出；QoS1/2 分配
+	 * packetId、登记 outbound inflight 并异步持久化，供 ACK 与重连续传； 超 Maximum Packet Size / inflight
+	 * 上限时持久会话转离线队列避免静默丢失。
+	 * @param session 目标会话（在线才真正下发）
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param effQos 协商后的有效 QoS（发布 QoS 与订阅 QoS 取小）
+	 * @param retain 是否保留消息
+	 */
 	public void deliverToSession(Session session, String topic, byte[] payload, int effQos, boolean retain) {
 		if (!session.isOnline()) {
 			return;
@@ -376,6 +436,9 @@ public class MessageDeliverer {
 	/**
 	 * 统一写出入口：收敛到目标 channel 的 EventLoop 后走背压逻辑，保证同连接写序。 Netty 跨线程 writeAndFlush
 	 * 线程安全但顺序不保证，QoS 状态机依赖 ACK 顺序，必须收敛到单线程。
+	 * @param session 目标会话（提供 channel 与 EventLoop）
+	 * @param message 待写出的 MQTT 报文
+	 * @param qos 报文 QoS（背压超限时判定丢弃策略）
 	 */
 	private void writeToChannel(Session session, MqttMessage message, int qos) {
 		Channel channel = session.getChannel();
@@ -387,7 +450,12 @@ public class MessageDeliverer {
 		}
 	}
 
-	/** 背压核心：可写且无积压直接写；否则挂入 pending 队列；超限时 QoS0 丢弃、QoS1/2 保留 inflight */
+	/**
+	 * 背压核心：可写且无积压直接写；否则挂入 pending 队列；超限时 QoS0 丢弃、QoS1/2 保留 inflight。
+	 * @param session 目标会话（提供 channel 与 pending 队列）
+	 * @param message 待写出的 MQTT 报文
+	 * @param qos 报文 QoS（背压超限时判定保留 inflight 还是丢弃）
+	 */
 	private void writeOrPark(Session session, MqttMessage message, int qos) {
 		Channel channel = session.getChannel();
 		if (!session.isOnline()) {
@@ -409,7 +477,10 @@ public class MessageDeliverer {
 		stats.recordBackpressureParked();
 	}
 
-	/** channel 恢复可写时冲刷挂起队列（由 handler 的 channelWritabilityChanged 在 eventLoop 上调用） */
+	/**
+	 * channel 恢复可写时冲刷挂起队列（由 handler 的 channelWritabilityChanged 在 eventLoop 上调用）。
+	 * @param session 目标会话（提供 channel 与 pending 队列）
+	 */
 	public void flushPending(Session session) {
 		Channel channel = session.getChannel();
 		if (!session.isOnline()) {
@@ -423,6 +494,15 @@ public class MessageDeliverer {
 		channel.flush();
 	}
 
+	/**
+	 * 构造 PUBLISH 报文（按 QoS 映射 MqttQoS，空 properties 对 v3.1.1/v5 均合法）。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @param qos 报文 QoS（0/1/2）
+	 * @param retain 是否保留消息
+	 * @param packetId QoS1/2 的报文标识（QoS0 传 0）
+	 * @return 构造完成的 MqttPublishMessage
+	 */
 	private MqttPublishMessage buildPublish(String topic, byte[] payload, int qos, boolean retain, int packetId) {
 		MqttQoS mqttQos = switch (qos) {
 			case 1 -> MqttQoS.AT_LEAST_ONCE;
@@ -436,7 +516,11 @@ public class MessageDeliverer {
 		return new MqttPublishMessage(header, variableHeader, Unpooled.wrappedBuffer(payload));
 	}
 
-	/** 新订阅：投递匹配的保留消息 */
+	/**
+	 * 新订阅：投递匹配的保留消息（按订阅 QoS 与保留消息 QoS 取小授予）。
+	 * @param session 新订阅的会话
+	 * @param topicFilter 订阅表达式（通配匹配保留消息）
+	 */
 	public void deliverRetainedOnSubscribe(Session session, String topicFilter) {
 		List<RetainedMessageStore.RetainedEntry> entries = retainedStore.match(topicFilter);
 		for (RetainedMessageStore.RetainedEntry entry : entries) {
@@ -445,12 +529,24 @@ public class MessageDeliverer {
 		}
 	}
 
+	/**
+	 * 取会话对某 filter 的订阅 QoS（未订阅返回 0）。
+	 * @param session 目标会话
+	 * @param topicFilter 订阅表达式
+	 * @return 订阅授予的 QoS（未订阅为 0）
+	 */
 	private int sessionSubscriptionQos(Session session, String topicFilter) {
 		MqttSubscription sub = session.getSubscriptions().get(topicFilter);
 		return sub == null ? 0 : sub.getQos();
 	}
 
-	/** 平台→设备下行指令（Phase 6 command 模块调用；对指定设备单发，不走通配订阅） */
+	/**
+	 * 平台→设备下行指令（Phase 6 command 模块调用；对指定设备单发，不走通配订阅）。
+	 * @param session 目标设备会话
+	 * @param topic 下行指令主题
+	 * @param payload 指令载荷
+	 * @param qos 指令 QoS（0/1/2）
+	 */
 	public void sendCommandToDevice(Session session, String topic, byte[] payload, int qos) {
 		deliverToSession(session, topic, payload, qos, false);
 	}
@@ -460,6 +556,7 @@ public class MessageDeliverer {
 	 * PUBLISH 阶段的重发 dup PUBLISH 且状态必须保持 AWAITING_PUBREC（否则 PUBREC 到达后不发 PUBREL，消息卡死）； 已完成
 	 * PUBREC 的（AWAITING_PUBCOMP）按原 packetId 重发 PUBREL。 重发后按新 packetId
 	 * 重新持久化，避免恢复窗口内再次断连丢消息。
+	 * @param session 刚重连的会话（加载其离线 in-flight 并重发）
 	 */
 	public void resendInflight(Session session) {
 		List<InflightMessage> pending = sessionStore.loadInflight(session.getDeviceKey());
@@ -501,6 +598,7 @@ public class MessageDeliverer {
 	/**
 	 * 重连续传后的离线队列补发（持久会话上线时调用）。 用 TopicMatcher 按订阅 filter 通配匹配（取最高授予 QoS），修复按具体 topic 精确查表
 	 * 导致通配订阅下离线消息被静默丢弃的缺陷。
+	 * @param session 刚上线（持久会话）的会话（提供订阅与连接状态）
 	 */
 	public void deliverOfflineQueue(Session session) {
 		String deviceKey = session.getDeviceKey();
@@ -532,6 +630,11 @@ public class MessageDeliverer {
 		}
 	}
 
+	/**
+	 * 经 brokerExecutor 异步持久化 outbound in-flight（不阻塞 IO 线程）。
+	 * @param deviceKey 设备唯一键
+	 * @param msg 待持久化的 in-flight 报文
+	 */
 	private void asyncSaveInflight(String deviceKey, InflightMessage msg) {
 		executor.execute(() -> {
 			try {
@@ -546,11 +649,20 @@ public class MessageDeliverer {
 	/**
 	 * 估算 MQTT PUBLISH 报文大小（字节）：topic + payload + 固定开销（固定头 2 + topic 长度 2 + packetId 2 +
 	 * 剩余长度 1-4 + v5 properties 1-2）。估算偏保守（含 32B 裕量）， 确保不超客户端声明的 Maximum Packet Size。
+	 * @param topic 发布主题
+	 * @param payload 报文载荷
+	 * @return 估算报文字节数（保守上界）
 	 */
 	private int estimatePacketSize(String topic, byte[] payload) {
 		return (topic == null ? 0 : topic.length()) + (payload == null ? 0 : payload.length) + 32;
 	}
 
+	/**
+	 * 信封序列化为 JSON 字符串（兼容期旧通道使用）。
+	 * @param value 待序列化对象（RouterEnvelope）
+	 * @return JSON 字符串
+	 * @throws IllegalStateException 序列化失败时抛出
+	 */
 	private String toJson(Object value) {
 		try {
 			return sessionStore.objectMapper().writeValueAsString(value);

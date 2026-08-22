@@ -54,17 +54,25 @@ public class LocalSubscriberIndex {
 
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-	/** 订阅/更新（同 deviceKey 重复订阅以最高 QoS 为准，Session 以最新为准） */
+	/**
+	 * 订阅/更新（同 deviceKey 重复订阅以最高 QoS 为准，Session 以最新为准）。
+	 * @param session 订阅的会话（携带 deviceKey）
+	 * @param topicFilter 订阅表达式（支持 +/# 通配与 $share 共享订阅前缀）
+	 * @param qos 请求的服务质量等级（与历史订阅取最大值）
+	 */
 	public void add(Session session, String topicFilter, int qos) {
 		ShareInfo share = ShareInfo.parse(topicFilter);
 		String[] levels = share.filter().split("/", -1);
+		// 写锁保护结构变更（低频）；节点只增不删，避免删除竞态
 		lock.writeLock().lock();
 		try {
 			TrieNode node = root;
 			boolean anchored = false;
+			// 逐层级下行建树：非末层走精确子节点，遇末层 "#" 则锚定到当前层级节点
 			for (int i = 0; i < levels.length; i++) {
 				String level = levels[i];
 				if (HASH.equals(level) && i == levels.length - 1) {
+					// 末层 "#"：多层级通配绑定（匹配零个或多个后续层级），按 deviceKey 去重、QoS 取最高
 					node.hashBindings.merge(session.getDeviceKey(),
 							new SubscriberBinding(session, qos, share.shareFilter()),
 							(a, b) -> new SubscriberBinding(b.session(), Math.max(a.qos(), b.qos()), b.shareFilter()));
@@ -74,10 +82,12 @@ public class LocalSubscriberIndex {
 				node = node.children.computeIfAbsent(level, k -> new TrieNode());
 			}
 			if (!anchored) {
+				// 精确终止绑定（单层级精确匹配），同 deviceKey 以最高 QoS 覆盖（重连替换幽灵 Session）
 				node.exactBindings.merge(session.getDeviceKey(),
 						new SubscriberBinding(session, qos, share.shareFilter()),
 						(a, b) -> new SubscriberBinding(b.session(), Math.max(a.qos(), b.qos()), b.shareFilter()));
 			}
+			// 反向索引：deviceKey → 原始 filter，供 removeAll 精确反查（O(单设备订阅数) 而非 O(N)）
 			filtersByDevice.computeIfAbsent(session.getDeviceKey(), k -> ConcurrentHashMap.newKeySet())
 				.add(topicFilter);
 		}
@@ -86,13 +96,19 @@ public class LocalSubscriberIndex {
 		}
 	}
 
-	/** 取消单条订阅（按 deviceKey） */
+	/**
+	 * 取消单条订阅（按 deviceKey + topicFilter 精确移除 trie 绑定与反向索引）。
+	 * @param deviceKey 设备唯一键
+	 * @param topicFilter 订阅表达式（共享订阅自动剥前缀）
+	 */
 	public void remove(String deviceKey, String topicFilter) {
+		// 先剥 $share 前缀再按层级定位（共享订阅的 trie 仅存真实 filter）
 		String[] levels = TopicMatcher.stripSharePrefix(topicFilter).split("/", -1);
 		lock.writeLock().lock();
 		try {
 			TrieNode node = navigate(levels);
 			if (node != null) {
+				// 末层为 "#" 走 hashBindings，否则走 exactBindings，按 deviceKey 精确移除
 				if (HASH.equals(levels[levels.length - 1])) {
 					node.hashBindings.remove(deviceKey);
 				}
@@ -100,6 +116,7 @@ public class LocalSubscriberIndex {
 					node.exactBindings.remove(deviceKey);
 				}
 			}
+			// 同步清理反向索引；deviceKey 再无订阅时整体移除该键，回收内存
 			Set<String> filters = filtersByDevice.get(deviceKey);
 			if (filters != null) {
 				filters.remove(topicFilter);
@@ -113,10 +130,14 @@ public class LocalSubscriberIndex {
 		}
 	}
 
-	/** 会话断开：移除该设备全部绑定（O(单设备订阅数)，持久会话幽灵由调用方决定是否调用） */
+	/**
+	 * 会话断开：移除该设备全部绑定（O(单设备订阅数)，持久会话幽灵由调用方决定是否调用）。
+	 * @param deviceKey 设备唯一键
+	 */
 	public void removeAll(String deviceKey) {
 		lock.writeLock().lock();
 		try {
+			// 借反向索引 O(单设备订阅数) 反查全部 filter，避免整树扫描
 			Set<String> filters = filtersByDevice.remove(deviceKey);
 			if (filters == null) {
 				return;
@@ -125,6 +146,7 @@ public class LocalSubscriberIndex {
 				String[] levels = TopicMatcher.stripSharePrefix(filter).split("/", -1);
 				TrieNode node = navigate(levels);
 				if (node != null) {
+					// 末层 "#" 走 hashBindings，否则走 exactBindings
 					if (HASH.equals(levels[levels.length - 1])) {
 						node.hashBindings.remove(deviceKey);
 					}
@@ -142,6 +164,8 @@ public class LocalSubscriberIndex {
 	/**
 	 * 匹配 topic，返回去重后的绑定（同一 deviceKey 多条 filter 命中取最高 QoS）。 共享订阅组内仅保留一个订阅者（轮询负载均衡，QoS
 	 * 取组内最大）。O(topic 层级数)。
+	 * @param topic 待匹配的发布主题
+	 * @return 去重后的订阅者匹配列表（共享订阅已归并为组内单一成员）
 	 */
 	public List<SubscriberMatch> match(String topic) {
 		if (topic == null || topic.isEmpty()) {
@@ -149,6 +173,7 @@ public class LocalSubscriberIndex {
 		}
 		String[] levels = topic.split("/", -1);
 		Map<String, SubscriberMatch> hits = new HashMap<>();
+		// 读锁支撑高并发匹配；以 $ 开头的系统 topic 在根层禁用通配符（保留语义）
 		lock.readLock().lock();
 		try {
 			collect(root, levels, 0, !topic.startsWith("$"), hits);
@@ -156,11 +181,14 @@ public class LocalSubscriberIndex {
 		finally {
 			lock.readLock().unlock();
 		}
+		// 共享订阅归并：同组仅保留一个订阅者（轮询），普通订阅全部保留
 		return dedupeShared(hits);
 	}
 
 	/**
 	 * 共享订阅归并：同 shareFilter 的多个订阅者只保留一个（轮询），QoS 取组内最大； 普通订阅（shareFilter=null）全部保留。
+	 * @param hits 递归收集到的原始命中集合（deviceKey → 匹配）
+	 * @return 归并后的订阅者匹配列表
 	 */
 	private List<SubscriberMatch> dedupeShared(Map<String, SubscriberMatch> hits) {
 		// 普通订阅与共享订阅分组
@@ -190,7 +218,11 @@ public class LocalSubscriberIndex {
 
 	/**
 	 * 递归收集：当前节点的 # 锚定绑定恒命中（匹配零个或多个层级）； 层级未耗尽时向「精确子节点」与「+ 子节点」下行；耗尽时收集精确绑定。
-	 * @param allowWildcardRoot 为 false 时（topic 以 $ 开头）根层不应用 # 与 +（MQTT §4.7.2）
+	 * @param node 当前遍历的 trie 节点
+	 * @param levels 主题按 "/" 切分后的层级数组
+	 * @param depth 当前已匹配的层级深度（从 0 开始）
+	 * @param allowWildcardHere 当前位置是否允许通配符（topic 以 $ 开头时根层禁用）
+	 * @param hits 命中结果累积表（deviceKey → 匹配，内部取最高 QoS）
 	 */
 	private void collect(TrieNode node, String[] levels, int depth, boolean allowWildcardHere,
 			Map<String, SubscriberMatch> hits) {
@@ -213,6 +245,12 @@ public class LocalSubscriberIndex {
 		}
 	}
 
+	/**
+	 * 将单个绑定并入命中表：同 deviceKey 已存在时仅保留更高 QoS（多 filter 命中取最高）。
+	 * @param hits 命中结果累积表
+	 * @param deviceKey 设备唯一键
+	 * @param b 待并入的订阅绑定
+	 */
 	private void mergeHit(Map<String, SubscriberMatch> hits, String deviceKey, SubscriberBinding b) {
 		SubscriberMatch existing = hits.get(deviceKey);
 		if (existing == null || b.qos() > existing.qos()) {
@@ -220,9 +258,14 @@ public class LocalSubscriberIndex {
 		}
 	}
 
-	/** 按层级下行到目标节点（"#" 锚定在其前一层级节点上） */
+	/**
+	 * 按层级下行到目标节点（"#" 锚定在其前一层级节点上）。
+	 * @param levels 订阅表达式按 "/" 切分后的层级数组
+	 * @return 目标 trie 节点；中途节点缺失返回 null
+	 */
 	private TrieNode navigate(String[] levels) {
 		TrieNode node = root;
+		// 沿精确层级下行；末层为 "#" 表示锚定在前一层级节点上，直接返回该节点
 		for (int i = 0; i < levels.length; i++) {
 			if (HASH.equals(levels[i]) && i == levels.length - 1) {
 				return node;
@@ -259,7 +302,11 @@ public class LocalSubscriberIndex {
 	/** 共享订阅信息：group=null 表示普通订阅；filter 为剥离前缀后的真实表达式；shareFilter 为完整原始 filter */
 	private record ShareInfo(String group, String filter, String shareFilter) {
 
-		/** 解析 filter：$share/{group}/{真实filter} → 三元组；普通订阅 group/shareFilter 为 null */
+		/**
+		 * 解析 filter：$share/{group}/{真实filter} → 三元组；普通订阅 group/shareFilter 为 null。
+		 * @param topicFilter 原始订阅表达式
+		 * @return 共享订阅信息（普通订阅 group/shareFilter 为 null）
+		 */
 		static ShareInfo parse(String topicFilter) {
 			if (topicFilter != null && topicFilter.startsWith(SHARE_PREFIX)) {
 				int groupStart = SHARE_PREFIX.length();

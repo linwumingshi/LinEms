@@ -59,42 +59,52 @@ public class BrokerStats {
 		this.subscriberIndex = subscriberIndex;
 	}
 
+	/** 记录一条上行（设备 → Broker）消息 */
 	public void recordIncoming() {
 		messagesIn.incrementAndGet();
 	}
 
+	/** 记录一条下行（Broker → 设备）消息 */
 	public void recordOutgoing() {
 		messagesOut.incrementAndGet();
 	}
 
+	/** 记录一条跨节点路由消息 */
 	public void recordCrossNode() {
 		messagesRoutedCrossNode.incrementAndGet();
 	}
 
+	/** 记录一次认证失败 */
 	public void recordAuthFailure() {
 		authFailures.incrementAndGet();
 	}
 
+	/** 记录一次接入成功 */
 	public void recordAccepted() {
 		acceptedConnections.incrementAndGet();
 	}
 
+	/** 记录一次接入拒绝（准入控制/认证风暴） */
 	public void recordRejected() {
 		rejectedConnections.incrementAndGet();
 	}
 
+	/** 记录一次路由（Kafka）持久化失败（QoS1/2 上行因此关连接迫使重传） */
 	public void recordRouteFailure() {
 		routeFailures.incrementAndGet();
 	}
 
+	/** 记录一次下行背压挂起（channel 不可写，报文转入 pending 队列） */
 	public void recordBackpressureParked() {
 		backpressureParked.incrementAndGet();
 	}
 
+	/** 记录一次下行背压丢弃（pending 超限：QoS0 丢弃 / QoS1/2 依赖重连续传） */
 	public void recordBackpressureDrop() {
 		backpressureDropped.incrementAndGet();
 	}
 
+	/** 记录一次 outbound inflight 超限（max-inflight-per-session 生效） */
 	public void recordInflightOverflow() {
 		inflightOverflow.incrementAndGet();
 	}
@@ -119,6 +129,10 @@ public class BrokerStats {
 		packetSizeExceeded.incrementAndGet();
 	}
 
+	/**
+	 * 汇总全部运行计数器并合并节点连接/订阅数，输出运维快照。
+	 * @return 指标名 → 值 的 Map（含 connections、subscriptions 及各计数器字段）
+	 */
 	public Map<String, Object> snapshot() {
 		Map<String, Object> map = new LinkedHashMap<>();
 		map.put("connections", sessionRegistry.connectionCount());

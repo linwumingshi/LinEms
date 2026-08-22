@@ -3,6 +3,7 @@ package com.energyx.command.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.command.client.DeviceFeignClient;
+import com.energyx.command.client.ProductFeignClient;
 import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
@@ -19,6 +20,12 @@ import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
 import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
+import com.energyx.common.thingmodel.ThingModel;
+import com.energyx.common.thingmodel.ThingModelParser;
+import com.energyx.common.thingmodel.ThingModelRow;
+import com.energyx.common.thingmodel.ThingModelService;
+import com.energyx.common.thingmodel.ThingModelServiceValidator;
+import com.energyx.common.thingmodel.ThingModelServiceValidator.ServiceValidationResult;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -62,6 +69,8 @@ public class CommandService {
 
 	private final DeviceFeignClient deviceFeignClient;
 
+	private final ProductFeignClient productFeignClient;
+
 	private final StringRedisTemplate redis;
 
 	private final CommandKafkaProducer producer;
@@ -75,11 +84,13 @@ public class CommandService {
 	private final SnowflakeIdGenerator idGenerator;
 
 	public CommandService(CommandMapper commandMapper, CommandAckMapper ackMapper, DeviceFeignClient deviceFeignClient,
-			StringRedisTemplate redis, CommandKafkaProducer producer, ObjectMapper objectMapper,
-			IdempotencyUtils idempotencyUtils, CommandProperties props, SnowflakeIdGenerator idGenerator) {
+			ProductFeignClient productFeignClient, StringRedisTemplate redis, CommandKafkaProducer producer,
+			ObjectMapper objectMapper, IdempotencyUtils idempotencyUtils, CommandProperties props,
+			SnowflakeIdGenerator idGenerator) {
 		this.commandMapper = commandMapper;
 		this.ackMapper = ackMapper;
 		this.deviceFeignClient = deviceFeignClient;
+		this.productFeignClient = productFeignClient;
 		this.redis = redis;
 		this.producer = producer;
 		this.objectMapper = objectMapper;
@@ -107,6 +118,8 @@ public class CommandService {
 			if (dev == null) {
 				throw new IllegalArgumentException("设备不存在: " + req.getProductKey() + "/" + req.getDeviceName());
 			}
+			// M2.1：物模型 Service 下发校验（落库前执行；ENFORCE 拒绝时不产生指令记录、不发送 MQTT）
+			modelCheck(commandId, dev, req);
 			int maxRetry = req.getMaxRetry() == null ? props.getDefaultMaxRetry() : req.getMaxRetry();
 			int timeoutMs = req.getTimeoutMs() == null ? props.getDefaultTimeoutMs() : req.getTimeoutMs();
 			int commandType = req.getCommandType() == null ? 2 : req.getCommandType();
@@ -139,6 +152,76 @@ public class CommandService {
 			return null;
 		}
 		return toView(row);
+	}
+
+	// ------------------------------------------------------------------
+	// M2.1 物模型 Service 下发校验
+	// ------------------------------------------------------------------
+
+	/**
+	 * 物模型下发校验（command.model-check.mode）：
+	 * <ul>
+	 * <li>OFF：跳过，完全保持历史行为；</li>
+	 * <li>WARN：执行 Service 白名单 + 入参校验，失败仅告警（含
+	 * commandId/deviceId/productKey/command/reason）不阻止；</li>
+	 * <li>ENFORCE：校验失败抛 {@link IllegalArgumentException}（含
+	 * commandId/deviceId/productKey/command/param/reason）， 不落库、不发送 MQTT。</li>
+	 * </ul>
+	 * 物模型缺失/获取失败时不校验不阻止（保障指令链路可用，与 WARN 语义一致）。
+	 * @param commandId 指令 ID（幂等键）
+	 * @param dev 已解析的设备身份
+	 * @param req 指令请求
+	 */
+	private void modelCheck(String commandId, DeviceInfo dev, CreateCommandRequest req) {
+		String mode = props.getModelCheckMode();
+		if (mode == null || "OFF".equalsIgnoreCase(mode)) {
+			return;
+		}
+		boolean enforce = "ENFORCE".equalsIgnoreCase(mode);
+		ThingModel model = fetchThingModel(dev.productKey());
+		if (model == null) {
+			log.warn("[Command] 物模型缺失/获取失败，跳过校验 mode={} commandId={} deviceId={} productKey={} command={}", mode,
+					commandId, dev.deviceId(), dev.productKey(), req.getCommand());
+			return;
+		}
+		// 1. Service 白名单（按 identifier 匹配，不按中文 name）
+		ThingModelService service = model.getServices().get(req.getCommand());
+		if (service == null) {
+			handleCheckFailure(enforce, commandId, dev, req, "service 不存在: " + req.getCommand());
+			return;
+		}
+		// 2. Service input 入参校验（required/dataType/enum/specs/array/struct 递归）
+		ServiceValidationResult result = ThingModelServiceValidator.validateParams(service, req.getParams());
+		if (!result.valid()) {
+			handleCheckFailure(enforce, commandId, dev, req, String.join("; ", result.errors()));
+		}
+	}
+
+	/** 校验失败统一出口：ENFORCE 抛错（含定位信息）；WARN 记录告警日志后继续 */
+	private void handleCheckFailure(boolean enforce, String commandId, DeviceInfo dev, CreateCommandRequest req,
+			String reason) {
+		if (enforce) {
+			throw new IllegalArgumentException("物模型校验未通过 commandId=" + commandId + " deviceId=" + dev.deviceId()
+					+ " productKey=" + dev.productKey() + " command=" + req.getCommand() + " reason=" + reason);
+		}
+		log.warn("[Command] 物模型校验告警（不阻止下发） commandId={} deviceId={} productKey={} command={} reason={}", commandId,
+				dev.deviceId(), dev.productKey(), req.getCommand(), reason);
+	}
+
+	/** 经 product 服务获取当前生效物模型并解析；无物模型/解析失败返回 null（不抛错） */
+	private ThingModel fetchThingModel(String productKey) {
+		try {
+			Result<ThingModelRow> result = productFeignClient.getThingModelByKey(productKey);
+			if (result == null || !result.isSuccess() || result.getData() == null
+					|| result.getData().schemaJson() == null) {
+				return null;
+			}
+			return ThingModelParser.parse(result.getData().schemaJson());
+		}
+		catch (Exception e) {
+			log.warn("[Command] 物模型获取/解析失败 productKey={}", productKey, e);
+			return null;
+		}
 	}
 
 	// ------------------------------------------------------------------

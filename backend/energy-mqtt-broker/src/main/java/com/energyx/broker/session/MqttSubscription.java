@@ -4,7 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
- * 单条订阅绑定：topicFilter + 授予的 QoS。
+ * 单条订阅绑定（不可变值对象）：topicFilter + 授予的 QoS。
+ *
+ * <p>
+ * 作为 Redis mqtt:subs:{deviceKey} SET 的成员存储（序列化见 {@link #encode()}）， 进程内同样以该形态在
+ * Session.subscriptions 中做索引。equals 由 {@code @Data} 按字段生成，保证同 topicFilter+qos 去重。
+ * </p>
  */
 @Data
 @AllArgsConstructor

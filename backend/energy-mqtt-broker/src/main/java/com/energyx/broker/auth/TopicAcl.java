@@ -18,6 +18,7 @@ public final class TopicAcl {
 	/** 设备允许 publish 的上行 type 白名单 */
 	private static final String[] UP_TYPES = { "property", "event", "lifecycle", "ack" };
 
+	/** 工具类禁止实例化（私有构造） */
 	private TopicAcl() {
 	}
 

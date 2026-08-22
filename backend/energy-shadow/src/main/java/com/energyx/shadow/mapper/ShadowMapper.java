@@ -26,26 +26,26 @@ public interface ShadowMapper extends BaseMapper<ShadowRow> {
 			VALUES (#{deviceId}, #{tenantId}, #{reported}, '{}', 1, #{now})
 			""")
 	int insertReported(@Param("deviceId") long deviceId, @Param("tenantId") long tenantId,
+	/** 首条期望：reported='{}' 初始化 */
 			@Param("reported") String reported, @Param("now") LocalDateTime now);
 
-	/** 首条期望：reported='{}' 初始化 */
 	@Insert("""
 			INSERT INTO iot_shadow (device_id, tenant_id, reported, desired, version, last_desired_time)
 			VALUES (#{deviceId}, #{tenantId}, '{}', #{desired}, 1, #{now})
 			""")
 	int insertDesired(@Param("deviceId") long deviceId, @Param("tenantId") long tenantId,
+	/** reported 乐观锁更新（返回 0 = 版本冲突，调用方重试） */
 			@Param("desired") String desired, @Param("now") LocalDateTime now);
 
-	/** reported 乐观锁更新（返回 0 = 版本冲突，调用方重试） */
 	@Update("""
 			UPDATE iot_shadow
 			SET reported = #{reported}, version = version + 1, last_reported_time = #{now}
 			WHERE device_id = #{deviceId} AND version = #{expectVersion}
 			""")
 	int updateReported(@Param("deviceId") long deviceId, @Param("reported") String reported,
+	/** desired 乐观锁更新（返回 0 = 版本冲突，调用方重试） */
 			@Param("expectVersion") int expectVersion, @Param("now") LocalDateTime now);
 
-	/** desired 乐观锁更新（返回 0 = 版本冲突，调用方重试） */
 	@Update("""
 			UPDATE iot_shadow
 			SET desired = #{desired}, version = version + 1, last_desired_time = #{now}

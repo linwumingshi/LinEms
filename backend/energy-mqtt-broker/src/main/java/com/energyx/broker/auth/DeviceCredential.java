@@ -20,12 +20,16 @@ public class DeviceCredential {
 	/** clientId = {productKey}_{deviceName} */
 	private String deviceKey;
 
+	/** 设备主键 ID（iot_device.id） */
 	private Long deviceId;
 
+	/** 租户 ID */
 	private Long tenantId;
 
+	/** 产品密钥，{productKey}_{deviceName} 中的前半段，可含 '_'（平台锚点如 snd_ess_pcs） */
 	private String productKey;
 
+	/** 设备名，{productKey}_{deviceName} 中的后半段，禁止 '_'（SDK DeviceIdentity 约束） */
 	private String deviceName;
 
 	/** 设备主状态（DeviceStatus 枚举：OFFLINE 已激活 3 ONLINE 在线 4 DISABLED 禁用 5 BANNED 封禁） */
@@ -34,6 +38,7 @@ public class DeviceCredential {
 	/** 凭据状态：1正常 2吊销 */
 	private int authStatus;
 
+	/** 设备密钥（HMAC-SHA256 签名密钥，敏感，禁止落日志） */
 	private String deviceSecret;
 
 	/** 凭据是否过期 */

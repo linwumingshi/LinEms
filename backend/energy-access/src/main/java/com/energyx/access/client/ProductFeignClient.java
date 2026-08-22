@@ -1,6 +1,7 @@
 package com.energyx.access.client;
 
 import com.energyx.common.model.Result;
+import com.energyx.common.thingmodel.ThingModelRow;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -16,7 +17,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(name = "energy-product", path = "/api/product", fallbackFactory = ProductFeignClientFallbackFactory.class)
 public interface ProductFeignClient {
 
-	/** 按 productKey 查当前生效物模型；未发布/不存在返回 Result.fail */
+	/**
+	 * 按 productKey 查当前生效物模型；未发布/不存在返回 Result.fail。
+	 * @param productKey 产品标识
+	 * @return 当前生效物模型投影（data 为 null 表示无物模型）
+	 */
 	@GetMapping("/thing-model/by-key")
 	Result<ThingModelRow> getThingModelByKey(@RequestParam("productKey") String productKey);
 

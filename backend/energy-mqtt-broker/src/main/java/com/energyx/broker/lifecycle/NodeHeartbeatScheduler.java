@@ -45,6 +45,7 @@ public class NodeHeartbeatScheduler {
 	/** 启动注册心跳并定时刷新；单节点也照常（key 存在不影响任何逻辑） */
 	@PostConstruct
 	public void start() {
+		// 启动即注册一次心跳，随后按固定间隔刷新（最长 30s 悬空窗口，供 access 下行避让死节点）
 		heartbeat();
 		scheduler.scheduleWithFixedDelay(this::heartbeat, properties.getNodeHeartbeatIntervalSeconds(),
 				properties.getNodeHeartbeatIntervalSeconds(), TimeUnit.SECONDS);
@@ -52,12 +53,15 @@ public class NodeHeartbeatScheduler {
 				properties.getNodeHeartbeatIntervalSeconds(), properties.getNodeHeartbeatTtlSeconds());
 	}
 
+	/** 向 Redis 写入本节点心跳租约（mqtt:node:{nodeId}，TTL 刷新）；Redis 不可用仅告警，下次定时重试 */
 	private void heartbeat() {
 		try {
+			// 写本节点心跳租约（mqtt:node:{nodeId}，TTL 刷新）；存活状态供 access 判定 owner 是否在线
 			sessionStore.setString(BrokerKeys.nodeHeartbeat(properties.getNodeId()), properties.getNodeId(),
 					properties.getNodeHeartbeatTtlSeconds());
 		}
 		catch (Exception e) {
+			// Redis 不可用仅告警，下次定时重试；不阻断 Broker 主流程
 			log.warn("[NodeHeartbeat] 心跳刷新失败 nodeId={}（Redis 不可用，稍后重试）", properties.getNodeId(), e);
 		}
 	}
@@ -66,6 +70,7 @@ public class NodeHeartbeatScheduler {
 	@PreDestroy
 	public void stop() {
 		try {
+			// 删除心跳 + 释放本节点全部连接锁，让其他节点立即接管，不等锁 TTL 自然过期
 			sessionStore.delete(BrokerKeys.nodeHeartbeat(properties.getNodeId()));
 			int released = sessionStore.releaseAllConnLocksIfOwner(properties.getNodeId());
 			log.info("[NodeHeartbeat] 节点 {} 停机：已删心跳，释放连接锁 {} 个", properties.getNodeId(), released);

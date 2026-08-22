@@ -34,9 +34,9 @@ public interface AlarmRecordMapper extends BaseMapper<AlarmRecordRow> {
 			WHERE alarm_event_id = #{alarmEventId} AND status != 2
 			""")
 	int ack(@Param("alarmEventId") String alarmEventId, @Param("ackedBy") String ackedBy,
+	/** 组合条件分页查询（动态 SQL，参数可空） */
 			@Param("now") LocalDateTime now);
 
-	/** 组合条件分页查询（动态 SQL，参数可空） */
 	@Select("""
 			<script>
 			SELECT alarm_event_id, tenant_id, device_id, product_key, rule_id, rule_code,
@@ -55,11 +55,11 @@ public interface AlarmRecordMapper extends BaseMapper<AlarmRecordRow> {
 			</script>
 			""")
 	List<AlarmRecordRow> selectPage(@Param("tenantId") Long tenantId, @Param("ruleId") Long ruleId,
+	/** 组合条件计数（与 selectPage 同条件） */
 			@Param("deviceId") Long deviceId, @Param("level") Integer level, @Param("status") Integer status,
 			@Param("startTime") LocalDateTime startTime, @Param("endTime") LocalDateTime endTime,
 			@Param("offset") long offset, @Param("limit") long limit);
 
-	/** 组合条件计数（与 selectPage 同条件） */
 	@Select("""
 			<script>
 			SELECT COUNT(*) FROM iot_alarm_record
