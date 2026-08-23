@@ -30,7 +30,8 @@ public final class TdengineQuerySqlBuilder {
 			if (!TdengineSqlBuilder.isSafeColumn(id)) {
 				throw new IllegalArgumentException("非法属性标识: " + id);
 			}
-			cols.append(", `").append(id).append('`');
+			// TDengine 3.3.1.0 实测：SELECT 列名统一转小写匹配（反引号驼峰列查不出）
+			cols.append(", `").append(id.toLowerCase()).append('`');
 		}
 		return "SELECT " + cols + " FROM " + db + ".st_prop_" + productKey
 				+ " WHERE device_id = ? AND ts >= ? AND ts <= ?" + " ORDER BY ts " + (asc ? "ASC" : "DESC")

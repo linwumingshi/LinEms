@@ -144,15 +144,82 @@ class TdengineSqlBuilderTest {
 
 	@Test
 	void buildCreatePropertyStable_shouldEmitPublicColumnsPlusPropsAndTags() {
-		String ddl = TdengineSqlBuilder.buildCreatePropertyStable("snd_ess_meter", "iot_tsdb_raw",
-				java.util.Set.of("importPower", "temp"));
+		java.util.Map<String, String> cols = new java.util.LinkedHashMap<>();
+		cols.put("importPower", "FLOAT");
+		cols.put("temp", "FLOAT");
+		String ddl = TdengineSqlBuilder.buildCreatePropertyStable("snd_ess_meter", "iot_tsdb_raw", cols);
 
 		assertTrue(ddl.startsWith("CREATE STABLE IF NOT EXISTS iot_tsdb_raw.st_prop_snd_ess_meter ("), ddl);
 		assertTrue(ddl.contains("ts TIMESTAMP, msg_id NCHAR(64), data_type NCHAR(16)"), ddl);
-		assertTrue(ddl.contains("`importPower` FLOAT"), ddl);
+		// TDengine 列名一律小写化（实机验证）
+		assertTrue(ddl.contains("`importpower` FLOAT"), ddl);
 		assertTrue(ddl.contains("`temp` FLOAT"), ddl);
 		assertTrue(ddl.endsWith("TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), "
 				+ "product_key NCHAR(64))"), ddl);
+	}
+
+	// ------------------------------------------------------------------
+	// M3.1：dataType → TDengine 类型映射 / ALTER 语句
+	// ------------------------------------------------------------------
+
+	@Test
+	void columnType_shouldMapAllThingModelDataTypes() {
+		assertEquals("FLOAT", TdengineSqlBuilder.columnType("float"));
+		assertEquals("FLOAT", TdengineSqlBuilder.columnType("double"));
+		assertEquals("FLOAT", TdengineSqlBuilder.columnType("decimal"));
+		assertEquals("FLOAT", TdengineSqlBuilder.columnType("number"));
+		assertEquals("INT", TdengineSqlBuilder.columnType("int"));
+		assertEquals("INT", TdengineSqlBuilder.columnType("integer"));
+		assertEquals("INT", TdengineSqlBuilder.columnType("byte"));
+		assertEquals("INT", TdengineSqlBuilder.columnType("short"));
+		assertEquals("BIGINT", TdengineSqlBuilder.columnType("long"));
+		assertEquals("BIGINT", TdengineSqlBuilder.columnType("enum"));
+		assertEquals("BOOL", TdengineSqlBuilder.columnType("bool"));
+		assertEquals("BOOL", TdengineSqlBuilder.columnType("boolean"));
+		assertEquals("NCHAR(64)", TdengineSqlBuilder.columnType("string"));
+		assertEquals("NCHAR(64)", TdengineSqlBuilder.columnType("text"));
+		assertEquals("NCHAR(64)", TdengineSqlBuilder.columnType("date"));
+		assertEquals("NCHAR(64)", TdengineSqlBuilder.columnType("time"));
+		assertEquals("NCHAR(1024)", TdengineSqlBuilder.columnType("struct"));
+		assertEquals("NCHAR(1024)", TdengineSqlBuilder.columnType("array"));
+		assertEquals("NCHAR(1024)", TdengineSqlBuilder.columnType("unknown-type"));
+		assertEquals("NCHAR(1024)", TdengineSqlBuilder.columnType(null));
+	}
+
+	@Test
+	void buildCreatePropertyStable_shouldUseMappedTypes() {
+		java.util.Map<String, String> cols = new java.util.LinkedHashMap<>();
+		cols.put("soc", TdengineSqlBuilder.columnType("float"));
+		cols.put("runMode", TdengineSqlBuilder.columnType("enum"));
+		cols.put("alarm", TdengineSqlBuilder.columnType("bool"));
+		cols.put("unitNo", TdengineSqlBuilder.columnType("string"));
+		cols.put("cells", TdengineSqlBuilder.columnType("array"));
+		String ddl = TdengineSqlBuilder.buildCreatePropertyStable("snd_ess_pcs", "iot_tsdb_raw", cols);
+
+		assertTrue(ddl.contains("`soc` FLOAT"), ddl);
+		// TDengine 列名一律小写化（实机验证）
+		assertTrue(ddl.contains("`runmode` BIGINT"), ddl);
+		assertTrue(ddl.contains("`alarm` BOOL"), ddl);
+		assertTrue(ddl.contains("`unitno` NCHAR(64)"), ddl);
+		assertTrue(ddl.contains("`cells` NCHAR(1024)"), ddl);
+	}
+
+	@Test
+	void buildAlterStableSql_shouldEmitSingleColumnLowercased() {
+		String ddl = TdengineSqlBuilder.buildAlterStableSql("iot_tsdb_raw", "st_prop_snd_ess_pcs", "newProp", "FLOAT");
+		assertEquals("ALTER STABLE iot_tsdb_raw.st_prop_snd_ess_pcs ADD COLUMN `newprop` FLOAT", ddl);
+	}
+
+	@Test
+	void buildAlterStableSql_shouldRejectUnsafeStableOrColumn() {
+		assertThrows(IllegalArgumentException.class,
+				() -> TdengineSqlBuilder.buildAlterStableSql("db", "not_stable", "x", "FLOAT"));
+		assertThrows(IllegalArgumentException.class,
+				() -> TdengineSqlBuilder.buildAlterStableSql("db", "st_prop_bad pk!", "x", "FLOAT"));
+		assertThrows(IllegalArgumentException.class,
+				() -> TdengineSqlBuilder.buildAlterStableSql("db", "st_prop_pk", "bad column!", "FLOAT"));
+		assertThrows(IllegalArgumentException.class,
+				() -> TdengineSqlBuilder.buildAlterStableSql("db", "st_prop_pk", "ok", ""));
 	}
 
 	@Test

@@ -43,6 +43,29 @@ public final class TdengineSqlBuilder {
 		return key != null && SAFE_KEY.matcher(key).matches();
 	}
 
+	/**
+	 * 物模型 dataType → TDengine 列类型统一映射（M3.1）。
+	 *
+	 * <p>
+	 * 依据：消息值经 {@code ModelValidator.coerce} 强转后的字面量形态——数值枚举规范值为 Long（数字字面量）， struct/array
+	 * 以 JSON 字符串字面量存储（保守用 NCHAR，不赌 TDengine JSON 列行为）。
+	 * </p>
+	 */
+	public static String columnType(String dataType) {
+		if (dataType == null) {
+			return "NCHAR(1024)";
+		}
+		return switch (dataType) {
+			case "float", "double", "decimal", "number" -> "FLOAT";
+			case "int", "integer", "byte", "short" -> "INT";
+			case "long", "enum" -> "BIGINT";
+			case "bool", "boolean" -> "BOOL";
+			case "string", "text", "date", "time" -> "NCHAR(64)";
+			case "struct", "array" -> "NCHAR(1024)";
+			default -> "NCHAR(1024)"; // 未知 dataType：JSON 字符串兜底
+		};
+	}
+
 	/** epoch 毫秒 → TDengine TIMESTAMP 字面量（无时区歧义） */
 	public static String tsLiteral(long epochMs) {
 		return Long.toString(epochMs);
@@ -100,7 +123,8 @@ public final class TdengineSqlBuilder {
 			if (!isSafeColumn(id)) {
 				continue; // 非法列名（物模型已保证，防御性跳过）
 			}
-			cols.append(", `").append(id).append('`');
+			// TDengine 3.3.1.0 实测：列名匹配统一转小写（反引号驼峰列写不进），列名一律小写化
+			cols.append(", `").append(id.toLowerCase()).append('`');
 			vals.append(", ").append(literal(e.getValue(), om));
 		}
 
@@ -109,23 +133,50 @@ public final class TdengineSqlBuilder {
 	}
 
 	/**
-	 * 构造属性超级表建表语句（首条消息落库前自动建表，列按消息携带属性动态推导）。 列定义：公共列(ts/msg_id/data_type) +
-	 * 消息属性列(FLOAT)；TAG 四件套。后续消息带新列时 需 ALTER（当前按产品建表后新列不自动追加，列演进见建表时机注：建表在首条消息时，后续新
-	 * 属性列由物模型变更走 ALTER 流程——本方法只保证「超级表存在」这一前置）。
+	 * 构造属性超级表建表语句（首条消息落库前自动建表）。 列定义：公共列(ts/msg_id/data_type) + 属性列 （类型按物模型 dataType
+	 * 统一映射，M3.1）；TAG 四件套。列类型映射见 {@link #columnType(String)}。
+	 * @param productKey 产品标识
+	 * @param db 数据库名
+	 * @param columnTypes 属性 identifier → TDengine 列类型（顺序=声明顺序）
 	 */
-	public static String buildCreatePropertyStable(String productKey, String db, java.util.Set<String> identifiers) {
+	public static String buildCreatePropertyStable(String productKey, String db,
+			java.util.Map<String, String> columnTypes) {
 		require(isSafeKey(productKey), "productKey 非法: " + productKey);
 		StringBuilder sb = new StringBuilder("CREATE STABLE IF NOT EXISTS ").append(db)
 			.append(".st_prop_")
 			.append(productKey)
 			.append(" (ts TIMESTAMP, msg_id NCHAR(64), data_type NCHAR(16)");
-		for (String id : identifiers) {
-			if (isSafeColumn(id)) {
-				sb.append(", `").append(id).append("` FLOAT");
+		for (java.util.Map.Entry<String, String> e : columnTypes.entrySet()) {
+			if (isSafeColumn(e.getKey())) {
+				// TDengine 列名一律小写化（实机验证：反引号驼峰列 INSERT/SELECT 均失败）
+				sb.append(", `").append(e.getKey().toLowerCase()).append("` ").append(e.getValue());
 			}
 		}
 		sb.append(") TAGS (device_id NCHAR(64), station_id NCHAR(32), enterprise_id NCHAR(32), product_key NCHAR(64))");
 		return sb.toString();
+	}
+
+	/**
+	 * 构造属性超级表单列加列语句（M3.1：物模型新增属性时自动演进 stable）。
+	 *
+	 * <p>
+	 * <b>实机验证（TDengine 3.3.1.0）</b>：{@code ALTER STABLE ... ADD COLUMN c1 t1, c2 t2}
+	 * 多列语法不被支持 （0x2600 syntax error），必须<b>一次 ADD 一列</b>——调用方对缺失列逐列生成并执行。 stable 名必须为
+	 * {@code st_prop_} 前缀且安全字符。
+	 * </p>
+	 * @param db 数据库名
+	 * @param stable stable 名（含 st_prop_ 前缀）
+	 * @param column 缺失属性 identifier
+	 * @param type TDengine 列类型（见 {@link #columnType(String)}）
+	 * @return ALTER STABLE DDL（单列）
+	 */
+	public static String buildAlterStableSql(String db, String stable, String column, String type) {
+		require(stable != null && stable.startsWith("st_prop_"), "stable 非法: " + stable);
+		require(isSafeKey(stable.substring("st_prop_".length())), "stable 非法: " + stable);
+		require(isSafeColumn(column), "列名非法: " + column);
+		require(type != null && !type.isBlank(), "列类型为空: " + column);
+		// TDengine 列名一律小写化（实机验证：反引号驼峰列 INSERT/SELECT 均失败）
+		return "ALTER STABLE " + db + "." + stable + " ADD COLUMN `" + column.toLowerCase() + "` " + type;
 	}
 
 	/**

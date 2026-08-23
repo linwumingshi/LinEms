@@ -187,6 +187,23 @@ public class TdengineQueryService {
 		return whitelist;
 	}
 
+	/**
+	 * 产品属性超级表当前属性列集合（M3.1：供自动 ALTER 差集计算复用）。 复用 {@link #columnWhitelist} 的 DESCRIBE + 60s
+	 * 缓存语义。
+	 * @param productKey 产品标识
+	 * @return 当前属性列集合（不含公共列与 TAG）；表不存在视为空集
+	 * @throws SQLException DESCRIBE 失败（非表不存在）
+	 */
+	public Set<String> propertyColumns(String productKey) throws SQLException {
+		return columnWhitelist(productKey);
+	}
+
+	/** 失效指定产品的列集缓存（M3.1：ALTER 成功后调用，下次 DESCRIBE 重新拉取新列集） */
+	public void invalidateColumnCache(String productKey) {
+		columnCache.remove(productKey);
+		columnCacheLoadedAt.remove(productKey);
+	}
+
 	/** 判定 TDengine「表不存在」错误：REST 错误码 9731 或 JDBC 0x2603 / 消息含 Table does not exist */
 	private boolean isTableMissing(SQLException e) {
 		String msg = e.getMessage();
