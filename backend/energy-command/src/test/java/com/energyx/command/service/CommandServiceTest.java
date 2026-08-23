@@ -5,7 +5,6 @@ import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
 import com.energyx.command.client.DeviceFeignClient;
-import com.energyx.command.client.ProductFeignClient;
 import com.energyx.command.model.CommandRow;
 import com.energyx.command.model.DeviceInfo;
 import com.energyx.command.mqtt.CommandKafkaProducer;
@@ -18,6 +17,7 @@ import com.energyx.common.message.CommandDownMessage;
 import com.energyx.common.message.ShadowDeltaMessage;
 import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
+import com.energyx.common.thingmodel.ThingModelResolver;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,7 +68,7 @@ class CommandServiceTest {
 	DeviceFeignClient deviceFeignClient;
 
 	@Mock
-	ProductFeignClient productFeignClient;
+	ThingModelResolver thingModelResolver;
 
 	@Mock
 	StringRedisTemplate redis;
@@ -94,12 +94,12 @@ class CommandServiceTest {
 	@BeforeEach
 	void setUp() {
 		props = new CommandProperties();
-		service = new CommandService(commandMapper, ackMapper, deviceFeignClient, productFeignClient, redis, producer,
+		service = new CommandService(commandMapper, ackMapper, deviceFeignClient, thingModelResolver, redis, producer,
 				objectMapper, idempotencyUtils, props, new SnowflakeIdGenerator());
 		lenient().when(redis.opsForList()).thenReturn(listOps);
 		lenient().when(redis.opsForHash()).thenReturn(hashOps);
-		// 默认 WARN 模式：物模型缺失（Feign 未配置）→ 跳过校验，保持历史行为
-		lenient().when(productFeignClient.getThingModelByKey(anyString())).thenReturn(null);
+		// 默认 WARN 模式：物模型缺失（Resolver 返回 null）→ 跳过校验，保持历史行为
+		lenient().when(thingModelResolver.resolve(anyString())).thenReturn(null);
 	}
 
 	private static DeviceInfo dev() {

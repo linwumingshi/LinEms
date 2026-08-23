@@ -3,7 +3,6 @@ package com.energyx.command.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.command.client.DeviceFeignClient;
-import com.energyx.command.client.ProductFeignClient;
 import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
@@ -21,8 +20,9 @@ import com.energyx.common.message.ShadowDeltaMessage;
 import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
 import com.energyx.common.thingmodel.ThingModel;
-import com.energyx.common.thingmodel.ThingModelParser;
-import com.energyx.common.thingmodel.ThingModelRow;
+import com.energyx.common.thingmodel.ThingModelDesiredValidator;
+import com.energyx.common.thingmodel.ThingModelDesiredValidator.DesiredValidationResult;
+import com.energyx.common.thingmodel.ThingModelResolver;
 import com.energyx.common.thingmodel.ThingModelService;
 import com.energyx.common.thingmodel.ThingModelServiceValidator;
 import com.energyx.common.thingmodel.ThingModelServiceValidator.ServiceValidationResult;
@@ -69,7 +69,7 @@ public class CommandService {
 
 	private final DeviceFeignClient deviceFeignClient;
 
-	private final ProductFeignClient productFeignClient;
+	private final ThingModelResolver thingModelResolver;
 
 	private final StringRedisTemplate redis;
 
@@ -84,13 +84,13 @@ public class CommandService {
 	private final SnowflakeIdGenerator idGenerator;
 
 	public CommandService(CommandMapper commandMapper, CommandAckMapper ackMapper, DeviceFeignClient deviceFeignClient,
-			ProductFeignClient productFeignClient, StringRedisTemplate redis, CommandKafkaProducer producer,
+			ThingModelResolver thingModelResolver, StringRedisTemplate redis, CommandKafkaProducer producer,
 			ObjectMapper objectMapper, IdempotencyUtils idempotencyUtils, CommandProperties props,
 			SnowflakeIdGenerator idGenerator) {
 		this.commandMapper = commandMapper;
 		this.ackMapper = ackMapper;
 		this.deviceFeignClient = deviceFeignClient;
-		this.productFeignClient = productFeignClient;
+		this.thingModelResolver = thingModelResolver;
 		this.redis = redis;
 		this.producer = producer;
 		this.objectMapper = objectMapper;
@@ -178,7 +178,7 @@ public class CommandService {
 			return;
 		}
 		boolean enforce = "ENFORCE".equalsIgnoreCase(mode);
-		ThingModel model = fetchThingModel(dev.productKey());
+		ThingModel model = thingModelResolver.resolve(dev.productKey());
 		if (model == null) {
 			log.warn("[Command] 物模型缺失/获取失败，跳过校验 mode={} commandId={} deviceId={} productKey={} command={}", mode,
 					commandId, dev.deviceId(), dev.productKey(), req.getCommand());
@@ -208,19 +208,46 @@ public class CommandService {
 				dev.deviceId(), dev.productKey(), req.getCommand(), reason);
 	}
 
-	/** 经 product 服务获取当前生效物模型并解析；无物模型/解析失败返回 null（不抛错） */
-	private ThingModel fetchThingModel(String productKey) {
-		try {
-			Result<ThingModelRow> result = productFeignClient.getThingModelByKey(productKey);
-			if (result == null || !result.isSuccess() || result.getData() == null
-					|| result.getData().schemaJson() == null) {
-				return null;
-			}
-			return ThingModelParser.parse(result.getData().schemaJson());
+	// ------------------------------------------------------------------
+	// M2.3 delta → setProperties 物化校验（ThingModel 契约闭环）
+	// ------------------------------------------------------------------
+
+	/**
+	 * setProperties 物化前物模型校验（复用 energyx.command.model-check.mode 配置，校验器为属性语义的
+	 * {@link ThingModelDesiredValidator}）：
+	 * <ul>
+	 * <li>OFF：不调用 product Feign，完全保持现状；</li>
+	 * <li>WARN：存在性 + accessMode + 深度校验，失败仅告警（含 deviceId/productKey/property/reason， 不打印
+	 * desired 原始值）仍落库 dispatch；</li>
+	 * <li>ENFORCE：校验失败抛 {@link IllegalArgumentException}（含
+	 * deviceId/productKey/property/reason）， 不落库、不 dispatch（消费引擎捕获后进 DLQ 审计，offset
+	 * 正常提交，无重试风暴）。</li>
+	 * </ul>
+	 * 物模型缺失/获取失败 → 跳过校验放行（异步链路降级：不因模型服务抖动丢 delta，避免 desired 永不收敛）。
+	 * @param dev 已解析的设备身份
+	 * @param desired delta 待同步属性键值对
+	 */
+	private void modelCheckDelta(DeviceInfo dev, Map<String, Object> desired) {
+		String mode = props.getModelCheckMode();
+		if (mode == null || "OFF".equalsIgnoreCase(mode)) {
+			return;
 		}
-		catch (Exception e) {
-			log.warn("[Command] 物模型获取/解析失败 productKey={}", productKey, e);
-			return null;
+		boolean enforce = "ENFORCE".equalsIgnoreCase(mode);
+		ThingModel model = thingModelResolver.resolve(dev.productKey());
+		if (model == null) {
+			log.warn("[Command] 物模型缺失/获取失败，跳过 delta 物化校验 mode={} deviceId={} productKey={}", mode, dev.deviceId(),
+					dev.productKey());
+			return;
+		}
+		DesiredValidationResult result = ThingModelDesiredValidator.validateDesired(model, desired);
+		if (!result.valid()) {
+			String reason = String.join("; ", result.errors());
+			if (enforce) {
+				throw new IllegalArgumentException("delta 物化校验未通过 deviceId=" + dev.deviceId() + " productKey="
+						+ dev.productKey() + " reason=" + reason);
+			}
+			log.warn("[Command] delta 物化校验告警（不阻止下发） deviceId={} productKey={} reason={}", dev.deviceId(),
+					dev.productKey(), reason);
 		}
 	}
 
@@ -289,6 +316,8 @@ public class CommandService {
 			log.info("[Command] 存在在途 setProperties 指令 commandId={}，合并 delta deviceId={}", inflight, dev.deviceId());
 			return;
 		}
+		// M2.3：delta → setProperties 物化前物模型校验（在途合并之后、落库之前；ENFORCE 拒绝 → 不落库不 dispatch）
+		modelCheckDelta(dev, delta.getDesired());
 		String commandId = idGenerator.nextIdStr();
 		// 实体落库（delta 物化指令，系统动作 createBy=0）
 		CommandRow row = new CommandRow();

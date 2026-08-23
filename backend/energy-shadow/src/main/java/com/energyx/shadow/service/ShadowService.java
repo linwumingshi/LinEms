@@ -2,6 +2,13 @@ package com.energyx.shadow.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.energyx.common.model.Result;
+import com.energyx.common.thingmodel.ThingModel;
+import com.energyx.common.thingmodel.ThingModelDesiredValidator;
+import com.energyx.common.thingmodel.ThingModelDesiredValidator.DesiredValidationResult;
+import com.energyx.common.thingmodel.ThingModelResolver;
+import com.energyx.shadow.client.DeviceFeignClient;
+import com.energyx.shadow.client.DeviceInfo;
 import com.energyx.shadow.config.ShadowProperties;
 import com.energyx.shadow.delta.DeltaCalculator;
 import com.energyx.shadow.delta.ShadowDeltaPublisher;
@@ -26,6 +33,12 @@ import java.util.Map;
  * <p>
  * <b>幂等性设计</b>：影子合并是<b>天然幂等</b>的操作——同一属性快照重复合并结果不变， 因此消费端不做消息级去重（避免"部分失败后重放被去重跳过导致 MySQL
  * 永不收敛"）， 依赖 Kafka at-least-once 重放 + 乐观锁重试自我收敛。desired 由版本乐观锁防并发覆盖。
+ * </p>
+ *
+ * <p>
+ * <b>M2.2 desired 物模型校验</b>：{@code setDesired} 在任何写入（MySQL/Redis/delta/history）之前 执行
+ * {@code modelCheck}——OFF 跳过；WARN 校验失败仅告警不阻止；ENFORCE 校验失败整个请求拒绝（零副作用）。
+ * 设备/物模型获取失败视为「跳过校验」，不阻塞既有写入链路。
  * </p>
  */
 @Slf4j
@@ -52,14 +65,21 @@ public class ShadowService {
 
 	private final ShadowProperties props;
 
+	private final DeviceFeignClient deviceFeignClient;
+
+	private final ThingModelResolver thingModelResolver;
+
 	public ShadowService(ShadowMapper shadowMapper, ShadowHistoryMapper historyMapper, StringRedisTemplate redis,
-			ShadowDeltaPublisher deltaPublisher, ObjectMapper objectMapper, ShadowProperties props) {
+			ShadowDeltaPublisher deltaPublisher, ObjectMapper objectMapper, ShadowProperties props,
+			DeviceFeignClient deviceFeignClient, ThingModelResolver thingModelResolver) {
 		this.shadowMapper = shadowMapper;
 		this.historyMapper = historyMapper;
 		this.redis = redis;
 		this.deltaPublisher = deltaPublisher;
 		this.objectMapper = objectMapper;
 		this.props = props;
+		this.deviceFeignClient = deviceFeignClient;
+		this.thingModelResolver = thingModelResolver;
 	}
 
 	/** reported 变更结果 */
@@ -93,6 +113,11 @@ public class ShadowService {
 
 	/**
 	 * 平台设置期望 → 影子 desired 双写 + delta 检测发布。
+	 *
+	 * <p>
+	 * M2.2：任何写入（MySQL/Redis/delta/history）之前先执行 {@code modelCheck}——ENFORCE 拒绝时
+	 * 整个请求失败（零副作用），不存在部分写入。
+	 * </p>
 	 * @return desired 与差异集合（已发布 iot-shadow-delta）
 	 */
 	public DesiredResult setDesired(long deviceId, long tenantId, Map<String, Object> desired) {
@@ -100,6 +125,8 @@ public class ShadowService {
 		if (target.isEmpty()) {
 			return new DesiredResult(target, Map.of());
 		}
+		// M2.2：desired 物模型校验（原子前置检查；ENFORCE 拒绝 → 不落库、不发布 delta、不发下游 command）
+		modelCheck(deviceId, target);
 		upsertDesired(deviceId, tenantId, target);
 		writeDesiredRedis(deviceId, target);
 
@@ -148,6 +175,67 @@ public class ShadowService {
 		view.setLastReportedTime(
 				lastReportedTime == null ? null : lastReportedTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 		return view;
+	}
+
+	// ------------------------------------------------------------------
+	// M2.2 desired 物模型校验
+	// ------------------------------------------------------------------
+
+	/**
+	 * desired 物模型写入校验（energyx.shadow.model-check.mode）：
+	 * <ul>
+	 * <li>OFF：不调用 Device/Product Feign，完全保持历史行为；</li>
+	 * <li>WARN：执行存在性 + accessMode + 深度校验，失败仅告警 （含 deviceId/productKey/property/reason，不打印
+	 * desired 原始值）不阻止；</li>
+	 * <li>ENFORCE：校验失败抛 {@link IllegalArgumentException}（含
+	 * deviceId/productKey/property/reason）， 发生在任何写入之前 → 零副作用。</li>
+	 * </ul>
+	 * 设备不存在 / device/product 服务不可用 / 物模型缺失 / schema 解析失败 → 跳过校验不阻塞（历史兼容）。
+	 * @param deviceId 设备 ID
+	 * @param desired 期望属性集合
+	 */
+	private void modelCheck(long deviceId, Map<String, Object> desired) {
+		String mode = props.getModelCheckMode();
+		if (mode == null || "OFF".equalsIgnoreCase(mode)) {
+			return;
+		}
+		boolean enforce = "ENFORCE".equalsIgnoreCase(mode);
+		DeviceInfo dev = fetchDevice(deviceId);
+		if (dev == null) {
+			log.warn("[Shadow] 设备解析失败/不存在，跳过 desired 模型校验 mode={} deviceId={}", mode, deviceId);
+			return;
+		}
+		ThingModel model = thingModelResolver.resolve(dev.productKey());
+		if (model == null) {
+			log.warn("[Shadow] 物模型缺失/获取失败，跳过 desired 模型校验 mode={} deviceId={} productKey={}", mode, deviceId,
+					dev.productKey());
+			return;
+		}
+		DesiredValidationResult result = ThingModelDesiredValidator.validateDesired(model, desired);
+		if (!result.valid()) {
+			String reason = String.join("; ", result.errors());
+			if (enforce) {
+				throw new IllegalArgumentException("desired 物模型校验未通过 deviceId=" + deviceId + " productKey="
+						+ dev.productKey() + " reason=" + reason);
+			}
+			log.warn("[Shadow] desired 物模型校验告警（不阻止写入） deviceId={} productKey={} reason={}", deviceId, dev.productKey(),
+					reason);
+		}
+	}
+
+	/** 经 device 服务解析设备身份（productKey）；失败返回 null（不抛错，跳过校验） */
+	private DeviceInfo fetchDevice(long deviceId) {
+		try {
+			Result<DeviceInfo> result = deviceFeignClient.byId(deviceId);
+			if (result == null || !result.isSuccess() || result.getData() == null) {
+				return null;
+			}
+			return result.getData();
+		}
+		catch (Exception e) {
+			log.warn("[Shadow] 设备解析失败 deviceId={}", deviceId, e);
+			return null;
+		}
 	}
 
 	// ------------------------------------------------------------------

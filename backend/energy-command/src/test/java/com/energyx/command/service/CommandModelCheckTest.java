@@ -2,7 +2,6 @@ package com.energyx.command.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.energyx.command.client.DeviceFeignClient;
-import com.energyx.command.client.ProductFeignClient;
 import com.energyx.command.config.CommandProperties;
 import com.energyx.command.mapper.CommandAckMapper;
 import com.energyx.command.mapper.CommandMapper;
@@ -14,7 +13,9 @@ import com.energyx.common.constant.KafkaTopicConstant;
 import com.energyx.common.enums.CommandState;
 import com.energyx.common.model.Result;
 import com.energyx.common.redis.IdempotencyUtils;
-import com.energyx.common.thingmodel.ThingModelRow;
+import com.energyx.common.thingmodel.ThingModel;
+import com.energyx.common.thingmodel.ThingModelParser;
+import com.energyx.common.thingmodel.ThingModelResolver;
 import com.energyx.common.util.SnowflakeIdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -89,7 +90,7 @@ class CommandModelCheckTest {
 	DeviceFeignClient deviceFeignClient;
 
 	@Mock
-	ProductFeignClient productFeignClient;
+	ThingModelResolver thingModelResolver;
 
 	@Mock
 	StringRedisTemplate redis;
@@ -121,13 +122,21 @@ class CommandModelCheckTest {
 
 	private CommandService buildService(String mode) {
 		props.setModelCheckMode(mode);
-		return new CommandService(commandMapper, ackMapper, deviceFeignClient, productFeignClient, redis, producer,
+		return new CommandService(commandMapper, ackMapper, deviceFeignClient, thingModelResolver, redis, producer,
 				objectMapper, idempotencyUtils, props, new SnowflakeIdGenerator());
 	}
 
 	private void mockModel() {
-		when(productFeignClient.getThingModelByKey("pk-1"))
-			.thenReturn(Result.ok(new ThingModelRow(1L, 1L, "V1.0", SCHEMA, 1)));
+		when(thingModelResolver.resolve("pk-1")).thenReturn(parseModel());
+	}
+
+	private static ThingModel parseModel() {
+		try {
+			return ThingModelParser.parse(SCHEMA);
+		}
+		catch (Exception e) {
+			throw new IllegalStateException(e);
+		}
 	}
 
 	/** 在线直发成功路径的全部 mock（createCommand 正常返回 SENT；落库行命令名跟随请求） */
@@ -187,7 +196,7 @@ class CommandModelCheckTest {
 
 		service.createCommand(req("notInModel", Map.of("power", 50)));
 
-		verify(productFeignClient, never()).getThingModelByKey(anyString());
+		verify(thingModelResolver, never()).resolve(anyString());
 		verify(producer).send(eq(KafkaTopicConstant.IOT_COMMAND_DOWN), eq("100"), contains("notInModel"));
 	}
 
@@ -199,7 +208,7 @@ class CommandModelCheckTest {
 
 		service.createCommand(req("setPower", Map.of("power", "abc", "ghost", 1)));
 
-		verify(productFeignClient, never()).getThingModelByKey(anyString());
+		verify(thingModelResolver, never()).resolve(anyString());
 		verify(producer).send(eq(KafkaTopicConstant.IOT_COMMAND_DOWN), eq("100"), contains("setPower"));
 	}
 
@@ -456,10 +465,10 @@ class CommandModelCheckTest {
 	}
 
 	@Test
-	@DisplayName("ENFORCE：物模型缺失（Feign 失败/未发布）→ 不阻止（兼容保障）")
+	@DisplayName("ENFORCE：物模型缺失（Resolver 返回 null）→ 不阻止（兼容保障）")
 	void enforce_missingModelSkipsCheck() {
 		service = buildService("ENFORCE");
-		when(productFeignClient.getThingModelByKey("pk-1")).thenReturn(null);
+		when(thingModelResolver.resolve("pk-1")).thenReturn(null);
 		stubCreateSuccess("ghostCmd");
 
 		service.createCommand(req("ghostCmd", Map.of("power", 50)));

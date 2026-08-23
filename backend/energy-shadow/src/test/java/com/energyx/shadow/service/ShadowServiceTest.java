@@ -1,6 +1,9 @@
 package com.energyx.shadow.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.energyx.common.model.Result;
+import com.energyx.common.thingmodel.ThingModelResolver;
+import com.energyx.shadow.client.DeviceFeignClient;
 import com.energyx.shadow.config.ShadowProperties;
 import com.energyx.shadow.delta.ShadowDeltaPublisher;
 import com.energyx.shadow.mapper.ShadowHistoryMapper;
@@ -60,6 +63,12 @@ class ShadowServiceTest {
 	ShadowDeltaPublisher deltaPublisher;
 
 	@Mock
+	DeviceFeignClient deviceFeignClient;
+
+	@Mock
+	ThingModelResolver thingModelResolver;
+
+	@Mock
 	HashOperations<String, Object, Object> hashOps;
 
 	@Mock
@@ -74,10 +83,13 @@ class ShadowServiceTest {
 		props.setHistoryThrottleSeconds(60);
 		props.setOptimisticMaxRetry(3);
 		props.setReportedTtlDays(7);
-		service = new ShadowService(shadowMapper, historyMapper, redis, deltaPublisher, new ObjectMapper(), props);
+		service = new ShadowService(shadowMapper, historyMapper, redis, deltaPublisher, new ObjectMapper(), props,
+				deviceFeignClient, thingModelResolver);
 		lenient().when(redis.opsForValue()).thenReturn(valueOps);
 		lenient().when(redis.opsForHash()).thenReturn(hashOps);
 		lenient().when(valueOps.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(true);
+		// 默认 WARN 模式：设备解析失败（Feign 未配置）→ desired 校验跳过，保持历史行为
+		lenient().when(deviceFeignClient.byId(anyLong())).thenReturn(Result.ok(null));
 	}
 
 	private static Map<String, Object> props(Object... kv) {
