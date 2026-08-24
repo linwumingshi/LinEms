@@ -52,9 +52,9 @@ public interface SceneRuleMapper extends BaseMapper<SceneRuleRow> {
 			</script>
 			""")
 	List<SceneRuleRow> selectPage(@Param("tenantId") Long tenantId, @Param("ruleName") String ruleName,
-	/** 分页计数 */
 			@Param("enabled") Integer enabled, @Param("offset") long offset, @Param("size") long size);
 
+	/** 分页计数 */
 	@Select("""
 			<script>
 			SELECT COUNT(*) FROM iot_scene_rule

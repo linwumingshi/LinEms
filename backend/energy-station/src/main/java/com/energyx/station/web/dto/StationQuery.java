@@ -8,12 +8,6 @@ import lombok.Data;
 @Data
 public class StationQuery {
 
-	private Integer pageNum = 1;
-
-	private Integer pageSize = 20;
-
-	private Long enterpriseId;
-
 	/** 页码，从 1 开始，默认 1。 */
 	private Integer pageNum = 1;
 
