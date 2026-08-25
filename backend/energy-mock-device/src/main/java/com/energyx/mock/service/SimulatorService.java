@@ -5,6 +5,7 @@ import com.energyx.common.exception.ErrorCode;
 import com.energyx.common.message.OtaDownMessage;
 import com.energyx.common.model.Result;
 import com.energyx.mock.client.DeviceFeignClient;
+import com.energyx.mock.client.dto.DeviceBrief;
 import com.energyx.mock.client.dto.CredentialView;
 import com.energyx.mock.client.dto.DeviceCreateReq;
 import com.energyx.mock.config.MockDeviceProperties;
@@ -76,26 +77,15 @@ public class SimulatorService {
 		this.ws = ws;
 	}
 
-	/** 自动建档：在 energy-device 创建设备→激活→取回明文密钥→连 broker */
+	/** 自动建档：解析目标设备（upsert）→激活→取回明文密钥→连 broker */
 	public SimDeviceView createAuto(String productKey, String deviceName, String deviceType, Long stationId,
 			Long enterpriseId, String firmwareVersion) {
 		if (devices.size() >= props.getMaxDevices()) {
 			throw new BusinessException(ErrorCode.PARAM_INVALID, "超出最大模拟设备数限制");
 		}
 		String safeName = sanitize(deviceName);
-		DeviceCreateReq req = new DeviceCreateReq();
-		req.setProductKey(productKey);
-		req.setDeviceName(safeName);
-		req.setDeviceType(deviceType == null ? "EDGE_GW" : deviceType);
-		req.setStationId(stationId);
-		req.setEnterpriseId(enterpriseId);
-		req.setFirmwareVersion(firmwareVersion);
-		req.setProtocol("MQTT");
-		Result<Long> createRes = deviceFeignClient.create(req);
-		if (!createRes.isSuccess() || createRes.getData() == null) {
-			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "创建设备失败: " + createRes.getMessage());
-		}
-		Long deviceId = createRes.getData();
+		// upsert：同名真实设备已存在则直接复用，不再以“设备已存在”阻断仿真
+		Long deviceId = resolveDeviceId(productKey, safeName, deviceType, stationId, enterpriseId, firmwareVersion);
 		// 尝试激活（部分产品可能已自动激活，失败不阻塞）
 		try {
 			deviceFeignClient.activate(deviceId);
@@ -113,6 +103,31 @@ public class SimulatorService {
 		connectAndRegister(device);
 		// 立即返回视图（状态 CONNECTING），连接走后台回调，避免 broker 无响应拖死控制面
 		return device.toView();
+	}
+
+	/**
+	 * 解析目标设备主键（upsert 语义）：先按 productKey+deviceName 查真实设备， 命中则复用其
+	 * deviceId（模拟器仿真已有设备身份），未命中再新建。 目的：模拟器只关心“用某设备身份连 broker”，不应因真实设备已存在而报错。
+	 */
+	private Long resolveDeviceId(String productKey, String safeName, String deviceType, Long stationId,
+			Long enterpriseId, String firmwareVersion) {
+		Result<DeviceBrief> exist = deviceFeignClient.byName(productKey, safeName);
+		if (exist.isSuccess() && exist.getData() != null && exist.getData().getDeviceId() != null) {
+			return exist.getData().getDeviceId();
+		}
+		DeviceCreateReq req = new DeviceCreateReq();
+		req.setProductKey(productKey);
+		req.setDeviceName(safeName);
+		req.setDeviceType(deviceType == null ? "EDGE_GW" : deviceType);
+		req.setStationId(stationId);
+		req.setEnterpriseId(enterpriseId);
+		req.setFirmwareVersion(firmwareVersion);
+		req.setProtocol("MQTT");
+		Result<Long> createRes = deviceFeignClient.create(req);
+		if (!createRes.isSuccess() || createRes.getData() == null) {
+			throw new BusinessException(ErrorCode.SYSTEM_ERROR, "创建设备失败: " + createRes.getMessage());
+		}
+		return createRes.getData();
 	}
 
 	/** 接管已有设备：密钥由用户给出，直接连 broker */

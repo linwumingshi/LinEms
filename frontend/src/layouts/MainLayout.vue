@@ -36,6 +36,7 @@ const menus: MenuItem[] = [
     children: [
       { path: '/product', title: '产品管理' },
       { path: '/device', title: '设备管理' },
+      { path: '/simulator', title: '模拟设备' },
     ],
   },
   {

@@ -43,6 +43,7 @@
     <module>energy-rule</module>
     <module>energy-notify</module>
     <module>energy-ota</module>
+    <module>energy-mock-device</module>
   </modules>
 
   <properties>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { mockApi, connectMockWs, type SimDeviceView, type MockWsEvent } from '@/api/mock'
 import { productApi } from '@/api/product'
-import type { Product } from '@/types/models'
+import { deviceApi } from '@/api/device'
+import type { Device, Product } from '@/types/models'
 
 const devices = ref<SimDeviceView[]>([])
 const selected = ref<SimDeviceView | null>(null)
@@ -14,6 +15,7 @@ const createVisible = ref(false)
 const createForm = reactive({
 	mode: 'auto',
 	productKey: '',
+	deviceId: '',
 	deviceName: '',
 	deviceType: 'EDGE_GW',
 	secret: '',
@@ -21,6 +23,9 @@ const createForm = reactive({
 })
 const products = ref<Product[]>([])
 const productLoading = ref(false)
+/** 选产品后加载该产品下已有设备，供“设备”下拉选择 */
+const deviceOptions = ref<Device[]>([])
+const deviceLoading = ref(false)
 
 /** 属性/事件上报 */
 const reportType = ref<'property' | 'event'>('property')
@@ -53,6 +58,17 @@ function selectDevice(row: SimDeviceView) {
 }
 
 async function openCreate() {
+	// 每次打开重置表单，避免上次残留影响“设备”下拉
+	Object.assign(createForm, {
+		mode: 'auto',
+		productKey: '',
+		deviceId: '',
+		deviceName: '',
+		deviceType: 'EDGE_GW',
+		secret: '',
+		firmwareVersion: '',
+	})
+	deviceOptions.value = []
 	createVisible.value = true
 	if (products.value.length === 0) {
 		productLoading.value = true
@@ -67,6 +83,36 @@ async function openCreate() {
 			productLoading.value = false
 		}
 	}
+}
+
+/** 选择产品后加载该产品下已有设备，供“设备”下拉选择；切换产品时清空已选设备 */
+watch(
+	() => createForm.productKey,
+	async (pk) => {
+		createForm.deviceId = ''
+		createForm.deviceName = ''
+		deviceOptions.value = []
+		if (!pk) {
+			return
+		}
+		deviceLoading.value = true
+		try {
+			const r = await deviceApi.page({ productKey: pk, pageNum: 1, pageSize: 200 })
+			deviceOptions.value = (r as any).records || []
+		}
+		catch {
+			// 忽略
+		}
+		finally {
+			deviceLoading.value = false
+		}
+	},
+)
+
+/** 从“设备”下拉选中后，自动带入设备名（接管模式仍需填写 secret） */
+function pickDevice(id: string) {
+	const d = deviceOptions.value.find((x) => x.deviceId === id)
+	createForm.deviceName = d?.deviceName || ''
 }
 
 async function submitCreate() {
@@ -389,13 +435,22 @@ onUnmounted(() => {
 						<el-radio value="takeover">接管已有设备（填 secret）</el-radio>
 					</el-radio-group>
 				</el-form-item>
-				<el-form-item label="产品" required>
-					<el-select v-model="createForm.productKey" filterable placeholder="选择或输入产品标识" :loading="productLoading"
-						style="width: 100%">
-						<el-option v-for="p in products" :key="p.productKey" :label="`${p.productName} (${p.productKey})`"
-							:value="p.productKey" />
-					</el-select>
-				</el-form-item>
+			<el-form-item label="产品" required>
+				<el-select v-model="createForm.productKey" filterable placeholder="选择或输入产品标识" :loading="productLoading"
+					style="width: 100%">
+					<el-option v-for="p in products" :key="p.productKey" :label="`${p.productName} (${p.productKey})`"
+						:value="p.productKey" />
+				</el-select>
+			</el-form-item>
+			<el-form-item label="设备">
+				<el-select v-model="createForm.deviceId" filterable placeholder="可选：选择产品下已有设备" :loading="deviceLoading"
+					:disabled="!createForm.productKey" style="width: 100%" @change="pickDevice">
+					<el-option v-for="d in deviceOptions" :key="d.deviceId" :label="d.deviceName" :value="d.deviceId" />
+				</el-select>
+				<div class="tip" style="margin-top: 4px">
+					选择已有设备将自动带入设备名；接管模式仍需填写其 secret（见设备详情-重生成密钥复制）。
+				</div>
+			</el-form-item>
 				<el-form-item label="设备名" required>
 					<el-input v-model="createForm.deviceName" placeholder="如 mock-pcs-01（自动替换 _ 为 -）" />
 				</el-form-item>

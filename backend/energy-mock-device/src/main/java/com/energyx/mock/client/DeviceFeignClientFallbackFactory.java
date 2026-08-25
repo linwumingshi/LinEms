@@ -1,6 +1,7 @@
 package com.energyx.mock.client;
 
 import com.energyx.common.model.Result;
+import com.energyx.mock.client.dto.DeviceBrief;
 import com.energyx.mock.client.dto.DeviceCreateReq;
 import com.energyx.mock.client.dto.CredentialView;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,11 @@ public class DeviceFeignClientFallbackFactory implements FallbackFactory<DeviceF
 
 			@Override
 			public Result<CredentialView> regenerateSecret(Long deviceId) {
+				return Result.fail(50300, "device 服务不可用");
+			}
+
+			@Override
+			public Result<DeviceBrief> byName(String productKey, String deviceName) {
 				return Result.fail(50300, "device 服务不可用");
 			}
 		};
