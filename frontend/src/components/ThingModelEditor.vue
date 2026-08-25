@@ -8,6 +8,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import ParamEditor from './ParamEditor.vue'
+import SpecsEditor from './SpecsEditor.vue'
 import type { ThingModelSchema, TsEvent, TsParam, TsProperty, TsService } from '@/types/models'
 import {
   accessModeOptions,
@@ -20,9 +21,6 @@ import {
   newService,
   parseSchema,
   serializeSchema,
-  specsGet,
-  specsHintFor,
-  specsSet,
   tsDataTypeOptions,
   validateSchema,
 } from '@/utils/tsl'
@@ -158,26 +156,11 @@ const currentItem = computed(() => {
   return list[selectedIndex.value] as TsProperty | TsService | TsEvent
 })
 
-// ============== specs 读写辅助（仅属性含 specs；服务/事件的入参/出参不挂 specs） ==============
-function getSpecs(item: TsProperty | TsService | TsEvent | null): Record<string, unknown> {
-  if (!item || !('specs' in item)) return {}
-  return (item as TsProperty).specs ?? {}
-}
-function setSpecs(item: TsProperty | TsService | TsEvent | null, key: string, value: unknown): void {
-  if (!item) return
-  ;(item as TsProperty).specs = specsSet((item as TsProperty).specs, key, value)
-}
-
-/** specs 字段的占位提示（按字段名给直观输入提示） */
-function specsPlaceholder(k: string): string {
-  if (k === 'min') return '最小值（如 0）'
-  if (k === 'max') return '最大值（如 100）'
-  if (k === 'step') return '步长（如 1）'
-  if (k === 'length') return '最大长度（如 256）'
-  if (k === 'unit') return '单位'
-  if (k === 'elementType') return '数组元素类型（int/text/struct）'
-  if (k === 'size') return '数组最大长度'
-  return k
+// ============== specs 可视化编辑（仅属性含 specs；服务/事件的入参/出参不挂 specs） ==============
+/** 确保属性 specs 对象存在（缺失时初始化空对象触发响应式），返回响应式引用供 SpecsEditor 直接编辑 */
+function ensureSpecs(item: TsProperty | null): Record<string, unknown> {
+  if (item && !item.specs) item.specs = {}
+  return item?.specs ?? {}
 }
 </script>
 
@@ -292,18 +275,13 @@ function specsPlaceholder(k: string): string {
               <el-input v-model="(currentItem as TsProperty).desc" type="textarea" :rows="2" />
             </el-form-item>
 
-            <!-- specs 扩展字段（按数据类型渲染） -->
+            <!-- specs 扩展字段（按数据类型可视化编辑） -->
             <el-divider content-position="left">数据类型规格（specs）</el-divider>
-            <p class="tme-specs-hint">以下字段随所选数据类型动态变化；JSON 高级模式可编辑完整 specs</p>
-            <el-form-item v-for="k in specsHintFor((currentItem as TsProperty).dataType)" :key="k" :label="k">
-              <el-input
-                v-if="k !== 'enumValues' && k !== 'structFields'"
-                :model-value="String(specsGet(getSpecs(currentItem), k) ?? '')"
-                :placeholder="specsPlaceholder(k)"
-                @update:model-value="(v: string) => setSpecs(currentItem, k, v)"
-              />
-              <span v-else class="tme-specs-tip">复杂结构（数组/对象）请切换到「JSON 高级」编辑</span>
-            </el-form-item>
+            <p class="tme-specs-hint">以下规格字段随所选数据类型自动展示，可视化中可直接编辑；批量微调可切「JSON 高级」</p>
+            <SpecsEditor
+              :data-type="(currentItem as TsProperty).dataType"
+              :specs="ensureSpecs(currentItem as TsProperty | null)"
+            />
           </el-form>
         </template>
 
@@ -378,7 +356,7 @@ function specsPlaceholder(k: string): string {
         <el-button @click="formatJson">格式化</el-button>
         <el-button type="primary" @click="applyJson">应用 JSON（覆盖可视化）</el-button>
       </div>
-      <p class="tme-json-tip">JSON 模式可编辑完整 specs/structFields/enumValues 等高级字段；点击「应用 JSON」同步到可视化视图</p>
+      <p class="tme-json-tip">可视化模式已支持枚举 / 结构体 / 数组等常用规格的直接编辑；JSON 模式适合批量粘贴或微调任意高级字段，点击「应用 JSON」覆盖同步到可视化视图</p>
     </div>
 
     <div v-if="schemaError && activeTab === 'visual'" class="tme-schema-warn">⚠️ {{ schemaError }}</div>
@@ -498,10 +476,6 @@ function specsPlaceholder(k: string): string {
   font-size: 12px;
   color: var(--ex-ink-3);
   margin: -8px 0 12px;
-}
-.tme-specs-tip {
-  font-size: 12px;
-  color: var(--ex-ink-3);
 }
 
 .tme-schema-warn,

@@ -38,6 +38,37 @@ export const eventTypeOptions: Array<{ value: 'INFO' | 'WARN' | 'ERROR'; label: 
   { value: 'ERROR', label: '故障 ERROR' },
 ]
 
+/** 数组元素类型下拉选项（排除 array 自身，避免数组套数组的无限嵌套） */
+export const elementTypeOptions = tsDataTypeOptions.filter((o) => o.value !== 'array')
+
+/** 是否为整型数据类型（int/long 的 min/max/step 输入须为整数） */
+export function isIntegerDataType(dt: TsDataType): boolean {
+  return dt === 'int' || dt === 'long'
+}
+
+/** 枚举项（value 数字或字符串；desc 可选，与后端 ThingModelValidator 契约一致） */
+export interface TsEnumValue {
+  value: number | string
+  desc?: string
+}
+
+/** 新建空枚举项（value 初始为空字符串占位，输入时经 coerceEnumValue 智能转换类型） */
+export function newEnumValue(): TsEnumValue {
+  return { value: '' }
+}
+
+/** 新建空结构体字段（TsParam 结构，与 structFields 数组元素契约一致） */
+export function newStructField(): TsParam {
+  return { identifier: '', name: '', dataType: 'int' }
+}
+
+/** 枚举值智能转换：纯数字串（整数/小数）→ number，其余保留 string（trim 后保存，与后端 value 数字/字符串双形态对齐） */
+export function coerceEnumValue(raw: string): number | string {
+  const t = raw.trim()
+  if (t !== '' && /^-?\d+(\.\d+)?$/.test(t)) return Number(t)
+  return t
+}
+
 /** 数据类型需要的扩展字段（specs 键名提示，UI 渲染依据） */
 export function specsHintFor(dt: TsDataType): string[] {
   switch (dt) {

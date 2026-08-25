@@ -240,7 +240,7 @@ onMounted(() => { void load(); void loadReadout() })
     <el-drawer v-model="tmDrawer" size="900px" :title="`物模型 · ${tmProduct?.productName ?? ''}`">
       <div class="tm-head">
         <span>当前状态：<el-tag size="small" :type="tmStatus === ThingModelStatus.PUBLISHED ? 'success' : tmStatus === ThingModelStatus.DRAFT ? 'info' : 'danger'">{{ thingModelStatusText(tmStatus) }}</el-tag></span>
-        <span class="tm-head-tip">可视化编辑更直观；切到「JSON 高级」可手写完整 specs/structFields/enumValues 等高级字段</span>
+        <span class="tm-head-tip">可视化编辑支持枚举 / 结构体 / 数组等常用规格；「JSON 高级」适合批量粘贴或微调任意高级字段</span>
       </div>
       <el-form label-width="70px" class="tm-form">
         <el-form-item label="版本号" required>
