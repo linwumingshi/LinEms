@@ -52,6 +52,8 @@ energyx:
     history-enabled: true
     optimistic-max-retry: 3
     dlq-topic: iot-dlq
+    # desired 物模型校验：ENFORCE —— 属性不存在/只读/类型错误/超范围整体拒绝写入（与前端物模型驱动表单对齐，双保险）
+    model-check-mode: ENFORCE
 
 logging:
   level:

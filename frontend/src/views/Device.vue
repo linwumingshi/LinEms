@@ -13,6 +13,7 @@ import { useEChart } from '@/composables/useEChart'
 import { shadowApi } from '@/api/shadow'
 import { tsdbApi } from '@/api/tsdb'
 import { parseThingModel } from '@/utils/thingModel'
+import DeviceShadowPanel from '@/components/DeviceShadowPanel.vue'
 import { tsToLocal } from '@/utils/alarmFormat'
 import type { PropertyHistoryView, ShadowView, ThingModelSchema, PropertyHistoryRecord } from '@/types/models'
 
@@ -586,6 +587,9 @@ onMounted(() => { void load(); void loadReadout(); void loadOptions(); void load
               </template>
               <el-empty v-else-if="model && !runtimeLoading" description="产品未发布物模型" />
             </div>
+          </el-tab-pane>
+          <el-tab-pane name="shadow" label="设备影子" lazy>
+            <DeviceShadowPanel v-if="detail" :device-id="detail.deviceId" :product-key="detail.productKey" />
           </el-tab-pane>
         </el-tabs>
       </template>
