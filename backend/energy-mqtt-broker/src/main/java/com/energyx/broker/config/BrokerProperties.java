@@ -46,6 +46,26 @@ public class BrokerProperties {
 
 	}
 
+	/** 过载处置配置（P2-9：双阈值准入 + readiness 探针判定） */
+	private Overload overload = new Overload();
+
+	@Data
+	public static class Overload {
+
+		/**
+		 * 软阈值比例：接入连接数超过 {@code maxConnections × 该值} 后，新连接回 CONNACK 0x03
+		 * SERVER_UNAVAILABLE（readiness 同步 DOWN）。
+		 */
+		private double softConnectionRatio = 0.9;
+
+		/** 硬阈值比例：接入连接数超过 {@code maxConnections × 该值} 后，TCP 层直接关闭（连接风暴保命） */
+		private double hardConnectionRatio = 1.05;
+
+		/** 堆内存占比阈值：usedHeap / maxHeap 超过该值后 readiness DOWN（探针第二判定维度） */
+		private double maxHeapRatio = 0.85;
+
+	}
+
 	/** 单节点最大连接数（准入控制，超过后新连接拒绝） */
 	private int maxConnections = 500_000;
 

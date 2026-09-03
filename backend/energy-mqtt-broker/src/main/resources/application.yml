@@ -62,6 +62,11 @@ energyx:
     node-id: ${BROKER_NODE_ID:broker-1}
     port: ${BROKER_MQTT_PORT:18831}
     max-connections: 500000
+    # ---- 过载处置（P2-9）：双阈值准入 + readiness 探针 ----
+    overload:
+      soft-connection-ratio: 0.9   # 连接数占比软阈值：超过回 CONNACK 0x03 + readiness DOWN
+      hard-connection-ratio: 1.05  # 连接数占比硬阈值：超过 TCP 层直接 close（防风暴期解码开销）
+      max-heap-ratio: 0.85         # 堆内存占比阈值：超过 readiness DOWN
     worker-threads: 0
     enable-router: true
     enable-lifecycle-event: true
