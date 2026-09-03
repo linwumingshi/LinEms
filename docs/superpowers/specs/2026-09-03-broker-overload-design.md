@@ -48,7 +48,7 @@
 
 **非目标（明确排除）**
 
-- 主动 rebalance（过载节点分批踢连接）、Redis 全局配额、一致性哈希环 —— 均依赖多节点 LB 就位，属后续集群化阶段。
+- 主动 rebalance 的**实现**不在本次范围，且**优先复用 LB 能力**（腾讯云「存量连接重调度」等，机制见附录 A）而非自研；Redis 全局配额、一致性哈希环属后续集群化阶段。
 - 更改设备接入地址模型（维持单域名）。
 - LB / K8s 实际配置落地（只出文档样例）。
 
@@ -254,3 +254,115 @@ S3 与 S1/S2 零耦合，可并行插队。
 3. 过载期间**已有连接保持在线**（用一个已连接设备持续收发心跳验证），新连接被拒并收到 CONNACK 0x03。
 4. SDK 抖动：同一 attempt 重复采样，延迟值分布不均等且落在 `[capped/2, capped]`。
 5. 实测报告：阶梯加压各档位的 p99 心跳延迟 / GC 停顿 / 堆占用数据齐备，`max-connections` 已按拐点 60~70% 回填。
+
+---
+
+## 附录 A：LB 两道闸机制与设计纪律（勘定，防回退）
+
+### A.1 机制
+
+四层 LB 是**数据平面网关**，所有流量过它：每转发建立一条 TCP 连接，LB 就在本地连接表 +1，断开 -1 —— **各后端的活跃连接数是 LB 本地统计，不需要后端暴露**。`least_conn` / LVS `wlc` 读的就是这个本地计数器。
+
+需要暴露的是「能否接新客」的**二态判断**：云/开源健康检查都只有 UP/DOWN 二态，不支持传阈值、不读负载数值；而「进程健康但连接数 90%」这类状态 LB 无从得知。因此把连续负载（连接数占比 / 堆内存占比）在应用侧判阈值、压成 HTTP 200/503 喂给 LB —— **用二态通道传递连续信息**。
+
+新连接决策经过两道独立闸门：
+
+1. **准入闸**：探 `/actuator/health/readiness`，DOWN 的节点不再接收新连接（LB 不消费数值，只消费布尔结果）。
+2. **调度闸**：在存活节点中按 LB 本地连接数选最小（least_conn），纯 LB 本地计算。
+
+### A.2 推论（实施纪律）
+
+1. **两侧连接数对不上且别试图对齐**：LB 只数经过它的连接；broker 的 `rawConnections` 还包含直连流量，且存在关闭时序差（FIN/TIME_WAIT）与摘除后存量仍计数。两者互补——broker 自保护（软/硬阈值）用于覆盖 LB 摘除的 ~15s 探测延迟（如 5s 间隔 × 3 次失败），**不得因有 LB 而砍掉节点自保护**。
+2. **长连接下 least_conn 收敛慢**：活跃连接数长期不降，新节点只能慢慢吸收新连接、存量不迁移。主动 rebalance **优先复用 LB 能力**（腾讯云「存量连接重调度」：触发于健康检查异常 / 权重置 0 / 解绑后端；K8s 靠 pod 驱逐重建），或过载节点分批带退避断开部分会话，**不推荐自研 LB 层逻辑**。
+3. **后端权重是静态的**：动态权重需 sidecar 调云 API，一般无必要——readiness 二态摘除已覆盖大部分场景，剩余由 least_conn 承担。
+4. **YAGNI 纪律**：本机制下「节点负载上报 Redis（连接数/CPU 写入共享存储）」**没有消费方**，禁止设计此类组件，除非未来出现真正的消费者（动态权重、跨节点 rebalance 决策）。
+
+## 附录 B：生产部署配置样例（运维照抄，按实际网络替换 IP）
+
+> 前置：Broker 多节点部署，每节点暴露 18831/8883（MQTT）与 8082（管理端点，含 `/actuator/health/liveness`、`/actuator/health/readiness`）。
+> 通用约束：**纯 TCP 透传，不做 TLS 卸载**（保 mTLS CN=clientId 校验，TLS 落到 broker）；**空闲超时 > MQTT keepalive × 1.5**（监听器默认 900s 对应 keepalive ≤ 600s）。
+
+### B.1 阿里云 NLB（必须 NLB —— CLB 无加权最小连接数）
+
+- 监听：TCP，前端 18831（启用 TLS 时 8883），后端指向 broker 节点内网 IP。
+- 服务器组调度算法：**加权最小连接数**。
+- 健康检查：协议 **HTTP**，端口 **8082**，路径 `/actuator/health/readiness`，健康状态码 `http_2xx`。
+- 连接优雅中断：**保持默认关闭**（关闭 = 存量连接不主动断，正是所需行为；开启反而会在超时后主动断开存量连接）。
+- 客户端地址保持：**开启**（否则源 IP 全变成 LB IP，`auth-failure-ban-threshold` 按 IP 封禁会误伤共享源 IP 的全部设备）。
+- 新建连接限速：可选，作为连接风暴的额外闸。
+- 若不开地址保持，可改开 ProxyProtocol（broker 侧需支持解析，当前未实现，需另评估）。
+
+### B.2 腾讯云 CLB 四层
+
+- 监听器：TCP，均衡方式 **加权最小连接数（WLC）**。选 WLC 后不支持会话保持——MQTT 长连接会话已外置 Redis，无需会话保持。
+- 健康检查：TCP 监听器选 HTTP 检查方式，`checkPort: 8082`、`httpCheckPath: /actuator/health/readiness`、状态码期望 2xx。
+- 存量连接重调度：**保持默认关闭**（关闭 = 健康检查异常时不 RST 存量连接）。
+- 源 IP：四层监听器**默认透传**客户端真实 IP，无需额外配置。
+- 可选：性能容量型的监听器最大连接数/新增连接数限速（MaxConn / MaxCps）。
+
+### B.3 私有化 HAProxy + keepalived（自建四层，推荐组合）
+
+```haproxy
+# /etc/haproxy/haproxy.cfg —— 两台 HAProxy + keepalived VRRP 主备
+global
+    maxconn 200000
+    nbthread 8
+    ulimit-n 400000
+
+defaults
+    mode tcp
+    timeout connect 5s
+    timeout client  600s        # > MQTT keepalive × 1.5
+    timeout server  600s
+    timeout check   3s
+
+frontend mqtt_in
+    bind *:18831
+    default_backend broker_nodes
+
+backend broker_nodes
+    balance leastconn
+    # HTTP 健康检查探 broker 管理端口 8082 的 readiness
+    option httpchk GET /actuator/health/readiness HTTP/1.1
+    http-check expect status 200
+    server broker-1 10.0.1.11:18831 check port 8082 inter 5s fall 3 rise 2
+    server broker-2 10.0.1.12:18831 check port 8082 inter 5s fall 3 rise 2
+    server broker-3 10.0.1.13:18831 check port 8082 inter 5s fall 3 rise 2
+```
+
+- keepalived VRRP 承担虚拟 IP，杜绝 LB 单点。
+- 源 IP：tcp mode 后端默认看到 HAProxy 地址；要透传可配 TPROXY（运维侵入大）或 `send-proxy`（broker 侧需支持解析 ProxyProtocol，当前未实现，需评估）。
+
+### B.4 K8s（kube-proxy 必须 IPVS 模式）
+
+- kube-proxy ConfigMap：`mode: "ipvs"`、`ipvs.scheduler: "lc"`、`ipvs.strictARP: true`（配 MetalLB 时）。**默认 iptables 模式只有随机分发，长连接分布不均，不可用**。
+- 对外暴露：内部 ClusterIP + NodePort，或 MetalLB LoadBalancer。
+- 探针（liveness 与 readiness 独立配置，过载只影响 readiness）：
+
+```yaml
+# Deployment 容器片段
+containers:
+  - name: mqtt-broker
+    ports:
+      - containerPort: 18831
+        name: mqtt
+      - containerPort: 8082
+        name: mgmt
+    livenessProbe:
+      httpGet: { path: /actuator/health/liveness, port: 8082 }   # 只探进程本身，绝不检查依赖与负载
+      periodSeconds: 15
+      failureThreshold: 3
+    readinessProbe:
+      httpGet: { path: /actuator/health/readiness, port: 8082 }  # 过载在此 DOWN，摘除只挡新连接
+      periodSeconds: 5
+      failureThreshold: 3
+    lifecycle:
+      preStop:
+        exec:
+          command: ["sh", "-c", "sleep 10"]   # 等 endpoint 摘除传播到各 Node，避免终止窗口的流量打到将死 Pod
+```
+
+- Service `externalTrafficPolicy: Local` 保留源 IP；配 `podAntiAffinity` 让 Pod 均匀分布（防流量打到无 Pod 的 Node 被丢弃）。
+- 滚动更新/缩容保护：PodDisruptionBudget + 足够大的 `terminationGracePeriodSeconds`（Broker `@PreDestroy` 已实现删心跳 + 释放连接锁，方向正确）。
+- Node 内核调优：`net.netfilter.nf_conntrack_max`（按连接数目标，示例 100 万）、`net.ipv4.vs.timeout_established`（> keepalive × 1.5）、IPVS `conn_tab_bits=20`（≈100 万条连接表）。
+- ⚠️ **上线前必须实测**：readiness DOWN 摘除后，用已连接设备持续收发心跳，验证存量连接不断（社区存在版本相关反例，勿只信文档）。
