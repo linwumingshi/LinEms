@@ -17,13 +17,12 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * 连接准入计数（{@code rawConnections}）的一致性验证。
+ * 连接准入计数（{@code ConnectionCounter}）的一致性验证。
  *
  * <p>
  * 关注点：{@code channelActive} 超限拒绝分支在手动回退计数后又调用 {@code ctx.close()}， 而 close 必然触发
@@ -43,7 +42,7 @@ class ConnectionAdmissionCounterTest {
 				mock(SessionStore.class), mock(LocalSubscriberIndex.class), mock(MessageDeliverer.class),
 				mock(LifecycleNotifier.class), mock(KafkaEventProducer.class), properties, mock(BrokerStats.class),
 				mock(BrokerMetrics.class), mock(PublishRateLimiter.class), mock(ExecutorService.class),
-				mock(ScheduledExecutorService.class));
+				mock(ScheduledExecutorService.class), new ConnectionCounter());
 	}
 
 	/**
@@ -52,10 +51,10 @@ class ConnectionAdmissionCounterTest {
 	 * @return 连接计数引用
 	 * @throws Exception 反射失败
 	 */
-	private AtomicInteger counterOf(MqttChannelInboundHandler handler) throws Exception {
-		Field field = MqttChannelInboundHandler.class.getDeclaredField("rawConnections");
+	private ConnectionCounter counterOf(MqttChannelInboundHandler handler) throws Exception {
+		Field field = MqttChannelInboundHandler.class.getDeclaredField("connectionCounter");
 		field.setAccessible(true);
-		return (AtomicInteger) field.get(handler);
+		return (ConnectionCounter) field.get(handler);
 	}
 
 	/**
@@ -71,7 +70,7 @@ class ConnectionAdmissionCounterTest {
 		BrokerProperties properties = new BrokerProperties();
 		properties.setMaxConnections(1);
 		MqttChannelInboundHandler handler = this.newHandler(properties);
-		AtomicInteger counter = this.counterOf(handler);
+		ConnectionCounter counter = this.counterOf(handler);
 
 		EmbeddedChannel first = new EmbeddedChannel(handler);
 		assertThat(counter.get()).as("第 1 条连接放行后计数应为 1").isEqualTo(1);
@@ -99,7 +98,7 @@ class ConnectionAdmissionCounterTest {
 		BrokerProperties properties = new BrokerProperties();
 		properties.setMaxConnections(1);
 		MqttChannelInboundHandler handler = this.newHandler(properties);
-		AtomicInteger counter = this.counterOf(handler);
+		ConnectionCounter counter = this.counterOf(handler);
 
 		EmbeddedChannel keep = new EmbeddedChannel(handler);
 		EmbeddedChannel rejected = new EmbeddedChannel(handler);

@@ -67,7 +67,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
 
@@ -124,7 +123,8 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 
 	private final PublishRateLimiter rateLimiter;
 
-	private final AtomicInteger rawConnections = new AtomicInteger();
+	/** 共享接入连接计数（P2-9 抽取：准入与过载探针读同一份数，保证判定一致） */
+	private final ConnectionCounter connectionCounter;
 
 	/**
 	 * 认证并发信号量（P2-8）：控制同时进行中的认证数，超限快速拒绝新连接防风暴
@@ -148,7 +148,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 			LifecycleNotifier lifecycleNotifier, KafkaEventProducer kafkaProducer, BrokerProperties properties,
 			BrokerStats stats, BrokerMetrics metrics, PublishRateLimiter rateLimiter,
 			@Qualifier("brokerExecutor") ExecutorService executor,
-			@Qualifier("brokerScheduler") ScheduledExecutorService scheduler) {
+			@Qualifier("brokerScheduler") ScheduledExecutorService scheduler, ConnectionCounter connectionCounter) {
 		this.authService = authService;
 		this.sessionRegistry = sessionRegistry;
 		this.sessionStore = sessionStore;
@@ -162,6 +162,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		this.rateLimiter = rateLimiter;
 		this.executor = executor;
 		this.scheduler = scheduler;
+		this.connectionCounter = connectionCounter;
 		// 并发信号量下限保护（至少 1），避免配置为 0 时所有连接/恢复被直接拒绝
 		this.authSlots = new Semaphore(Math.max(1, properties.getAuthMaxConcurrent()));
 		this.sessionRestoreSlots = new Semaphore(Math.max(1, properties.getSessionRestoreMaxConcurrent()));
@@ -186,7 +187,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) {
 		// 准入控制：超过单节点上限拒绝新连接（计数回退交给 channelInactive，避免与 close 触发的回调重复扣减）
-		if (rawConnections.incrementAndGet() > properties.getMaxConnections()) {
+		if (connectionCounter.incrementAndGet() > properties.getMaxConnections()) {
 			stats.recordRejected();
 			log.warn("[Broker] 超过最大连接数 {}，拒绝 {}", properties.getMaxConnections(), ctx.channel().remoteAddress());
 			ctx.close();
@@ -203,7 +204,7 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	@Override
 	public void channelInactive(ChannelHandlerContext ctx) {
-		rawConnections.decrementAndGet();
+		connectionCounter.decrementAndGet();
 		Session session = ctx.channel().attr(SESSION_ATTR).getAndSet(null);
 		ctx.channel().attr(DEVICE_KEY_ATTR).set(null);
 		if (session == null) {
