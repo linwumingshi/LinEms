@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * 设备中心 Feign 客户端（模拟器自动建档：创建设备 + 取回明文密钥）。
  *
  * <p>
- * 仅暴露自动建档所需的最小接口；服务间调用不经网关，无 JWT，租户上下文由 {@code TenantFeignInterceptor} 透传。
+ * 仅暴露自动建档所需的最小接口；服务间调用不经网关，无 JWT，租户上下文由 energy-common 全局
+ * {@code TenantContextFeignInterceptor} 透传。
  * </p>
  */
 @FeignClient(name = "energy-device", path = "/device", fallbackFactory = DeviceFeignClientFallbackFactory.class)

@@ -40,6 +40,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
+    <!-- feign-core（optional）：仅为本模块编译「全局 Feign 租户透传拦截器」提供 RequestInterceptor 接口。
+         optional 不向下游传递；版本由父 POM spring-cloud-dependencies 2025.0.3 统一管理。
+         运行时：引入 spring-cloud-starter-openfeign 的业务服务自带 feign-core，无 feign 的服务（网关/消息网关等）
+         靠 @ConditionalOnClass(RequestInterceptor.class) 守卫跳过装配，不受影响。 -->
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-core</artifactId>
+      <optional>true</optional>
+    </dependency>
     <!-- Kafka 原生客户端（Phase 5）：共享消费引擎 + 消息 DTO 反序列化基础。
          镜像缺失 spring-boot-starter-kafka（Phase 3 D9），统一使用 kafka-clients：
          Broker 路由/生命周期、access 摄取、tsdb 写入全部走原生客户端，线程模型透明可控。 -->
