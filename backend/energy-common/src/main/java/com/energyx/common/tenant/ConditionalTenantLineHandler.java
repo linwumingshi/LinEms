@@ -1,6 +1,7 @@
 package com.energyx.common.tenant;
 
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
+import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 
@@ -15,6 +16,7 @@ import java.util.Set;
  * <li>有上下文且有 tenant_id 列 → 追加 {@code tenant_id = 当前租户}。</li>
  * </ul>
  */
+@Slf4j
 public class ConditionalTenantLineHandler implements TenantLineHandler {
 
 	/** 无 tenant_id 列的表 + 特殊表（租户主表自身），命中则跳过租户改写 */
@@ -25,12 +27,11 @@ public class ConditionalTenantLineHandler implements TenantLineHandler {
 	@Override
 	public Expression getTenantId() {
 		// 正常情况下仅在 hasTenant()==true 且表未忽略时被调用；兜底返回 0
-		return new LongValue(TenantContext.hasTenant() ? TenantContext.getTenantId() : 0L);
-	}
-
-	@Override
-	public String getTenantIdColumn() {
-		return "tenant_id";
+		if (!TenantContext.hasTenant()) {
+			log.warn("No tenant found in context");
+			throw new IllegalStateException("getTenantId() called without tenant context! Check ignoreTable logic.");
+		}
+		return new LongValue(TenantContext.getTenantId());
 	}
 
 	@Override
