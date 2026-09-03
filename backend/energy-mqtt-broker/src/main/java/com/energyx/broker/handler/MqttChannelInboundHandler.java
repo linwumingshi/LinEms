@@ -175,12 +175,18 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 * <p>
 	 * 超过单节点最大连接数（{@code energyx.broker.max-connections}）直接关闭新连接并记录拒绝指标， 防止连接风暴打满节点。
 	 * </p>
+	 *
+	 * <p>
+	 * 计数契约：本方法只负责 {@code incrementAndGet}，回退统一由
+	 * {@link #channelInactive(ChannelHandlerContext)} 承担——{@code ctx.close()} 必然触发
+	 * channelInactive，若此处再手动回退会与其叠加造成重复扣减， 使计数持续负偏移、 {@code maxConnections} 准入逐步失效（每次拒绝少算
+	 * 1）。 回归见 {@code ConnectionAdmissionCounterTest}。
+	 * </p>
 	 */
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) {
-		// 准入控制：超过单节点上限拒绝新连接
+		// 准入控制：超过单节点上限拒绝新连接（计数回退交给 channelInactive，避免与 close 触发的回调重复扣减）
 		if (rawConnections.incrementAndGet() > properties.getMaxConnections()) {
-			rawConnections.decrementAndGet();
 			stats.recordRejected();
 			log.warn("[Broker] 超过最大连接数 {}，拒绝 {}", properties.getMaxConnections(), ctx.channel().remoteAddress());
 			ctx.close();
