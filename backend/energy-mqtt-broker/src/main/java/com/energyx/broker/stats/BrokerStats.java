@@ -24,7 +24,11 @@ public class BrokerStats {
 
 	public final AtomicLong acceptedConnections = new AtomicLong();
 
+	/** 接入拒绝次数（硬拒：超硬阈值 TCP 层关闭，P2-9；认证超限走 authOverloadRejected，软拒走 admissionRedirect） */
 	public final AtomicLong rejectedConnections = new AtomicLong();
+
+	/** 软拒次数（连接数超软阈值回 CONNACK 0x03，P2-9）：与硬拒语义分离，供运维区分过载形态 */
+	public final AtomicLong admissionRedirect = new AtomicLong();
 
 	/** 路由（Kafka）持久化失败次数：QoS1/2 上行因此关连接迫使设备重传 */
 	public final AtomicLong routeFailures = new AtomicLong();
@@ -89,6 +93,11 @@ public class BrokerStats {
 		rejectedConnections.incrementAndGet();
 	}
 
+	/** 记录一次软拒（连接数超软阈值回 CONNACK 0x03，P2-9） */
+	public void recordAdmissionRedirect() {
+		admissionRedirect.incrementAndGet();
+	}
+
 	/** 记录一次路由（Kafka）持久化失败（QoS1/2 上行因此关连接迫使重传） */
 	public void recordRouteFailure() {
 		routeFailures.incrementAndGet();
@@ -143,6 +152,7 @@ public class BrokerStats {
 		map.put("authFailures", authFailures.get());
 		map.put("acceptedConnections", acceptedConnections.get());
 		map.put("rejectedConnections", rejectedConnections.get());
+		map.put("admissionRedirect", admissionRedirect.get());
 		map.put("routeFailures", routeFailures.get());
 		map.put("backpressureParked", backpressureParked.get());
 		map.put("backpressureDropped", backpressureDropped.get());
