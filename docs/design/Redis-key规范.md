@@ -19,6 +19,7 @@
 | 影子 reported | `iot:shadow:reported:{device_id}` | Hash(属性名→值) | 7d | MySQL `iot_shadow` | 消费服务→影子服务 | 删除设备时清理 |
 | 影子 desired | `iot:shadow:desired:{device_id}` | Hash(属性名→值) | 7d | MySQL `iot_shadow` | command/strategy→接入 | 同上 |
 | 影子 delta | `iot:shadow:delta:{device_id}` | String(JSON) | 30s | MySQL `iot_shadow` | 影子服务→(Kafka iot-shadow-delta) | 设备离线转命令队列 |
+| delta 补发冷却 | `iot:shadow:delta:cd:{device_id}` | String(`1`) | `delta-recheck-cooldown-seconds`（默认 30s） | 无（纯限流标记） | 影子服务内部（上报后对账） | 删除设备时随其他影子 key 清理 |
 | 命令离线队列 | `iot:cmd:q:{device_id}` | List(JSON指令) | 7d | MySQL `iot_command` | command→接入(上线补发) | 设备上线消费/删除 |
 | 命令在途 | `iot:cmd:inflight:{device_id}` | Hash(commandId→timeoutAt) | 5min | MySQL `iot_command` | command→超时扫描 | 超时回收 |
 | 命令幂等 | `iot:cmd:idem:{command_id}` | SETNX | 24h | MySQL `iot_command` | command(入口) | 自然过期 |
