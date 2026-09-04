@@ -67,4 +67,30 @@ class BrokerLoadHealthIndicatorTest {
 		assertThatThrownBy(indicator::validate).isInstanceOf(IllegalStateException.class);
 	}
 
+	/**
+	 * maxConnections 过小（1×0.9 取整为 0）时软拒层失效——首条合法连接即被软拒， 原始比例虽合法但取整后无效，配置自检必须抛异常快速失败。
+	 */
+	@Test
+	void maxConnections过小致软阈值取整归零则配置校验失败() {
+		BrokerProperties p = new BrokerProperties();
+		p.setMaxConnections(1);
+		p.getOverload().setSoftConnectionRatio(0.9);
+		p.getOverload().setHardConnectionRatio(1.05);
+		BrokerLoadHealthIndicator indicator = new BrokerLoadHealthIndicator(new ConnectionCounter(), p);
+		assertThatThrownBy(indicator::validate).isInstanceOf(IllegalStateException.class);
+	}
+
+	/**
+	 * 两比例过近致取整后阈值相等（0.9/0.9005 × 1000 → 900 == 900）时软拒层永不生效， 配置自检必须抛异常快速失败。
+	 */
+	@Test
+	void 比例过近致取整后阈值相等则配置校验失败() {
+		BrokerProperties p = new BrokerProperties();
+		p.setMaxConnections(1000);
+		p.getOverload().setSoftConnectionRatio(0.9);
+		p.getOverload().setHardConnectionRatio(0.9005);
+		BrokerLoadHealthIndicator indicator = new BrokerLoadHealthIndicator(new ConnectionCounter(), p);
+		assertThatThrownBy(indicator::validate).isInstanceOf(IllegalStateException.class);
+	}
+
 }

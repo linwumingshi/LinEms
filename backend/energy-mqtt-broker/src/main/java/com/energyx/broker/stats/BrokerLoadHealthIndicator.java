@@ -43,6 +43,22 @@ public class BrokerLoadHealthIndicator implements HealthIndicator {
 					"[Broker] overload.soft-connection-ratio(" + overload.getSoftConnectionRatio()
 							+ ") 必须小于 hard-connection-ratio(" + overload.getHardConnectionRatio() + ")");
 		}
+		// 取整后有效阈值自检（原始比例合法但取整后分层可能失效的配置态）：
+		// maxConnections 过小（如 1×0.9 取整为 0）→ 首条合法连接即被软拒；
+		// 比例过近（如 0.9/0.9005 × 1000 取整后相等）→ 软拒层永不生效。
+		// 两类均属准入分层失效，启动期拦下而非运行期暴露。
+		long maxConnections = properties.getMaxConnections();
+		long softLimit = (long) (maxConnections * overload.getSoftConnectionRatio());
+		long hardLimit = (long) (maxConnections * overload.getHardConnectionRatio());
+		if (softLimit < 1) {
+			throw new IllegalStateException("[Broker] max-connections(" + maxConnections + ") × soft-connection-ratio("
+					+ overload.getSoftConnectionRatio() + ") 取整后软阈值 = 0，首条合法连接即被软拒，"
+					+ "请调大 max-connections 或提高 soft-connection-ratio");
+		}
+		if (softLimit >= hardLimit) {
+			throw new IllegalStateException(
+					"[Broker] 取整后软阈值(" + softLimit + ") 不小于硬阈值(" + hardLimit + ")，软拒层失效，请调大 max-connections 或拉开两比例差距");
+		}
 	}
 
 	/**
