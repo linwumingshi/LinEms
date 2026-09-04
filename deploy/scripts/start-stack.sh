@@ -7,6 +7,8 @@
 #   --skip-infra  跳过 docker compose（基础环境已运行）
 # =====================================================================
 set -uo pipefail
+# 文件句柄上限：支撑 broker 数十万长连接的 fd 需求；权限不足时静默忽略，勿中断启动
+ulimit -n 1048576 2>/dev/null || true
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/test/drill/lib.sh"
 # P0-4：本地密钥 env（gitignored）——存在才加载；缺失时依赖外部注入的 env（fail-fast 由服务启动兜底）
@@ -123,7 +125,13 @@ start_one() { # 模块名 就绪端口
     err "[Stack] 缺少 ${name}/target/*.jar"
     return 1
   fi
-  nohup java -jar "$jar" >"$LOG_DIR/${name}.log" 2>&1 &
+  # Broker 承载设备长连接，需显式堆上限（否则走 JVM 默认=物理内存 1/4，OOM 先于优雅拒绝）；
+  # BROKER_XMX 环境变量可覆盖，默认 4g，按 §5.5 实测拐点调整
+  local jvm_opts=""
+  if [ "$name" = "energy-mqtt-broker" ]; then
+    jvm_opts="-Xms1g -Xmx${BROKER_XMX:-4g}"
+  fi
+  nohup java $jvm_opts -jar "$jar" >"$LOG_DIR/${name}.log" 2>&1 &
   echo $! >"$LOG_DIR/${name}.pid"
   log "[Stack] 启动 $name (pid $!, 就绪端口 $port)"
 }
