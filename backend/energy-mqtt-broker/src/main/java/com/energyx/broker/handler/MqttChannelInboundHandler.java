@@ -171,10 +171,11 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	// ---------------- 连接生命周期 ----------------
 
 	/**
-	 * 连接建立回调（IO 线程）：接入计数 + 准入控制。
+	 * 连接建立回调（IO 线程）：接入计数 + 硬阈值准入控制。
 	 *
 	 * <p>
-	 * 超过单节点最大连接数（{@code energyx.broker.max-connections}）直接关闭新连接并记录拒绝指标， 防止连接风暴打满节点。
+	 * 双阈值准入（P2-9）的硬阈值分支：接入连接数超过 {@code maxConnections × hard-connection-ratio} 时直接在 TCP
+	 * 层关闭、不解析 MQTT 报文——连接风暴时避免为每个被拒连接付出解码开销（保命）， 超限即记 {@code recordRejected} 硬拒指标。
 	 * </p>
 	 *
 	 * <p>
@@ -186,10 +187,14 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 */
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) {
-		// 准入控制：超过单节点上限拒绝新连接（计数回退交给 channelInactive，避免与 close 触发的回调重复扣减）
-		if (connectionCounter.incrementAndGet() > properties.getMaxConnections()) {
+		// 硬阈值准入（P2-9）：超过 maxConnections × hard-connection-ratio 直接在 TCP 层关闭、
+		// 不解析 MQTT 报文 —— 连接风暴时避免为每个被拒连接付出解码开销。
+		// 计数契约：本方法只 increment，回退统一由 channelInactive 承担（close 必触发该回调，
+		// 手动回退会造成双重扣减、计数负偏移、准入逐步失效，回归见 ConnectionAdmissionCounterTest）
+		long hardLimit = (long) (properties.getMaxConnections() * properties.getOverload().getHardConnectionRatio());
+		if (connectionCounter.incrementAndGet() > hardLimit) {
 			stats.recordRejected();
-			log.warn("[Broker] 超过最大连接数 {}，拒绝 {}", properties.getMaxConnections(), ctx.channel().remoteAddress());
+			log.warn("[Broker] 超过硬阈值 {}，拒绝 {}", hardLimit, ctx.channel().remoteAddress());
 			ctx.close();
 		}
 	}
@@ -378,9 +383,9 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 	 * CONNECT 握手处理（IO 线程入口，慢路径剥离）。
 	 *
 	 * <p>
-	 * 协议版本/空 clientId/重复 CONNECT 三关在 IO 线程直接拒绝；认证（Redis/MySQL）、连接锁抢占、 sessionPresent
-	 * 判定等阻塞操作经 {@code brokerExecutor} 异步执行，仅最终会话注册与 CONNACK 回投 eventLoop， 保证 IO
-	 * 线程零阻塞（P2-8 认证风暴防护：并发认证受信号量限流）。
+	 * 协议版本/空 clientId/重复 CONNECT/软阈值超限四关在 IO 线程直接拒绝（软阈值回 CONNACK 0x03 再关闭，
+	 * 其余哑拒后关断）；认证（Redis/MySQL）、连接锁抢占、 sessionPresent 判定等阻塞操作经 {@code brokerExecutor}
+	 * 异步执行，仅最终会话注册与 CONNACK 回投 eventLoop， 保证 IO 线程零阻塞（P2-8 认证风暴防护：并发认证受信号量限流）。
 	 * </p>
 	 */
 	private void handleConnect(ChannelHandlerContext ctx, MqttConnectMessage msg) {
@@ -405,6 +410,19 @@ public class MqttChannelInboundHandler extends ChannelInboundHandlerAdapter {
 		// 协议合规（MQTT-3.1.0-2）：同一连接上第二个 CONNECT 必须关断
 		if (channel.attr(SESSION_ATTR).get() != null) {
 			log.warn("[Broker] 重复 CONNECT，按规范关断 clientId={} remote={}", clientId, channel.remoteAddress());
+			channel.close();
+			return;
+		}
+		// 软阈值准入（P2-9 过载处置）：接入连接数超过 maxConnections × soft-connection-ratio 时不哑拒，
+		// 回 CONNACK 0x03 SERVER_UNAVAILABLE 再关闭 —— 让设备端能区分"服务器过载"与"网络故障"，
+		// 从而采用针对性的退避策略。置于认证信号量之前：过载时不再消耗认证资源。
+		// 计数回退仍统一由 channelInactive 承担，此处禁手动 decrement
+		long softLimit = (long) (properties.getMaxConnections() * properties.getOverload().getSoftConnectionRatio());
+		if (connectionCounter.get() > softLimit) {
+			stats.recordAdmissionRedirect();
+			log.warn("[Broker] 超过软阈值 {}，回 CONNACK 0x03 拒绝 clientId={} remote={}", softLimit, clientId,
+					channel.remoteAddress());
+			this.sendConnAck(channel, MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, false);
 			channel.close();
 			return;
 		}
