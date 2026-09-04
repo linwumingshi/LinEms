@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -412,6 +413,25 @@ public class MqttDevice implements AutoCloseable {
     // 重连（指数退避，独立单线程调度器，避免阻塞共享 EventLoopGroup）
     // ------------------------------------------------------------------
 
+    /**
+     * 计算带随机抖动的重连延迟（毫秒）。
+     *
+     * <p>
+     * 在指数退避上限内先取 capped，再取 [capped/2, capped] 半区间随机：保留一半固定基准保证退避
+     * 仍随次数增长，另一半随机打散大规模设备集群内的重连时刻，防止断网恢复后设备同步回撞形成
+     * 周期性尖峰。
+     * </p>
+     *
+     * @param backoffMs    基础退避步长（毫秒）
+     * @param maxBackoffMs 退避上限（毫秒）
+     * @param attempt      第几次重连（0 起）
+     * @return [capped/2, capped] 内的延迟毫秒数；capped 为 0 时返回 0
+     */
+    static long reconnectDelayMillis(long backoffMs, long maxBackoffMs, int attempt) {
+        long capped = Math.min(backoffMs * (1L << Math.min(attempt, 5)), maxBackoffMs);
+        return capped / 2 + ThreadLocalRandom.current().nextLong(capped / 2 + 1);
+    }
+
     private void scheduleReconnect(int attempt) {
         if (closed || !config.autoReconnect()) {
             return;
@@ -430,9 +450,8 @@ public class MqttDevice implements AutoCloseable {
                 }
             }
         }
-        long delay = Math.min(
-                (long) config.reconnectBackoffMs() * (1L << Math.min(attempt, 5)),
-                config.reconnectMaxBackoffMs());
+        long delay = MqttDevice.reconnectDelayMillis((long) config.reconnectBackoffMs(),
+                (long) config.reconnectMaxBackoffMs(), attempt);
         reconnectScheduler.schedule(() -> doReconnect(attempt), delay, TimeUnit.MILLISECONDS);
     }
 
