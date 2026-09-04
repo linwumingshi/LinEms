@@ -128,3 +128,8 @@ management:
     health:
       probes:
         enabled: true
+      # 自定义过载指示器只挂 readiness（include 会覆盖默认成员，必须写回 readinessState）；
+      # liveness 端点保持仅进程存活判定，过载绝不触发重启
+      group:
+        readiness:
+          include: readinessState,brokerLoad
